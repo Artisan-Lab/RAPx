@@ -1,5 +1,5 @@
 [package]
-name = "vec_contains"
+name = "slice_contains"
 version = "0.1.0"
 edition = "2021"
 
