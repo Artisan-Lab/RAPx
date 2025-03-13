@@ -12,13 +12,13 @@ function parse() {
   A=0
   rest="" #other args
   for arg in "$@"; do
-      case "$arg" in
-          -F) F=1 ;;
-          -M) M=1 ;;
-          -O) O=1 ;;
-          -A) A=1 ;;
-          *) rest="$rest $arg" ;;
-      esac
+    case "$arg" in
+    -F) F=1 ;;
+    -M) M=1 ;;
+    -O) O=1 ;;
+    -A) A=1 ;;
+    *) rest="$rest $arg" ;;
+    esac
   done
 }
 
@@ -38,9 +38,8 @@ function test() { #第一个参数：目录名 第二个参数：rapx的参数
     pushd "$project_dir" >/dev/null
 
     if [ $# -eq 1 ]; then #检查函数是否只有target_dir这一个参数
-      #命令无其他参数时执行cargo clean
-      #Example: batch.sh
       cmd="cargo clean"
+      echo "No analysis argument is specified: run \`$cmd\` in $project_dir"
       $cmd
       # 返回原始目录
       popd >/dev/null
