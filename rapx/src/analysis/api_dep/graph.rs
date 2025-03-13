@@ -9,7 +9,7 @@ pub use dep_node::{desc_str, DepNode};
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
 use petgraph::Graph;
-use rustc_middle::ty::{self, Ty, TyCtxt};
+use rustc_middle::ty::TyCtxt;
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;

@@ -3,7 +3,7 @@ use std::hash::Hash;
 use super::ty_wrapper::TyWrapper;
 use rustc_middle::{
     query::IntoQueryParam,
-    ty::{self, Ty, TyCtxt},
+    ty::{Ty, TyCtxt},
 };
 
 use rustc_hir::def_id::DefId;

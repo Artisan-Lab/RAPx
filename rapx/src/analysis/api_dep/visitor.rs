@@ -10,8 +10,7 @@ use rustc_hir::{
     BodyId, FnDecl,
 };
 
-use rustc_middle::query::Key;
-use rustc_middle::ty::{self, Ty, TyCtxt};
+use rustc_middle::ty::{self, TyCtxt};
 use rustc_span::Span;
 
 pub struct FnVisitor<'tcx, 'a> {

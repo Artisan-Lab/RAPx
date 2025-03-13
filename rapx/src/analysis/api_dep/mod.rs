@@ -4,11 +4,7 @@ mod lifetime;
 mod visitor;
 use crate::{rap_debug, rap_info};
 use graph::ApiDepGraph;
-use rustc_hir::{
-    def_id::{DefId, LocalDefId, LOCAL_CRATE},
-    intravisit::{self, FnKind, Visitor},
-    BodyId, FnDecl,
-};
+use rustc_hir::def_id::LOCAL_CRATE;
 use rustc_middle::ty::TyCtxt;
 
 use visitor::FnVisitor;
