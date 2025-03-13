@@ -16,7 +16,7 @@ fn run_complier(args: &mut Vec<String>, callback: &mut RapCallback) -> i32 {
     rustc_driver::init_rustc_env_logger(&handler);
     rustc_driver::install_ice_hook("bug_report_url", |_| ());
 
-    let run_compiler = rustc_driver::RunCompiler::new(&args, callback);
+    let run_compiler = rustc_driver::RunCompiler::new(args, callback);
     let exit_code = rustc_driver::catch_with_exit_code(move || run_compiler.run());
     rap_trace!("The arg for compilation is {:?}", args);
 

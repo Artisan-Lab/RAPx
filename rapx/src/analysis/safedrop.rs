@@ -3,6 +3,7 @@ pub mod bug_records;
 pub mod check_bugs;
 pub mod corner_handle;
 pub mod graph;
+#[allow(clippy::module_inception)]
 pub mod safedrop;
 pub mod types;
 
@@ -46,19 +47,14 @@ impl<'tcx> SafeDrop<'tcx> {
     }
 }
 
-pub fn query_safedrop<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    fn_map: &FnMap,
-    def_id: DefId,
-    adt_owner: AdtOwner,
-) -> () {
+pub fn query_safedrop(tcx: TyCtxt, fn_map: &FnMap, def_id: DefId, adt_owner: AdtOwner) {
     /* filter const mir */
     if let Some(_other) = tcx.hir().body_const_context(def_id.expect_local()) {
         return;
     }
     if tcx.is_mir_available(def_id) {
         let body = tcx.optimized_mir(def_id);
-        let mut safedrop_graph = SafeDropGraph::new(&body, tcx, def_id, adt_owner);
+        let mut safedrop_graph = SafeDropGraph::new(body, tcx, def_id, adt_owner);
         safedrop_graph.solve_scc();
         safedrop_graph.check(0, tcx, fn_map);
         if safedrop_graph.visit_times <= VISIT_LIMIT {

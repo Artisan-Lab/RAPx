@@ -29,10 +29,10 @@ impl Arguments {
             if suffix.is_empty() {
                 // This argument is exactly `name`; the next one is the value.
                 return args.next().map(|x| x.as_str());
-            } else if suffix.starts_with('=') {
+            } else if let Some(arg) = suffix.strip_prefix('=') {
                 // This argument is `name=value`; get the value.
                 // Strip leading `=`.
-                return Some(&suffix[1..]);
+                return Some(arg);
             }
         }
 

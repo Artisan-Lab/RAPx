@@ -56,6 +56,7 @@ pub struct RapCallback {
     opt: bool,
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for RapCallback {
     fn default() -> Self {
         Self {

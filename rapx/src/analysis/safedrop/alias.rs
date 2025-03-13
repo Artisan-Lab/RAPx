@@ -15,8 +15,8 @@ impl<'tcx> SafeDropGraph<'tcx> {
         }
         let cur_block = self.blocks[bb_index].clone();
         for assign in cur_block.assignments {
-            let mut lv_aliaset_idx = self.projection(tcx, false, assign.lv.clone());
-            let rv_aliaset_idx = self.projection(tcx, true, assign.rv.clone());
+            let mut lv_aliaset_idx = self.projection(tcx, false, assign.lv);
+            let rv_aliaset_idx = self.projection(tcx, true, assign.rv);
             match assign.atype {
                 AssignType::Variant => {
                     self.alias_set[lv_aliaset_idx] = rv_aliaset_idx;
