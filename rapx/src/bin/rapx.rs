@@ -3,22 +3,12 @@
 extern crate rustc_driver;
 extern crate rustc_session;
 
-use rapx::{
-    compile_time_sysroot, rap_info, rap_trace, utils::log::init_log, RapCallback, RAP_DEFAULT_ARGS,
-};
+use rapx::{rap_info, rap_trace, utils::log::init_log, RapCallback, RAP_DEFAULT_ARGS};
 use rustc_session::config::ErrorOutputType;
 use rustc_session::EarlyDiagCtxt;
 use std::env;
 
 fn run_complier(args: &mut Vec<String>, callback: &mut RapCallback) -> i32 {
-    if let Some(sysroot) = compile_time_sysroot() {
-        let sysroot_flag = "--sysroot";
-        if !args.iter().any(|e| e == sysroot_flag) {
-            // We need to overwrite the default that librustc_session would compute.
-            args.push(sysroot_flag.to_owned());
-            args.push(sysroot);
-        }
-    }
     // Finally, add the default flags all the way in the beginning, but after the binary name.
     args.splice(1..1, RAP_DEFAULT_ARGS.iter().map(ToString::to_string));
 

@@ -194,31 +194,6 @@ pub enum RapPhase {
     LLVM, // unimplemented yet
 }
 
-/// Returns the "default sysroot" that RAP will use if no `--sysroot` flag is set.
-/// Should be a compile-time constant.
-pub fn compile_time_sysroot() -> Option<String> {
-    // Optionally inspects an environment variable at compile time.
-    if option_env!("RUSTC_STAGE").is_some() {
-        // This is being built as part of rustc, and gets shipped with rustup.
-        // We can rely on the sysroot computation in rustc.
-        return None;
-    }
-    // For builds outside rustc, we need to ensure that we got a sysroot
-    // that gets used as a default.  The sysroot computation in librustc_session would
-    // end up somewhere in the build dir (see `get_or_default_sysroot`).
-    // Taken from PR <https://github.com/Manishearth/rust-clippy/pull/911>.
-    let home = option_env!("RUSTUP_HOME").or(option_env!("MULTIRUST_HOME"));
-    let toolchain = option_env!("RUSTUP_TOOLCHAIN").or(option_env!("MULTIRUST_TOOLCHAIN"));
-    let env = if home.is_some() && toolchain.is_some() {
-        format!("{}/toolchains/{}", home.unwrap(), toolchain.unwrap())
-    } else {
-        option_env!("RUST_SYSROOT")
-            .expect("To build RAPx without rustup, set the `RUST_SYSROOT` env var at build time")
-            .to_string()
-    };
-    Some(env)
-}
-
 pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
     let _rcanary: Option<rCanary> = if callback.is_rcanary_enabled() {
         let mut rcx = rCanary::new(tcx);
