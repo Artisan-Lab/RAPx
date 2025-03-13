@@ -1,5 +1,4 @@
 .idea/
 .vscode/
 target/
-Cargo.lock
 rapx.txt
