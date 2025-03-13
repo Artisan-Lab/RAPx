@@ -48,7 +48,7 @@ fn workspace(cargo_toml: &Utf8Path) -> Metadata {
     let exec = cargo_metadata::MetadataCommand::new()
         .manifest_path(cargo_toml)
         .exec();
-    
+
     match exec {
         Ok(metadata) => metadata,
         Err(err) => {
