@@ -1,14 +1,14 @@
+use super::{DefaultOwnership, OwnershipLayout};
 use rustc_middle::ty::Ty;
-
+use std::fmt;
 use std::fmt::Debug;
 
-use super::{DefaultOwnership, OwnershipLayout};
-
+#[repr(u8)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum RawTypeOwner {
-    Owned,
-    Unowned,
-    Uninit,
+    Unowned = 0,
+    Owned = 1,
+    Uninit = 2,
 }
 
 impl Default for RawTypeOwner {
@@ -24,6 +24,17 @@ impl RawTypeOwner {
             RawTypeOwner::Unowned => false,
             RawTypeOwner::Uninit => false,
         }
+    }
+}
+
+impl fmt::Display for RawTypeOwner {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let name = match self {
+            RawTypeOwner::Unowned => "0",
+            RawTypeOwner::Owned => "1",
+            RawTypeOwner::Uninit => "2",
+        };
+        write!(f, "{}", name)
     }
 }
 
