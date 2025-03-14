@@ -3,6 +3,8 @@ use std::{
     hash::Hash,
 };
 
+use crate::analysis::senryx::visitor::PlaceTy;
+
 use super::state_lattice::Lattice;
 
 #[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
@@ -15,10 +17,10 @@ pub enum Value {
     // ...
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-pub enum StateType {
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub enum StateType<'tcx> {
     AllocatedState(AllocatedState),
-    AlignState(AlignState),
+    AlignState(AlignState<'tcx>),
     // ...
 }
 
@@ -42,11 +44,10 @@ pub enum AllocatedState {
     Bottom,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-pub enum AlignState {
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub enum AlignState<'tcx> {
     Aligned,
-    Small2BigCast(usize, usize),
-    Big2SmallCast(usize, usize),
+    Cast(PlaceTy<'tcx>, PlaceTy<'tcx>),
     Unaligned,
 }
 
@@ -56,21 +57,21 @@ pub enum InitState {
     PartlyInitialized,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-pub enum VType {
-    Pointer(usize, usize), // (align, size)
-                           // todo
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub enum VType<'tcx> {
+    Pointer(PlaceTy<'tcx>),
+    // todo
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct AbstractStateItem {
+#[derive(Debug, Clone, PartialEq)]
+pub struct AbstractStateItem<'tcx> {
     pub value: (Value, Value),
-    pub vtype: VType,
-    pub state: HashSet<StateType>,
+    pub vtype: VType<'tcx>,
+    pub state: HashSet<StateType<'tcx>>,
 }
 
-impl AbstractStateItem {
-    pub fn new(value: (Value, Value), vtype: VType, state: HashSet<StateType>) -> Self {
+impl<'tcx> AbstractStateItem<'tcx> {
+    pub fn new(value: (Value, Value), vtype: VType<'tcx>, state: HashSet<StateType<'tcx>>) -> Self {
         Self {
             value,
             vtype,
@@ -78,8 +79,8 @@ impl AbstractStateItem {
         }
     }
 
-    pub fn meet_state_item(&mut self, other_state: &AbstractStateItem) {
-        let mut new_state = HashSet::new();
+    pub fn meet_state_item(&mut self, other_state: &AbstractStateItem<'tcx>) {
+        let mut new_state: HashSet<StateType<'tcx>> = HashSet::new();
 
         // visit 'self.state' and 'other_state.state'，matching states and calling meet method
         for state_self in &self.state {
@@ -92,14 +93,14 @@ impl AbstractStateItem {
                         StateType::AllocatedState(s1.meet(*s2))
                     }
                     (StateType::AlignState(s1), StateType::AlignState(s2)) => {
-                        StateType::AlignState(s1.meet(*s2))
+                        StateType::AlignState(s1.meet(s2.clone()))
                     }
                     _ => continue,
                 };
                 new_state.insert(merged_state);
             } else {
                 // if 'other_state' does not have the same state，then reserve the current state
-                new_state.insert(*state_self);
+                new_state.insert(state_self.clone());
             }
         }
 
@@ -109,18 +110,22 @@ impl AbstractStateItem {
 }
 
 #[derive(PartialEq)]
-pub struct AbstractState {
-    pub state_map: HashMap<usize, Option<AbstractStateItem>>,
+pub struct AbstractState<'tcx> {
+    pub state_map: HashMap<usize, Option<AbstractStateItem<'tcx>>>,
 }
 
-impl AbstractState {
+impl<'tcx> AbstractState<'tcx> {
     pub fn new() -> Self {
         Self {
             state_map: HashMap::new(),
         }
     }
 
-    pub fn insert_abstate(&mut self, place: usize, place_state_item: Option<AbstractStateItem>) {
+    pub fn insert_abstate(
+        &mut self,
+        place: usize,
+        place_state_item: Option<AbstractStateItem<'tcx>>,
+    ) {
         self.state_map.insert(place, place_state_item);
     }
 }

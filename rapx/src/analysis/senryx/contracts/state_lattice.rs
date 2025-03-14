@@ -1,3 +1,5 @@
+use crate::rap_info;
+
 use super::abstract_state::*;
 
 pub trait Lattice {
@@ -5,11 +7,12 @@ pub trait Lattice {
     fn meet(&self, other: Self) -> Self;
     fn less_than(&self, other: Self) -> bool;
     fn equal(&self, other: Self) -> bool;
+    fn check(&self) -> bool;
 }
 
-impl Lattice for StateType {
+impl<'tcx> Lattice for StateType<'tcx> {
     fn join(&self, other: Self) -> Self {
-        match self {
+        match &self {
             &StateType::AllocatedState(a) => match other {
                 StateType::AllocatedState(b) => StateType::AllocatedState(a.join(b)),
                 _ => panic!("Incompatible types"),
@@ -22,7 +25,7 @@ impl Lattice for StateType {
     }
 
     fn meet(&self, other: Self) -> Self {
-        match self {
+        match &self {
             &StateType::AllocatedState(a) => match other {
                 StateType::AllocatedState(b) => StateType::AllocatedState(a.meet(b)),
                 _ => panic!("Incompatible types"),
@@ -35,7 +38,7 @@ impl Lattice for StateType {
     }
 
     fn less_than(&self, other: Self) -> bool {
-        match self {
+        match &self {
             &StateType::AllocatedState(a) => match other {
                 StateType::AllocatedState(b) => a.less_than(b),
                 _ => panic!("Incompatible types"),
@@ -48,7 +51,7 @@ impl Lattice for StateType {
     }
 
     fn equal(&self, other: Self) -> bool {
-        match self {
+        match &self {
             &StateType::AllocatedState(a) => match other {
                 StateType::AllocatedState(b) => a.equal(b),
                 _ => panic!("Incompatible types"),
@@ -57,6 +60,13 @@ impl Lattice for StateType {
                 StateType::AlignState(b) => a.equal(b),
                 _ => panic!("Incompatible types"),
             },
+        }
+    }
+
+    fn check(&self) -> bool {
+        match &self {
+            &StateType::AllocatedState(a) => a.check(),
+            &StateType::AlignState(a) => a.check(),
         }
     }
 }
@@ -125,22 +135,20 @@ impl Lattice for AllocatedState {
     fn equal(&self, other: Self) -> bool {
         *self == other
     }
+
+    fn check(&self) -> bool {
+        true
+    }
 }
 
-impl Lattice for AlignState {
+impl<'tcx> Lattice for AlignState<'tcx> {
     fn join(&self, other: Self) -> Self {
-        match (self, other) {
+        match (self, other.clone()) {
             (AlignState::Aligned, _) => AlignState::Aligned,
-            (AlignState::Big2SmallCast(_, _), AlignState::Big2SmallCast(_, _)) => {
-                AlignState::Aligned
-            }
-            (AlignState::Big2SmallCast(_, _), AlignState::Small2BigCast(_, _)) => {
-                AlignState::Unaligned
-            }
-            (AlignState::Big2SmallCast(_, _), AlignState::Aligned) => AlignState::Aligned,
+            (AlignState::Cast(_, _), AlignState::Cast(_, _)) => AlignState::Unaligned,
             (AlignState::Unaligned, _) => AlignState::Unaligned,
             (_, AlignState::Unaligned) => AlignState::Unaligned,
-            _ => other,
+            _ => other.clone(),
         }
     }
 
@@ -158,14 +166,42 @@ impl Lattice for AlignState {
     fn less_than(&self, other: Self) -> bool {
         match (self, other) {
             (_, AlignState::Aligned) => true,
-            (AlignState::Small2BigCast(_, _), AlignState::Big2SmallCast(_, _)) => true,
-            (AlignState::Small2BigCast(_, _), AlignState::Unaligned) => true,
+            (AlignState::Cast(_, _), AlignState::Cast(_, _)) => true,
             _ => false,
         }
     }
 
     fn equal(&self, other: Self) -> bool {
         *self == other
+    }
+
+    fn check(&self) -> bool {
+        match self {
+            AlignState::Aligned => true,
+            AlignState::Unaligned => false,
+            AlignState::Cast(src, dest) => {
+                // rap_info!("src ty {:?}, dst ty {:?}",src, dest);
+                let src_aligns = src.possible_aligns();
+                let dest_aligns = dest.possible_aligns();
+                if dest_aligns.len() == 0 && src != dest {
+                    // dst ty could be arbitrary type && src and dst are different types
+                    return false;
+                }
+
+                for &d_align in &dest_aligns {
+                    if d_align != 1 && src_aligns.len() == 0 {
+                        // src ty could be arbitrary type
+                        return false;
+                    }
+                    for &s_align in &src_aligns {
+                        if s_align > d_align {
+                            return false;
+                        }
+                    }
+                }
+                true
+            }
+        }
     }
 }
 
@@ -196,5 +232,9 @@ impl Lattice for InitState {
 
     fn equal(&self, other: Self) -> bool {
         *self == other
+    }
+
+    fn check(&self) -> bool {
+        true
     }
 }

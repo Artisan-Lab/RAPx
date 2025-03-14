@@ -4,22 +4,22 @@ use core::mem;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-pub trait Checker {
-    fn variable_contracts(&self) -> &HashMap<usize, Vec<Contract>>;
+pub trait Checker<'tcx> {
+    fn variable_contracts(&self) -> &HashMap<usize, Vec<Contract<'tcx>>>;
 }
 
-pub struct SliceFromRawPartsChecker<T> {
-    pub variable_contracts: HashMap<usize, Vec<Contract>>,
+pub struct SliceFromRawPartsChecker<'tcx, T> {
+    pub variable_contracts: HashMap<usize, Vec<Contract<'tcx>>>,
     _marker: PhantomData<T>,
 }
 
-impl<T> Checker for SliceFromRawPartsChecker<T> {
-    fn variable_contracts(&self) -> &HashMap<usize, Vec<Contract>> {
+impl<'tcx, T> Checker<'tcx> for SliceFromRawPartsChecker<'tcx, T> {
+    fn variable_contracts(&self) -> &HashMap<usize, Vec<Contract<'tcx>>> {
         &self.variable_contracts
     }
 }
 
-impl<T> SliceFromRawPartsChecker<T> {
+impl<'tcx, T> SliceFromRawPartsChecker<'tcx, T> {
     pub fn new() -> Self {
         let mut map = HashMap::new();
         map.insert(

@@ -1,4 +1,5 @@
 use crate::analysis::unsafety_isolation::UnsafetyIsolationCheck;
+use crate::analysis::utils::fn_info::*;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::{DiGraph, EdgeReference, NodeIndex};
 use petgraph::Graph;
@@ -65,6 +66,76 @@ impl UigUnit {
             caller,
             caller_cons,
             callee_cons_pair,
+        }
+    }
+
+    pub fn count_basic_units(&self, data: &mut [u32]) {
+        if self.caller.1 == true && self.callee_cons_pair.len() == 0 {
+            data[0] += 1;
+        }
+        if self.caller.1 == false && self.caller.2 != 1 {
+            for (callee, _) in &self.callee_cons_pair {
+                if callee.2 == 1 {
+                    data[2] += 1;
+                } else {
+                    data[1] += 1;
+                }
+            }
+        }
+        if self.caller.1 == true && self.caller.2 != 1 {
+            for (callee, _) in &self.callee_cons_pair {
+                if callee.2 == 1 {
+                    data[4] += 1;
+                } else {
+                    data[3] += 1;
+                }
+            }
+        }
+        if self.caller.1 == true && self.caller.2 == 1 {
+            let mut unsafe_cons = 0;
+            let mut safe_cons = 0;
+            for cons in &self.caller_cons {
+                if cons.1 == true {
+                    unsafe_cons += 1;
+                } else {
+                    safe_cons += 1;
+                }
+            }
+            if unsafe_cons == 0 && safe_cons == 0 {
+                safe_cons = 1;
+            }
+            for (callee, _) in &self.callee_cons_pair {
+                if callee.2 == 1 {
+                    data[7] += 1 * safe_cons;
+                    data[8] += 1 * unsafe_cons;
+                } else {
+                    data[5] += 1 * safe_cons;
+                    data[6] += 1 * unsafe_cons;
+                }
+            }
+        }
+        if self.caller.1 == false && self.caller.2 == 1 {
+            let mut unsafe_cons = 0;
+            let mut safe_cons = 0;
+            for cons in &self.caller_cons {
+                if cons.1 == true {
+                    unsafe_cons += 1;
+                } else {
+                    safe_cons += 1;
+                }
+            }
+            if unsafe_cons == 0 && safe_cons == 0 {
+                safe_cons = 1;
+            }
+            for (callee, _) in &self.callee_cons_pair {
+                if callee.2 == 1 {
+                    data[11] += 1 * safe_cons;
+                    data[12] += 1 * unsafe_cons;
+                } else {
+                    data[9] += 1 * safe_cons;
+                    data[10] += 1 * unsafe_cons;
+                }
+            }
         }
     }
 
@@ -137,7 +208,7 @@ impl UigUnit {
     }
 
     pub fn compare_labels(&self, tcx: TyCtxt<'_>) {
-        let caller_sp = Self::get_sp(tcx, self.caller.0);
+        let caller_sp = get_sp(tcx, self.caller.0);
         // for caller_con in &self.caller_cons {
         //     if caller_con.1 != true {
         //         // if constructor is safe, it won't have labels.
@@ -150,7 +221,7 @@ impl UigUnit {
 
         let mut combined_callee_sp = HashSet::new();
         for (callee, _sp_vec) in &self.callee_cons_pair {
-            let callee_sp = Self::get_sp(tcx, callee.0);
+            let callee_sp = get_sp(tcx, callee.0);
             combined_callee_sp.extend(callee_sp); // Merge sp of each callee
         }
         let combined_labels: Vec<_> = combined_callee_sp.clone().into_iter().collect();
@@ -178,10 +249,10 @@ impl UigUnit {
             println!("----------unmatched sp------------");
             println!(
                 "Caller: {:?}.\n--Caller's constructors: {:?}.\n--SP labels: {:?}.",
-                Self::get_cleaned_def_path_name(tcx, self.caller.0),
+                get_cleaned_def_path_name(tcx, self.caller.0),
                 self.caller_cons
                     .iter()
-                    .map(|node_type| Self::get_cleaned_def_path_name(tcx, node_type.0))
+                    .map(|node_type| get_cleaned_def_path_name(tcx, node_type.0))
                     .collect::<Vec<_>>(),
                 caller_label
             );
@@ -189,104 +260,41 @@ impl UigUnit {
                 "Callee: {:?}.\n--Combined Callee Labels: {:?}",
                 self.callee_cons_pair
                     .iter()
-                    .map(|(node_type, _)| Self::get_cleaned_def_path_name(tcx, node_type.0))
+                    .map(|(node_type, _)| get_cleaned_def_path_name(tcx, node_type.0))
                     .collect::<Vec<_>>(),
                 combined_labels
             );
         }
     }
 
-    pub fn get_cleaned_def_path_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
-        let def_id_str = format!("{:?}", def_id);
-        let mut parts: Vec<&str> = def_id_str
-            .split("::")
-            // .filter(|part| !part.contains("{")) // 去除包含 "{" 的部分
-            .collect();
+    pub fn print_self(&self, tcx: TyCtxt<'_>) {
+        let caller_sp = get_sp(tcx, self.caller.0);
+        let caller_label: Vec<_> = caller_sp.clone().into_iter().collect();
 
-        let mut remove_first = false;
-        if let Some(first_part) = parts.get_mut(0) {
-            if first_part.contains("core") {
-                *first_part = "core";
-            } else if first_part.contains("std") {
-                *first_part = "std";
-            } else if first_part.contains("alloc") {
-                *first_part = "alloc";
-            } else {
-                remove_first = true;
-            }
+        let mut combined_callee_sp = HashSet::new();
+        for (callee, _sp_vec) in &self.callee_cons_pair {
+            let callee_sp = get_sp(tcx, callee.0);
+            combined_callee_sp.extend(callee_sp); // Merge sp of each callee
         }
-        if remove_first && !parts.is_empty() {
-            parts.remove(0);
-        }
-
-        let new_parts: Vec<String> = parts
-            .into_iter()
-            .filter_map(|s| {
-                if s.contains("{") {
-                    if remove_first {
-                        match Self::get_struct_name(tcx, def_id) {
-                            Some(name) => Some(name),
-                            None => None,
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    Some(s.to_string())
-                }
-            })
-            .collect();
-
-        let mut cleaned_path = new_parts.join("::");
-        cleaned_path = cleaned_path.trim_end_matches(')').to_string();
-        cleaned_path
-    }
-
-    pub fn get_sp_json() -> serde_json::Value {
-        let json_data: serde_json::Value =
-            serde_json::from_str(include_str!("./data/std_sps.json"))
-                .expect("Unable to parse JSON");
-        json_data
-    }
-
-    pub fn get_sp(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<String> {
-        let cleaned_path_name = Self::get_cleaned_def_path_name(tcx, def_id);
-        let json_data: serde_json::Value = Self::get_sp_json();
-
-        if let Some(function_info) = json_data.get(&cleaned_path_name) {
-            if let Some(sp_list) = function_info.get("sp") {
-                let mut result = HashSet::new();
-                if let Some(sp_array) = sp_list.as_array() {
-                    for sp in sp_array {
-                        if let Some(sp_name) = sp.as_str() {
-                            result.insert(sp_name.to_string());
-                        }
-                    }
-                }
-                return result;
-            }
-        }
-        HashSet::new()
-    }
-
-    pub fn get_struct_name(tcx: TyCtxt<'_>, def_id: DefId) -> Option<String> {
-        if let Some(assoc_item) = tcx.opt_associated_item(def_id) {
-            if let Some(impl_id) = assoc_item.impl_container(tcx) {
-                let ty = tcx.type_of(impl_id).skip_binder();
-                let type_name = ty.to_string();
-                let struct_name = type_name
-                    .split('<')
-                    .next()
-                    .unwrap_or("")
-                    .split("::")
-                    .last()
-                    .unwrap_or("")
-                    .to_string();
-
-                return Some(struct_name);
-            }
-        }
-        None
+        let combined_labels: Vec<_> = combined_callee_sp.clone().into_iter().collect();
+        println!(
+            "Caller: {:?}.\n--Caller's constructors: {:?}.\n--SP labels: {:?}.",
+            get_cleaned_def_path_name(tcx, self.caller.0),
+            self.caller_cons
+                .iter()
+                .filter(|cons| cons.1 == true)
+                .map(|node_type| get_cleaned_def_path_name(tcx, node_type.0))
+                .collect::<Vec<_>>(),
+            caller_label
+        );
+        println!(
+            "Callee: {:?}.\n--Combined Callee Labels: {:?}",
+            self.callee_cons_pair
+                .iter()
+                .map(|(node_type, _)| get_cleaned_def_path_name(tcx, node_type.0))
+                .collect::<Vec<_>>(),
+            combined_labels
+        );
     }
 }
 

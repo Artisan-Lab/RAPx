@@ -1,6 +1,7 @@
 use crate::analysis::safedrop::graph::SafeDropGraph;
+use crate::analysis::utils::fn_info::get_cleaned_def_path_name;
 use crate::analysis::utils::show_mir::display_mir;
-use crate::rap_warn;
+use crate::{rap_error, rap_warn};
 use rustc_span::source_map::Spanned;
 use rustc_span::Span;
 use std::collections::{HashMap, HashSet};
@@ -11,7 +12,8 @@ use super::contracts::abstract_state::{
     AbstractState, AbstractStateItem, AlignState, StateType, VType, Value,
 };
 use super::contracts::contract::Contract;
-use super::inter_record::{InterAnalysisRecord, GLOBAL_INTER_RECORDER};
+use super::generic_check::GenericChecker;
+use super::inter_record::InterAnalysisRecord;
 use super::matcher::{get_arg_place, match_unsafe_api_and_check_contracts};
 use crate::analysis::core::heap_item::AdtOwner;
 use rustc_hir::def_id::DefId;
@@ -25,14 +27,14 @@ use rustc_middle::{
 };
 
 //TODO: modify contracts vec to contract-bool pairs (we can also use path index to record path info)
-pub struct CheckResult {
+pub struct CheckResult<'tcx> {
     pub func_name: String,
     pub func_span: Span,
-    pub failed_contracts: Vec<(usize, Contract)>,
-    pub passed_contracts: Vec<(usize, Contract)>,
+    pub failed_contracts: Vec<(usize, Contract<'tcx>)>,
+    pub passed_contracts: Vec<(usize, Contract<'tcx>)>,
 }
 
-impl CheckResult {
+impl<'tcx> CheckResult<'tcx> {
     pub fn new(func_name: &str, func_span: Span) -> Self {
         Self {
             func_name: func_name.to_string(),
@@ -43,21 +45,54 @@ impl CheckResult {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum PlaceTy<'tcx> {
+    Ty(usize, usize), // layout(align,size) of one specific type
+    GenericTy(String, HashSet<Ty<'tcx>>, HashSet<(usize, usize)>), // get specific type in generic map
+}
+
+impl<'tcx> PlaceTy<'tcx> {
+    pub fn possible_aligns(&self) -> HashSet<usize> {
+        match self {
+            PlaceTy::Ty(align, _size) => {
+                let mut set = HashSet::new();
+                set.insert(*align);
+                set
+            }
+            PlaceTy::GenericTy(_, _, tys) => tys.iter().map(|ty| ty.0).collect(),
+        }
+    }
+}
+
+impl<'tcx> Hash for PlaceTy<'tcx> {
+    fn hash<H: std::hash::Hasher>(&self, _state: &mut H) {}
+}
+
 pub struct BodyVisitor<'tcx> {
     pub tcx: TyCtxt<'tcx>,
     pub def_id: DefId,
     pub safedrop_graph: SafeDropGraph<'tcx>,
     // abstract_states records the path index and variables' ab states in this path
-    pub abstract_states: HashMap<usize, AbstractState>,
+    pub abstract_states: HashMap<usize, AbstractState<'tcx>>,
     pub unsafe_callee_report: HashMap<String, usize>,
-    pub local_ty: HashMap<usize, (usize, usize)>,
+    pub local_ty: HashMap<usize, PlaceTy<'tcx>>,
     pub visit_time: usize,
-    pub check_results: Vec<CheckResult>,
+    pub check_results: Vec<CheckResult<'tcx>>,
+    pub generic_map: HashMap<String, HashSet<Ty<'tcx>>>,
+    pub global_recorder: HashMap<DefId, InterAnalysisRecord<'tcx>>,
 }
 
 impl<'tcx> BodyVisitor<'tcx> {
-    pub fn new(tcx: TyCtxt<'tcx>, def_id: DefId, visit_time: usize) -> Self {
+    pub fn new(
+        tcx: TyCtxt<'tcx>,
+        def_id: DefId,
+        global_recorder: HashMap<DefId, InterAnalysisRecord<'tcx>>,
+        visit_time: usize,
+    ) -> Self {
         let body = tcx.optimized_mir(def_id);
+        let param_env = tcx.param_env(def_id);
+        let satisfied_ty_map_for_generic =
+            GenericChecker::new(tcx, param_env).get_satisfied_ty_map();
         Self {
             tcx,
             def_id,
@@ -67,6 +102,8 @@ impl<'tcx> BodyVisitor<'tcx> {
             local_ty: HashMap::new(),
             visit_time,
             check_results: Vec::new(),
+            generic_map: satisfied_ty_map_for_generic,
+            global_recorder,
         }
     }
 
@@ -79,6 +116,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             let layout = self.visit_ty_and_get_layout(local_ty);
             self.local_ty.insert(idx, layout);
         }
+
         // display_mir(self.def_id,&body);
         for (index, path_info) in paths.iter().enumerate() {
             self.abstract_states.insert(index, AbstractState::new());
@@ -137,10 +175,10 @@ impl<'tcx> BodyVisitor<'tcx> {
                 call_source: _,
                 fn_span,
             } => {
-                let func_name = format!("{:?}", func);
                 if let Operand::Constant(func_constant) = func {
                     if let ty::FnDef(ref callee_def_id, raw_list) = func_constant.const_.ty().kind()
                     {
+                        let func_name = get_cleaned_def_path_name(self.tcx, *callee_def_id);
                         if self.visit_time == 0 {
                             for generic_arg in raw_list.iter() {
                                 match generic_arg.unpack() {
@@ -237,10 +275,10 @@ impl<'tcx> BodyVisitor<'tcx> {
                 let rpjc_local = self
                     .safedrop_graph
                     .projection(self.tcx, true, rplace.clone());
-                let (align, size) = self.get_layout_by_place_usize(rpjc_local);
+                let ty = self.get_layout_by_place_usize(rpjc_local);
                 let abitem = AbstractStateItem::new(
                     (Value::None, Value::None),
-                    VType::Pointer(align, size),
+                    VType::Pointer(ty),
                     HashSet::from([StateType::AlignState(AlignState::Aligned)]),
                 );
                 self.insert_path_abstate(path_index, lpjc_local, Some(abitem));
@@ -282,12 +320,7 @@ impl<'tcx> BodyVisitor<'tcx> {
     ) {
         if !self.tcx.is_mir_available(def_id) {
             return;
-        } else {
-            // let body = self.tcx.optimized_mir(def_id);
-            // display_mir(*def_id, body);
-            // println!("{:?} has blocks {:?}",def_id, body.basic_blocks.len());
         }
-
         // get pre analysis state
         let mut pre_analysis_state = HashMap::new();
         for (idx, arg) in args.iter().enumerate() {
@@ -297,35 +330,35 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
 
         // check cache
-        let mut recorder = GLOBAL_INTER_RECORDER.lock().unwrap();
-        if let Some(record) = recorder.get_mut(def_id) {
+        let mut gr = self.global_recorder.clone();
+        if let Some(record) = gr.get_mut(def_id) {
             if record.is_pre_state_same(&pre_analysis_state) {
-                // update directly
                 self.update_post_state(&record.post_analysis_state, args, path_index);
-                return;
             }
         }
-        drop(recorder);
 
         // update post states and cache
-        let mut inter_body_visitor: BodyVisitor<'_> =
-            BodyVisitor::new(self.tcx, *def_id, self.visit_time + 1);
+        let tcx = self.tcx;
+        let mut inter_body_visitor: BodyVisitor<'_> = BodyVisitor::new(
+            tcx,
+            *def_id,
+            self.global_recorder.clone(),
+            self.visit_time + 1,
+        );
         inter_body_visitor.path_forward_check();
-        let post_analysis_state: HashMap<usize, Option<AbstractStateItem>> =
-            inter_body_visitor.get_args_post_states();
+        let post_analysis_state: HashMap<usize, Option<AbstractStateItem<'_>>> =
+            inter_body_visitor.get_args_post_states().clone();
         // self.update_post_state(&post_analysis_state, args, path_index);
-        let mut recorder = GLOBAL_INTER_RECORDER.lock().unwrap();
-        recorder.insert(
+        self.global_recorder.insert(
             *def_id,
             InterAnalysisRecord::new(pre_analysis_state, post_analysis_state),
         );
-        // drop(recorder);
     }
 
     // if inter analysis's params are in mut_ref, then we should update their post states
     pub fn update_post_state(
         &mut self,
-        post_state: &HashMap<usize, Option<AbstractStateItem>>,
+        post_state: &HashMap<usize, Option<AbstractStateItem<'tcx>>>,
         args: &Box<[Spanned<Operand>]>,
         path_index: usize,
     ) {
@@ -337,10 +370,12 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
-    pub fn get_args_post_states(&mut self) -> HashMap<usize, Option<AbstractStateItem>> {
+    pub fn get_args_post_states(&mut self) -> HashMap<usize, Option<AbstractStateItem<'tcx>>> {
+        let tcx = self.tcx;
+        let def_id = self.def_id;
         let final_states = self.abstract_states_mop();
         let mut result_states = HashMap::new();
-        let fn_sig = self.tcx.fn_sig(self.def_id).skip_binder();
+        let fn_sig = tcx.fn_sig(def_id).skip_binder();
         let num_params = fn_sig.inputs().skip_binder().len();
         for i in 0..num_params {
             if let Some(state) = final_states.state_map.get(&(i + 1)) {
@@ -358,7 +393,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         results
     }
 
-    pub fn abstract_states_mop(&mut self) -> AbstractState {
+    pub fn abstract_states_mop(&mut self) -> AbstractState<'tcx> {
         let mut result_state = AbstractState {
             state_map: HashMap::new(),
         };
@@ -387,7 +422,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         if self.visit_time != 0 {
             return;
         }
-        Self::display_hashmap(&self.local_ty, 1);
+        // Self::display_hashmap(&self.local_ty, 1);
         display_mir(self.def_id, self.tcx.optimized_mir(self.def_id));
         println!("---------------");
         println!("--def_id: {:?}", self.def_id);
@@ -458,7 +493,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         &mut self,
         path_index: usize,
         place: usize,
-        abitem: Option<AbstractStateItem>,
+        abitem: Option<AbstractStateItem<'tcx>>,
     ) {
         self.abstract_states
             .entry(path_index)
@@ -469,43 +504,50 @@ impl<'tcx> BodyVisitor<'tcx> {
             .insert(place, abitem);
     }
 
-    pub fn get_layout_by_place_usize(&self, place: usize) -> (usize, usize) {
-        *self.local_ty.get(&place).unwrap()
+    pub fn get_layout_by_place_usize(&self, place: usize) -> PlaceTy<'tcx> {
+        self.local_ty.get(&place).unwrap().clone()
     }
 
-    pub fn visit_ty_and_get_layout(&self, ty: Ty<'tcx>) -> (usize, usize) {
+    pub fn visit_ty_and_get_layout(&self, ty: Ty<'tcx>) -> PlaceTy<'tcx> {
         match ty.kind() {
             TyKind::RawPtr(ty, _)
             | TyKind::Ref(_, ty, _)
             | TyKind::Slice(ty)
-            | TyKind::Array(ty, _) => self.get_layout_by_ty(*ty),
-            _ => (0, 0),
-        }
-    }
-
-    pub fn get_layout_by_ty(&self, ty: Ty<'tcx>) -> (usize, usize) {
-        let param_env = self.tcx.param_env(self.def_id);
-        if let Ok(_) = self.tcx.layout_of(param_env.and(ty)) {
-            let layout = self.tcx.layout_of(param_env.and(ty)).unwrap();
-            let align = layout.align.abi.bytes_usize();
-            let size = layout.size.bytes() as usize;
-            return (align, size);
-        } else {
-            match ty.kind() {
-                TyKind::Array(inner_ty, _) | TyKind::Slice(inner_ty) => {
-                    return self.get_layout_by_ty(*inner_ty);
+            | TyKind::Array(ty, _) => self.visit_ty_and_get_layout(*ty),
+            TyKind::Param(param_ty) => {
+                let generic_name = param_ty.name.as_str().to_string();
+                let mut layout_set: HashSet<(usize, usize)> = HashSet::new();
+                let ty_set = self.generic_map.get(&generic_name.clone());
+                if ty_set.is_none() {
+                    rap_error!("Can not get generic type set: {:?}", ty_set);
                 }
-                _ => {}
+                for ty in ty_set.unwrap().clone() {
+                    if let PlaceTy::Ty(align, size) = self.visit_ty_and_get_layout(ty) {
+                        layout_set.insert((align, size));
+                    }
+                }
+                return PlaceTy::GenericTy(generic_name, ty_set.unwrap().clone(), layout_set);
+            }
+            _ => {
+                let param_env = self.tcx.param_env(self.def_id);
+                if let Ok(_) = self.tcx.layout_of(param_env.and(ty)) {
+                    let layout = self.tcx.layout_of(param_env.and(ty)).unwrap();
+                    let align = layout.align.abi.bytes_usize();
+                    let size = layout.size.bytes() as usize;
+                    return PlaceTy::Ty(align, size);
+                } else {
+                    rap_error!("Find type {:?} that can't get layout!", ty);
+                    PlaceTy::Ty(0, 0)
+                }
             }
         }
-        return (0, 0);
     }
 
     pub fn get_abstate_by_place_in_path(
         &self,
         place: usize,
         path_index: usize,
-    ) -> Option<AbstractStateItem> {
+    ) -> Option<AbstractStateItem<'tcx>> {
         if let Some(abstate) = self.abstract_states.get(&path_index) {
             if let Some(_) = abstate.state_map.get(&place).cloned() {
                 return abstate.state_map.get(&place).cloned().unwrap();
@@ -538,35 +580,27 @@ impl<'tcx> BodyVisitor<'tcx> {
         path_index: usize,
         cast_kind: &CastKind,
     ) {
-        let mut src_align = self.get_layout_by_place_usize(rpjc_local).0;
+        let mut src_ty = self.get_layout_by_place_usize(rpjc_local);
         match cast_kind {
             CastKind::PtrToPtr | CastKind::PointerCoercion(_, _) => {
                 if let Some(r_abitem) = self.get_abstate_by_place_in_path(rpjc_local, path_index) {
                     for state in &r_abitem.state {
-                        if let StateType::AlignState(r_align_state) = state {
+                        if let StateType::AlignState(r_align_state) = state.clone() {
                             match r_align_state {
-                                AlignState::Small2BigCast(from, _to)
-                                | AlignState::Big2SmallCast(from, _to) => {
-                                    src_align = *from;
+                                AlignState::Cast(from, _to) => {
+                                    src_ty = from.clone();
                                 }
                                 _ => {}
                             }
                         }
                     }
                 }
-                let (dst_align, dst_size) = self.visit_ty_and_get_layout(*ty);
-                let align_state = match dst_align.cmp(&src_align) {
-                    std::cmp::Ordering::Greater => {
-                        StateType::AlignState(AlignState::Small2BigCast(src_align, dst_align))
-                    }
-                    std::cmp::Ordering::Less => {
-                        StateType::AlignState(AlignState::Big2SmallCast(src_align, dst_align))
-                    }
-                    std::cmp::Ordering::Equal => StateType::AlignState(AlignState::Aligned),
-                };
+                let dst_ty = self.visit_ty_and_get_layout(*ty);
+                let align_state =
+                    StateType::AlignState(AlignState::Cast(src_ty.clone(), dst_ty.clone()));
                 let abitem = AbstractStateItem::new(
                     (Value::None, Value::None),
-                    VType::Pointer(dst_align, dst_size),
+                    VType::Pointer(dst_ty),
                     HashSet::from([align_state]),
                 );
                 self.insert_path_abstate(path_index, lpjc_local, Some(abitem));

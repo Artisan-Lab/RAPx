@@ -8,6 +8,7 @@ pub mod std_unsafety_isolation;
 use crate::analysis::unsafety_isolation::generate_dot::UigUnit;
 use crate::analysis::unsafety_isolation::hir_visitor::{ContainsUnsafe, RelatedFnCollector};
 use crate::analysis::unsafety_isolation::isolation_graph::*;
+use crate::analysis::utils::fn_info::*;
 use rustc_hir::def_id::DefId;
 use rustc_middle::{
     mir::{Operand, TerminatorKind},
@@ -64,7 +65,7 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                         self.check_doc(def_id);
                     }
                     if ins == UigInstruction::Ucons {
-                        if Self::get_type(self.tcx, def_id) == 0 {
+                        if get_type(self.tcx, def_id) == 0 {
                             println!(
                                 "Find unsafe constructor: {:?}, location:{:?}.",
                                 def_id, span
@@ -101,7 +102,7 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                     ContainsUnsafe::contains_unsafe(self.tcx, *body_id);
                 let body_did = hir_map.body_owner_def_id(*body_id).to_def_id();
                 if function_unsafe || block_unsafe {
-                    let node_type = Self::get_type(self.tcx, body_did);
+                    let node_type = get_type(self.tcx, body_did);
                     let name = self.get_name(body_did);
                     let mut new_node =
                         IsolationGraphNode::new(body_did, node_type, name, function_unsafe, true);
@@ -151,12 +152,6 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
         return false;
     }
 
-    pub fn check_safety(tcx: TyCtxt<'tcx>, def_id: DefId) -> bool {
-        let poly_fn_sig = tcx.fn_sig(def_id);
-        let fn_sig = poly_fn_sig.skip_binder();
-        fn_sig.safety() == rustc_hir::Safety::Unsafe
-    }
-
     pub fn get_name(&self, body_did: DefId) -> String {
         let tcx = self.tcx;
         let mut name = String::new();
@@ -178,31 +173,6 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
         return name;
     }
 
-    //retval: 0-constructor, 1-method, 2-function
-    pub fn get_type(tcx: TyCtxt<'tcx>, def_id: DefId) -> usize {
-        let mut node_type = 2;
-        if let Some(assoc_item) = tcx.opt_associated_item(def_id) {
-            if assoc_item.fn_has_self_parameter {
-                node_type = 1;
-            } else {
-                let fn_sig = tcx.fn_sig(def_id).skip_binder();
-                let output = fn_sig.output().skip_binder();
-                // return type is 'Self'
-                if output.is_param(0) {
-                    node_type = 0;
-                }
-                // return type is struct's name
-                if let Some(impl_id) = assoc_item.impl_container(tcx) {
-                    let ty = tcx.type_of(impl_id).skip_binder();
-                    if output == ty {
-                        node_type = 0;
-                    }
-                }
-            }
-        }
-        return node_type;
-    }
-
     pub fn search_constructor(&mut self, def_id: DefId) -> Vec<DefId> {
         let tcx = self.tcx;
         let mut constructors = Vec::new();
@@ -212,13 +182,13 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                 let ty = tcx.type_of(impl_id).skip_binder();
                 if let Some(adt_def) = ty.ty_adt_def() {
                     let adt_def_id = adt_def.did();
-                    let impl_vec = self.get_impls_for_struct(adt_def_id);
+                    let impl_vec = get_impls_for_struct(self.tcx, adt_def_id);
                     for impl_id in impl_vec {
                         let associated_items = tcx.associated_items(impl_id);
                         for item in associated_items.in_definition_order() {
                             if let ty::AssocKind::Fn = item.kind {
                                 let item_def_id = item.def_id;
-                                if Self::get_type(self.tcx, item_def_id) == 0 {
+                                if get_type(self.tcx, item_def_id) == 0 {
                                     constructors.push(item_def_id);
                                     self.check_and_insert_node(item_def_id);
                                     self.set_method_for_constructor(item_def_id, def_id);
@@ -242,15 +212,15 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                 let ty = tcx.type_of(impl_id).skip_binder();
                 if let Some(adt_def) = ty.ty_adt_def() {
                     let adt_def_id = adt_def.did();
-                    let impl_vec = self.get_impls_for_struct(adt_def_id);
+                    let impl_vec = get_impls_for_struct(self.tcx, adt_def_id);
                     for impl_id in impl_vec {
                         let associated_items = tcx.associated_items(impl_id);
                         for item in associated_items.in_definition_order() {
                             if let ty::AssocKind::Fn = item.kind {
                                 let item_def_id = item.def_id;
-                                if Self::get_type(self.tcx, item_def_id) == 0 {
+                                if get_type(self.tcx, item_def_id) == 0 {
                                     constructors.push(item_def_id);
-                                } else if Self::get_type(self.tcx, item_def_id) == 1 {
+                                } else if get_type(self.tcx, item_def_id) == 1 {
                                     methods.push(item_def_id);
                                 }
                             }
@@ -262,26 +232,6 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
         }
         println!("--------methods:{:?}", methods.len());
         constructors
-    }
-
-    pub fn get_impls_for_struct(&self, struct_def_id: DefId) -> Vec<DefId> {
-        let tcx = self.tcx;
-        let mut impls = Vec::new();
-        for item_id in tcx.hir().items() {
-            let item = tcx.hir().item(item_id);
-            if let rustc_hir::ItemKind::Impl(ref impl_item) = item.kind {
-                if let rustc_hir::TyKind::Path(ref qpath) = impl_item.self_ty.kind {
-                    if let rustc_hir::QPath::Resolved(_, ref path) = qpath {
-                        if let rustc_hir::def::Res::Def(_, ref def_id) = path.res {
-                            if *def_id == struct_def_id {
-                                impls.push(item.owner_id.to_def_id());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        impls
     }
 
     // visit the func body and record all its unsafe callees and modify visited_tag
@@ -297,7 +247,7 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                             if let ty::FnDef(ref callee_def_id, _) =
                                 func_constant.const_.ty().kind()
                             {
-                                if Self::check_safety(self.tcx, *callee_def_id) {
+                                if check_safety(self.tcx, *callee_def_id) {
                                     if !callees.contains(callee_def_id) {
                                         callees.push(*callee_def_id);
                                         if !self.check_if_node_exists(*callee_def_id) {
@@ -328,10 +278,10 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
         if self.check_if_node_exists(body_did) {
             return;
         }
-        let node_type = Self::get_type(self.tcx, body_did);
+        let node_type = get_type(self.tcx, body_did);
         let name = self.get_name(body_did);
         let is_crate_api = self.is_crate_api_node(body_did);
-        let node_safety = Self::check_safety(self.tcx, body_did);
+        let node_safety = check_safety(self.tcx, body_did);
         let mut new_node =
             IsolationGraphNode::new(body_did, node_type, name, node_safety, is_crate_api);
         if node_type == 1 {

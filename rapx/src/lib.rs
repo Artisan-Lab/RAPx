@@ -25,7 +25,7 @@ use analysis::core::dataflow::DataFlow;
 use analysis::opt::Opt;
 use analysis::rcanary::rCanary;
 use analysis::safedrop::SafeDrop;
-use analysis::senryx::SenryxCheck;
+use analysis::senryx::{CheckLevel, SenryxCheck};
 use analysis::unsafety_isolation::{UigInstruction, UnsafetyIsolationCheck};
 use analysis::utils::show_mir::ShowMir;
 use rustc_data_structures::sync::Lrc;
@@ -241,7 +241,8 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
     }
 
     if callback.is_annotation_enabled() {
-        SenryxCheck::new(tcx, 2).start();
+        let check_level = CheckLevel::High;
+        SenryxCheck::new(tcx, 2).start(check_level);
     }
 
     if callback.is_show_mir_enabled() {

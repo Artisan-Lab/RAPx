@@ -1,8 +1,10 @@
 pub mod contracts;
+pub mod generic_check;
 pub mod inter_record;
 pub mod matcher;
 pub mod visitor;
 
+use crate::analysis::utils::fn_info::*;
 use crate::{
     analysis::unsafety_isolation::{
         hir_visitor::{ContainsUnsafe, RelatedFnCollector},
@@ -10,86 +12,113 @@ use crate::{
     },
     rap_info, rap_warn,
 };
+use inter_record::InterAnalysisRecord;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{BasicBlock, Operand, TerminatorKind};
 use rustc_middle::ty;
 use rustc_middle::ty::TyCtxt;
-use std::collections::HashSet;
-use visitor::CheckResult;
-// use visitor::{BodyVisitor, CheckResult};
+use std::collections::{HashMap, HashSet};
+use visitor::{BodyVisitor, CheckResult};
 
-use super::unsafety_isolation::generate_dot::UigUnit;
+pub enum CheckLevel {
+    High,
+    Medium,
+    Low,
+}
 
 pub struct SenryxCheck<'tcx> {
     pub tcx: TyCtxt<'tcx>,
     pub threshhold: usize,
+    pub global_recorder: HashMap<DefId, InterAnalysisRecord<'tcx>>,
 }
 
 impl<'tcx> SenryxCheck<'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>, threshhold: usize) -> Self {
-        Self { tcx, threshhold }
+        Self {
+            tcx,
+            threshhold,
+            global_recorder: HashMap::new(),
+        }
     }
 
-    pub fn start(&self) {
-        let related_items = RelatedFnCollector::collect(self.tcx); // find all func
-        let hir_map = self.tcx.hir();
-        for (_, &ref vec) in &related_items {
+    pub fn start(&mut self, check_level: CheckLevel) {
+        let hir_map = self.tcx.hir().clone();
+        let tcx = self.tcx;
+        let related_items = RelatedFnCollector::collect(tcx);
+        for (_, &ref vec) in &related_items.clone() {
             for (body_id, _span) in vec {
                 let (function_unsafe, block_unsafe) =
-                    ContainsUnsafe::contains_unsafe(self.tcx, *body_id);
+                    ContainsUnsafe::contains_unsafe(tcx, *body_id);
                 let def_id = hir_map.body_owner_def_id(*body_id).to_def_id();
+                if !Self::filter_by_check_level(tcx, &check_level, def_id) {
+                    continue;
+                }
                 if block_unsafe {
                     self.check_soundness(def_id);
                 }
                 if function_unsafe {
-                    self.annotate_safety(def_id);
+                    // self.annotate_safety(def_id, &mut global_recorder);
                 }
             }
         }
     }
 
-    pub fn check_soundness(&self, def_id: DefId) {
-        let _check_results = self.body_visit_and_check(def_id);
-        // if check_results.len() > 0 {
-        //     Self::show_check_results(def_id, check_results);
-        // }
-    }
-
-    pub fn annotate_safety(&self, def_id: DefId) {
-        let annotation_results = self.get_annotation(def_id);
-        if annotation_results.len() == 0 {
-            return;
+    pub fn filter_by_check_level(
+        tcx: TyCtxt<'tcx>,
+        check_level: &CheckLevel,
+        def_id: DefId,
+    ) -> bool {
+        match *check_level {
+            CheckLevel::High => check_visibility(tcx, def_id),
+            _ => true,
         }
-        Self::show_annotate_results(self.tcx, def_id, annotation_results);
     }
 
-    // pub fn body_visit_and_check(&self, def_id: DefId) -> Vec<CheckResult> {
-    //     let mut uig_checker = UnsafetyIsolationCheck::new(self.tcx);
-    //     let func_type = UnsafetyIsolationCheck::get_type(self.tcx,def_id);
-    //     let mut body_visitor = BodyVisitor::new(self.tcx, def_id, 0);
-    //     if func_type == 1 {
-    //         let func_cons = uig_checker.search_constructor(def_id);
-    //         for func_con in func_cons {
-    //             let mut cons_body_visitor = BodyVisitor::new(self.tcx, func_con, 0);
-    //             cons_body_visitor.path_forward_check();
-    //             // TODO: cache fields' states
-    //             // TODO: update method body's states
-    //             // analyze body's states
-    //             body_visitor.path_forward_check();
-    //         }
-    //     } else {
-    //         body_visitor.path_forward_check();
-    //     }
-    //     return body_visitor.check_results;
-    // }
+    pub fn check_soundness(&mut self, def_id: DefId) {
+        let check_results = self.body_visit_and_check(def_id);
+        let tcx = self.tcx;
+        if check_results.len() > 0 {
+            Self::show_check_results(tcx, def_id, check_results);
+        }
+    }
 
-    pub fn body_visit_and_check(&self, def_id: DefId) {
+    pub fn annotate_safety(&self, _def_id: DefId) {
+        // let annotation_results = self.get_annotation(def_id, global_recorder);
+        // if annotation_results.len() == 0 {
+        //     return;
+        // }
+        // Self::show_annotate_results(self.tcx, def_id, annotation_results);
+    }
+
+    pub fn body_visit_and_check(&mut self, def_id: DefId) -> Vec<CheckResult<'tcx>> {
+        let mut body_visitor = BodyVisitor::new(self.tcx, def_id, self.global_recorder.clone(), 0);
+        let func_type = get_type(self.tcx, def_id);
+        if func_type == 1 {
+            let func_cons = get_cons(self.tcx, def_id);
+            for func_con in func_cons {
+                let mut cons_body_visitor =
+                    BodyVisitor::new(self.tcx, func_con.0, self.global_recorder.clone(), 0);
+                cons_body_visitor.path_forward_check();
+                // TODO: cache fields' states
+
+                // TODO: update method body's states
+
+                // analyze body's states
+                body_visitor.path_forward_check();
+            }
+        } else {
+            body_visitor.path_forward_check();
+        }
+        return body_visitor.check_results;
+    }
+
+    pub fn body_visit_and_check_uig(&self, def_id: DefId) {
         let mut uig_checker = UnsafetyIsolationCheck::new(self.tcx);
-        let func_type = UnsafetyIsolationCheck::get_type(self.tcx, def_id);
+        let func_type = get_type(self.tcx, def_id);
         if func_type == 1 && self.get_annotation(def_id).len() > 0 {
             let func_cons = uig_checker.search_constructor(def_id);
             for func_con in func_cons {
-                if UnsafetyIsolationCheck::check_safety(self.tcx, func_con) {
+                if check_safety(self.tcx, func_con) {
                     Self::show_annotate_results(self.tcx, func_con, self.get_annotation(def_id));
                     // uphold safety to unsafe constructor
                 }
@@ -119,8 +148,8 @@ impl<'tcx> SenryxCheck<'tcx> {
                 } => match func {
                     Operand::Constant(c) => match c.ty().kind() {
                         ty::FnDef(id, ..) => {
-                            if UigUnit::get_sp(self.tcx, *id).len() > 0 {
-                                results.extend(UigUnit::get_sp(self.tcx, *id));
+                            if get_sp(self.tcx, *id).len() > 0 {
+                                results.extend(get_sp(self.tcx, *id));
                             } else {
                                 results.extend(self.get_annotation(*id));
                             }
@@ -138,7 +167,7 @@ impl<'tcx> SenryxCheck<'tcx> {
     pub fn show_check_results(tcx: TyCtxt<'tcx>, def_id: DefId, check_results: Vec<CheckResult>) {
         rap_info!(
             "--------In safe function {:?}---------",
-            UigUnit::get_cleaned_def_path_name(tcx, def_id)
+            get_cleaned_def_path_name(tcx, def_id)
         );
         for check_result in check_results {
             rap_info!(
@@ -160,7 +189,7 @@ impl<'tcx> SenryxCheck<'tcx> {
     ) {
         rap_info!(
             "--------In unsafe function {:?}---------",
-            UigUnit::get_cleaned_def_path_name(tcx, def_id)
+            get_cleaned_def_path_name(tcx, def_id)
         );
         rap_warn!("Lack safety annotations: {:?}.", annotation_results);
     }

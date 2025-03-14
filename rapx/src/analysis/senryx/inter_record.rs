@@ -1,24 +1,17 @@
-use lazy_static::lazy_static;
-use rustc_hir::def_id::DefId;
-use std::{collections::HashMap, sync::Mutex};
+use std::collections::HashMap;
 
 use super::contracts::abstract_state::AbstractStateItem;
 
-lazy_static! {
-    pub static ref GLOBAL_INTER_RECORDER: Mutex<HashMap<DefId, InterAnalysisRecord>> =
-        Mutex::new(HashMap::new());
-}
-// static mut GLOBAL_INTER_RECORDER: HashMap<DefId,InterAnalysisRecord> = HashMap::new();
-
-pub struct InterAnalysisRecord {
-    pub pre_analysis_state: HashMap<usize, Option<AbstractStateItem>>,
-    pub post_analysis_state: HashMap<usize, Option<AbstractStateItem>>,
+#[derive(Debug, Clone)]
+pub struct InterAnalysisRecord<'tcx> {
+    pub pre_analysis_state: HashMap<usize, Option<AbstractStateItem<'tcx>>>,
+    pub post_analysis_state: HashMap<usize, Option<AbstractStateItem<'tcx>>>,
 }
 
-impl InterAnalysisRecord {
+impl<'tcx> InterAnalysisRecord<'tcx> {
     pub fn new(
-        pre_analysis_state: HashMap<usize, Option<AbstractStateItem>>,
-        post_analysis_state: HashMap<usize, Option<AbstractStateItem>>,
+        pre_analysis_state: HashMap<usize, Option<AbstractStateItem<'tcx>>>,
+        post_analysis_state: HashMap<usize, Option<AbstractStateItem<'tcx>>>,
     ) -> Self {
         Self {
             pre_analysis_state,
@@ -28,7 +21,7 @@ impl InterAnalysisRecord {
 
     pub fn is_pre_state_same(
         &self,
-        other_pre_state: &HashMap<usize, Option<AbstractStateItem>>,
+        other_pre_state: &HashMap<usize, Option<AbstractStateItem<'tcx>>>,
     ) -> bool {
         self.pre_analysis_state == *other_pre_state
     }
