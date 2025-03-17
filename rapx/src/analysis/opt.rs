@@ -61,10 +61,14 @@ impl<'tcx> Opt<'tcx> {
         let next_iterator_checks: Vec<NextIteratorCheck> = dataflow
             .graphs
             .iter()
-            .map(|(_, graph)| {
+            .filter_map(|(_, graph)| {
                 let mut next_iterator_check = NextIteratorCheck::new();
                 next_iterator_check.check(graph, &self.tcx);
-                next_iterator_check
+                if next_iterator_check.valid {
+                    Some(next_iterator_check)
+                } else {
+                    None
+                }
             })
             .collect();
         if !(bounds_checks.is_empty()

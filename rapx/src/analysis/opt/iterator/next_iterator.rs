@@ -59,6 +59,7 @@ impl<'tcx> intravisit::Visitor<'tcx> for NextFinder<'tcx> {
 pub struct NextIteratorCheck {
     next_record: Vec<Span>,
     chain_record: Vec<Span>,
+    pub valid: bool,
 }
 
 impl OptCheck for NextIteratorCheck {
@@ -66,6 +67,7 @@ impl OptCheck for NextIteratorCheck {
         Self {
             next_record: Vec::new(),
             chain_record: Vec::new(),
+            valid: false,
         }
     }
 
@@ -80,8 +82,13 @@ impl OptCheck for NextIteratorCheck {
             chain_record: Vec::new(),
         };
         intravisit::walk_body(&mut next_chain_finder, body);
-        self.next_record = next_chain_finder.next_record;
-        self.chain_record = next_chain_finder.chain_record;
+        if next_chain_finder.chain_record.is_empty() || next_chain_finder.next_record.is_empty() {
+            self.valid = false;
+        } else {
+            self.valid = true;
+            self.next_record = next_chain_finder.next_record;
+            self.chain_record = next_chain_finder.chain_record;
+        }
     }
 
     fn report(&self, graph: &Graph) {
@@ -104,7 +111,8 @@ fn report_next_iterator_bug(next_record: &Vec<Span>, chain_record: &Vec<Span>, g
     }
     let message = Level::Warning
         .title("Inefficient iterators detected")
-        .snippet(snippet);
+        .snippet(snippet)
+        .footer(Level::Help.title("Use chunk iterators."));
     let renderer = Renderer::styled();
     println!("{}", renderer.render(message));
 }
