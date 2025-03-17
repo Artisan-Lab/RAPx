@@ -64,7 +64,8 @@ impl<'tcx> intravisit::Visitor<'tcx> for LoopFinder<'tcx> {
             // if !push_finder.record.is_empty() {
             //     self.record.push((ex.span, push_finder.record));
             // }
-            if push_finder.record.len() == 1 { // we only use simple cases
+            if push_finder.record.len() == 1 {
+                // we only use simple cases
                 self.record.push((ex.span, push_finder.record));
             }
         }
