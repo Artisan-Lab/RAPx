@@ -42,10 +42,10 @@ impl<'tcx> Assignment<'tcx> {
         span: Span,
     ) -> Assignment<'tcx> {
         Assignment {
-            lv: lv,
-            rv: rv,
-            atype: atype,
-            span: span,
+            lv,
+            rv,
+            atype,
+            span,
         }
     }
 }
@@ -72,14 +72,16 @@ pub struct BlockNode<'tcx> {
 
     pub modified_value: FxHashSet<usize>,
     // (SwitchInt target, enum index) -> outside nodes.
-    pub scc_outer: RefCell<Option<FxHashMap<(usize, usize), Vec<usize>>>>,
+    pub scc_outer: SccOuter,
 }
+
+pub type SccOuter = RefCell<Option<FxHashMap<(usize, usize), Vec<usize>>>>;
 
 impl<'tcx> BlockNode<'tcx> {
     pub fn new(index: usize, is_cleanup: bool) -> BlockNode<'tcx> {
         BlockNode {
-            index: index,
-            is_cleanup: is_cleanup,
+            index,
+            is_cleanup,
             next: FxHashSet::<usize>::default(),
             assignments: Vec::<Assignment<'tcx>>::new(),
             calls: Vec::<Terminator<'tcx>>::new(),
@@ -113,13 +115,13 @@ pub struct ValueNode {
 impl ValueNode {
     pub fn new(index: usize, local: usize, need_drop: bool, may_drop: bool) -> Self {
         ValueNode {
-            index: index,
-            local: local,
-            need_drop: need_drop,
+            index,
+            local,
+            need_drop,
             father: local,
             field_id: usize::MAX,
             birth: 0,
-            may_drop: may_drop,
+            may_drop,
             kind: TyKind::Adt,
             fields: FxHashMap::default(),
         }
@@ -138,7 +140,7 @@ impl ValueNode {
     }
 
     pub fn is_ptr(&self) -> bool {
-        return self.kind == TyKind::RawPtr || self.kind == TyKind::Ref;
+        self.kind == TyKind::RawPtr || self.kind == TyKind::Ref
     }
 
     pub fn is_ref(&self) -> bool {
@@ -227,34 +229,32 @@ impl<'tcx> SafeDropGraph<'tcx> {
             // handle general statements
             for stmt in &basicblocks[iter].statements {
                 /* Assign is a tuple defined as Assign(Box<(Place<'tcx>, Rvalue<'tcx>)>) */
-                let span = stmt.source_info.span.clone();
+                let span = stmt.source_info.span;
                 if let StatementKind::Assign(ref assign) = stmt.kind {
                     let lv_local = assign.0.local.as_usize(); // assign.0 is a Place
-                    let lv = assign.0.clone();
+                    let lv = assign.0;
                     cur_bb.modified_value.insert(lv_local);
-                    match assign.1 {
-                        // assign.1 is a Rvalue
-                        Rvalue::Use(ref x) => {
+                    // assign.1 is a Rvalue
+                    match assign.1.clone() {
+                        Rvalue::Use(x) => {
                             match x {
-                                Operand::Copy(ref p) => {
-                                    let rv_local = p.local.as_usize();
+                                Operand::Copy(rv) => {
+                                    let rv_local = rv.local.as_usize();
                                     if values[lv_local].may_drop && values[rv_local].may_drop {
-                                        let rv = p.clone();
                                         let assign =
                                             Assignment::new(lv, rv, AssignType::Copy, span);
                                         cur_bb.assignments.push(assign);
                                     }
                                 }
-                                Operand::Move(ref p) => {
-                                    let rv_local = p.local.as_usize();
+                                Operand::Move(rv) => {
+                                    let rv_local = rv.local.as_usize();
                                     if values[lv_local].may_drop && values[rv_local].may_drop {
-                                        let rv = p.clone();
                                         let assign =
                                             Assignment::new(lv, rv, AssignType::Move, span);
                                         cur_bb.assignments.push(assign);
                                     }
                                 }
-                                Operand::Constant(ref constant) => {
+                                Operand::Constant(constant) => {
                                     /* We should check the correctness due to the update of rustc */
                                     match constant.const_ {
                                         Const::Ty(_ty, const_value) => {
@@ -276,20 +276,20 @@ impl<'tcx> SafeDropGraph<'tcx> {
                                 }
                             }
                         }
-                        Rvalue::Ref(_, _, ref p) | Rvalue::RawPtr(_, ref p) => {
-                            let rv_local = p.local.as_usize();
+                        Rvalue::Ref(_, _, rv) | Rvalue::RawPtr(_, rv) => {
+                            let rv_local = rv.local.as_usize();
                             if values[lv_local].may_drop && values[rv_local].may_drop {
-                                let rv = p.clone();
                                 let assign = Assignment::new(lv, rv, AssignType::Copy, span);
                                 cur_bb.assignments.push(assign);
                             }
                         }
-                        Rvalue::ShallowInitBox(ref x, _) => {
+                        Rvalue::ShallowInitBox(x, _) => {
                             /*
                              * Original ShllowInitBox is a two-level pointer: lvl0 -> lvl1 -> lvl2
                              * Since our alias analysis does not consider multi-level pointer,
                              * We simplify it as: lvl0
                              */
+                            #[allow(clippy::map_entry)]
                             if !values[lv_local].fields.contains_key(&0) {
                                 let mut lvl0 = ValueNode::new(values.len(), lv_local, false, true);
                                 lvl0.birth = values[lv_local].birth;
@@ -300,10 +300,9 @@ impl<'tcx> SafeDropGraph<'tcx> {
                                 values.push(lvl0);
                             }
                             match x {
-                                Operand::Copy(ref p) | Operand::Move(ref p) => {
-                                    let rv_local = p.local.as_usize();
+                                Operand::Copy(rv) | Operand::Move(rv) => {
+                                    let rv_local = rv.local.as_usize();
                                     if values[lv_local].may_drop && values[rv_local].may_drop {
-                                        let rv = p.clone();
                                         let assign =
                                             Assignment::new(lv, rv, AssignType::InitBox, span);
                                         cur_bb.assignments.push(assign);
@@ -312,32 +311,29 @@ impl<'tcx> SafeDropGraph<'tcx> {
                                 Operand::Constant(_) => {}
                             }
                         }
-                        Rvalue::Cast(_, ref x, _) => match x {
-                            Operand::Copy(ref p) => {
-                                let rv_local = p.local.as_usize();
+                        Rvalue::Cast(_, x, _) => match x {
+                            Operand::Copy(rv) => {
+                                let rv_local = rv.local.as_usize();
                                 if values[lv_local].may_drop && values[rv_local].may_drop {
-                                    let rv = p.clone();
                                     let assign = Assignment::new(lv, rv, AssignType::Copy, span);
                                     cur_bb.assignments.push(assign);
                                 }
                             }
-                            Operand::Move(ref p) => {
-                                let rv_local = p.local.as_usize();
+                            Operand::Move(rv) => {
+                                let rv_local = rv.local.as_usize();
                                 if values[lv_local].may_drop && values[rv_local].may_drop {
-                                    let rv = p.clone();
                                     let assign = Assignment::new(lv, rv, AssignType::Move, span);
                                     cur_bb.assignments.push(assign);
                                 }
                             }
                             Operand::Constant(_) => {}
                         },
-                        Rvalue::Aggregate(_, ref x) => {
+                        Rvalue::Aggregate(_, x) => {
                             for each_x in x {
                                 match each_x {
-                                    Operand::Copy(ref p) | Operand::Move(ref p) => {
-                                        let rv_local = p.local.as_usize();
+                                    Operand::Copy(rv) | Operand::Move(rv) => {
+                                        let rv_local = rv.local.as_usize();
                                         if values[lv_local].may_drop && values[rv_local].may_drop {
-                                            let rv = p.clone();
                                             let assign =
                                                 Assignment::new(lv, rv, AssignType::Copy, span);
                                             cur_bb.assignments.push(assign);
@@ -347,8 +343,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
                                 }
                             }
                         }
-                        Rvalue::Discriminant(ref p) => {
-                            let rv = p.clone();
+                        Rvalue::Discriminant(rv) => {
                             let assign = Assignment::new(lv, rv, AssignType::Variant, span);
                             cur_bb.assignments.push(assign);
                         }
@@ -359,7 +354,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
 
             // handle terminator statements
             match terminator.kind {
-                TerminatorKind::Goto { ref target } => {
+                TerminatorKind::Goto { target } => {
                     cur_bb.add_next(target.as_usize());
                 }
                 TerminatorKind::SwitchInt {
@@ -367,7 +362,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
                     ref targets,
                 } => {
                     cur_bb.switch_stmts.push(terminator.clone());
-                    for (_, ref target) in targets.iter() {
+                    for (_, target) in targets.iter() {
                         cur_bb.add_next(target.as_usize());
                     }
                     cur_bb.add_next(targets.otherwise().as_usize());
@@ -378,8 +373,8 @@ impl<'tcx> SafeDropGraph<'tcx> {
                 | TerminatorKind::Unreachable => {}
                 TerminatorKind::Drop {
                     place: _,
-                    ref target,
-                    ref unwind,
+                    target,
+                    unwind,
                     replace: _,
                 } => {
                     cur_bb.add_next(target.as_usize());
@@ -397,24 +392,18 @@ impl<'tcx> SafeDropGraph<'tcx> {
                     call_source: _,
                     fn_span: _,
                 } => {
-                    match func {
-                        Operand::Constant(c) => {
-                            match c.ty().kind() {
-                                ty::FnDef(id, ..) => {
-                                    //rap_info!("The ID of {:?} is {:?}", c, id);
-                                    if id.index.as_usize() == DROP
-                                        || id.index.as_usize() == DROP_IN_PLACE
-                                        || id.index.as_usize() == MANUALLYDROP
-                                        || id.index.as_usize() == BOX_DROP_IN_PLACE
-                                        || id.index.as_usize() == DEALLOC
-                                    {
-                                        cur_bb.drops.push(terminator.clone());
-                                    }
-                                }
-                                _ => {}
+                    if let Operand::Constant(c) = func {
+                        if let ty::FnDef(id, ..) = c.ty().kind() {
+                            //rap_info!("The ID of {:?} is {:?}", c, id);
+                            if id.index.as_usize() == DROP
+                                || id.index.as_usize() == DROP_IN_PLACE
+                                || id.index.as_usize() == MANUALLYDROP
+                                || id.index.as_usize() == BOX_DROP_IN_PLACE
+                                || id.index.as_usize() == DEALLOC
+                            {
+                                cur_bb.drops.push(terminator.clone());
                             }
                         }
-                        _ => (),
                     }
 
                     if let Some(tt) = target {
@@ -485,13 +474,13 @@ impl<'tcx> SafeDropGraph<'tcx> {
         }
 
         SafeDropGraph {
-            def_id: def_id.clone(),
-            tcx: tcx,
+            def_id,
+            tcx,
             span: body.span,
-            blocks: blocks,
-            values: values,
-            arg_size: arg_size,
-            scc_indices: scc_indices,
+            blocks,
+            values,
+            arg_size,
+            scc_indices,
             constant: FxHashMap::default(),
             return_set: FxHashSet::default(),
             bug_records: BugRecords::new(),
@@ -522,10 +511,8 @@ impl<'tcx> SafeDropGraph<'tcx> {
             if dfn[target] == 0 {
                 self.tarjan(target, stack, instack, dfn, low, time);
                 low[index] = min(low[index], low[target]);
-            } else {
-                if instack.contains(&target) {
-                    low[index] = min(low[index], dfn[target]);
-                }
+            } else if instack.contains(&target) {
+                low[index] = min(low[index], dfn[target]);
             }
         }
 
@@ -550,7 +537,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
                     modified_set.insert(*value);
                 }
                 if let Some(target) = self.switch_target(self.tcx, node) {
-                    if self.blocks[index].switch_stmts.len() > 0 {
+                    if !self.blocks[index].switch_stmts.is_empty() {
                         switch_target.push((target, self.blocks[index].switch_stmts[0].clone()));
                     }
                 }
@@ -595,8 +582,8 @@ impl<'tcx> SafeDropGraph<'tcx> {
     pub fn solve_scc(&mut self) {
         let mut stack = Vec::<usize>::new();
         let mut instack = FxHashSet::<usize>::default();
-        let mut dfn = vec![0 as usize; self.blocks.len()];
-        let mut low = vec![0 as usize; self.blocks.len()];
+        let mut dfn = vec![0; self.blocks.len()];
+        let mut low = vec![0; self.blocks.len()];
         let mut time = 0;
         self.tarjan(0, &mut stack, &mut instack, &mut dfn, &mut low, &mut time);
     }
@@ -608,7 +595,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
         paths: &mut Vec<Vec<usize>>,
     ) {
         let curr_scc_index = self.scc_indices[index];
-        if self.blocks[curr_scc_index].next.len() == 0 {
+        if self.blocks[curr_scc_index].next.is_empty() {
             paths.push(stack.to_vec());
         } else {
             for child in self.blocks[curr_scc_index].next.iter() {
@@ -634,18 +621,16 @@ impl<'tcx> SafeDropGraph<'tcx> {
             return None;
         }
 
-        let res = if let TerminatorKind::SwitchInt { ref discr, .. } = &block.switch_stmts[0].kind {
+        if let TerminatorKind::SwitchInt { discr, .. } = &block.switch_stmts[0].kind {
             match discr {
                 Operand::Copy(p) | Operand::Move(p) => {
-                    let place = self.projection(tcx, false, p.clone());
+                    let place = self.projection(tcx, false, *p);
                     Some(place)
                 }
                 _ => None,
             }
         } else {
             None
-        };
-
-        res
+        }
     }
 }

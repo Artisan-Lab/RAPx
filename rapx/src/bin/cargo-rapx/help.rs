@@ -4,17 +4,20 @@ Usage:
 
 RAPx Options:
 
-Use-After-Free/double free detection.
-    -F or -uaf       command: "cargo rapx -uaf"
+Application:
+    -F or -uaf      use-after-free/double free detection.
+    -M or -mleak    memory leakage detection.
+    -O or -opt      automatically detect code optimization chances.
+    -I or -infer    (under development) infer the safety properties required by unsafe APIs.
+    -V or -verify   (under development) verify if the safety requirements of unsafe API are satisfied.
 
-Memory leakage detection.
-    -M or -mleak     command: "cargo rapx -mleak"
-
-API dependency analysis
-    -api-dep       generate API dependency graphs
-
-Alias Analysis
-    -alias=mop     perform mop-based alias analysis
+Analysis:
+    -alias          perform alias analysis (meet-over-paths)
+    -adg            generate API dependency graphs
+    -callgraph      generate callgraphs
+    -dataflow       (not supported yet) generate dataflow graphs
+    -heap           analyze if the type holds a piece of memory on heap
+    -audit          (under development) generate unsafe code audit units
 
 General command: 
     -H or -help:     show help information
@@ -22,16 +25,8 @@ General command:
 
 The following features are under development
 Unsafe code tracing
-    -UI or -uig      generate unsafe code isolation graphs
 
-Controlflow tracing
-    -callgraph       generate callgraphs
 
-Dataflow tracing
-    -dataflow        generate dataflow graphs
-
-Automatic optimization
-    -O or -opt       automatically detect code optimization chances
 
 NOTE: multiple detections can be processed in single run by 
 appending the options to the arguments. Like `cargo rapx -F -M`

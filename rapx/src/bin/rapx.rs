@@ -31,19 +31,20 @@ fn main() {
         match arg.as_str() {
             "-F" | "-uaf" => compiler.enable_safedrop(),
             "-M" | "-mleak" => compiler.enable_rcanary(),
-            "-alias=mop" => compiler.enable_mop(),
+            "-I" | "-infer" => compiler.enable_annotation(),
+            "-V" | "-verify" => compiler.enable_annotation(),
+            "-O" | "-opt" => compiler.enable_opt(),
+            "-alias" => compiler.enable_mop(),
+            "-heap" => compiler.enable_heap_item(),
+            "-adg" => compiler.enable_api_dep(), // api dependency graph
+            "-callgraph" => compiler.enable_callgraph(),
             "-dataflow" => compiler.enable_dataflow(1),
             "-dataflow=debug" => compiler.enable_dataflow(2),
             "-stdsp" => compiler.enable_unsafety_isolation(1),
             "-doc" => compiler.enable_unsafety_isolation(2),
             "-upg" => compiler.enable_unsafety_isolation(3),
             "-ucons" => compiler.enable_unsafety_isolation(4),
-            "-A" | "-spaa" => compiler.enable_annotation(),
-            "-callgraph" => compiler.enable_callgraph(),
-            "-O" | "-opt" => compiler.enable_opt(),
             "-mir" => compiler.enable_show_mir(),
-            "-api-dep" => compiler.enable_api_dep(),
-            "-heap-item" => compiler.enable_heap_item(),
             _ => args.push(arg),
         }
     }

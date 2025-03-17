@@ -1,7 +1,16 @@
+/// NOTE: This analysis module is currently under development and is highly unstable.
+/// The #[allow(unused)] attribute is applied to suppress excessive lint warnings.
+/// Once the analysis stabilizes, this marker should be removed.
+
+#[allow(unused)]
 mod extract;
+#[allow(unused)]
 mod graph;
+#[allow(unused)]
 mod lifetime;
+#[allow(unused)]
 mod visitor;
+
 use crate::{rap_debug, rap_info};
 use graph::ApiDepGraph;
 use rustc_hir::def_id::LOCAL_CRATE;

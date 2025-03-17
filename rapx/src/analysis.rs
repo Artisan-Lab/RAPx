@@ -1,4 +1,3 @@
-pub mod api_dep;
 pub mod core;
 pub mod opt;
 pub mod rcanary;

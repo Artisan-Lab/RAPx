@@ -36,9 +36,9 @@ impl<'tcx, 'a> FnVisitor<'tcx, 'a> {
     pub fn fn_cnt(&self) -> usize {
         self.fn_cnt
     }
-    pub fn write_funcs<T: Write>(&self, F: &mut T) {
+    pub fn write_funcs<T: Write>(&self, f: &mut T) {
         for id in &self.funcs {
-            write!(F, "{}\n", self.tcx.def_path_str(id)).expect("fail when write funcs");
+            write!(f, "{}\n", self.tcx.def_path_str(id)).expect("fail when write funcs");
         }
     }
 }

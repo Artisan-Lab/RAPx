@@ -89,12 +89,12 @@ fn report_slice_contains_bug(graph: &Graph, contains_span: Span) {
         .annotation(
             Level::Error
                 .span(relative_pos_range(graph.span, contains_span))
-                .label("Vec contains happens here."),
+                .label("Slice contains happens here."),
         );
     let message = Level::Warning
         .title("Improper data collection detected")
         .snippet(snippet)
-        .footer(Level::Help.title("Use Set instead of Vec."));
+        .footer(Level::Help.title("Use Set instead of Slice."));
     let renderer = Renderer::styled();
     println!("{}", renderer.render(message));
 }

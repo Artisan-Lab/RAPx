@@ -1,5 +1,6 @@
 pub mod checking;
 pub mod data_collection;
+pub mod iterator;
 pub mod memory_cloning;
 
 use rustc_middle::ty::TyCtxt;
@@ -9,6 +10,7 @@ use crate::rap_warn;
 use super::core::dataflow::{graph::Graph, DataFlow};
 use checking::bounds_checking::BoundsCheck;
 use data_collection::slice_contains::SliceContainsCheck;
+use iterator::next_iterator::NextIteratorCheck;
 use memory_cloning::used_as_immutable::UsedAsImmutableCheck;
 
 pub struct Opt<'tcx> {
@@ -56,9 +58,23 @@ impl<'tcx> Opt<'tcx> {
                 slice_contains_check
             })
             .collect();
+        let next_iterator_checks: Vec<NextIteratorCheck> = dataflow
+            .graphs
+            .iter()
+            .filter_map(|(_, graph)| {
+                let mut next_iterator_check = NextIteratorCheck::new();
+                next_iterator_check.check(graph, &self.tcx);
+                if next_iterator_check.valid {
+                    Some(next_iterator_check)
+                } else {
+                    None
+                }
+            })
+            .collect();
         if !(bounds_checks.is_empty()
             && used_as_immutable_checks.is_empty()
-            && slice_contains_checks.is_empty())
+            && slice_contains_checks.is_empty()
+            && next_iterator_checks.is_empty())
         {
             rap_warn!("Performance Issues detected");
             for ((_, graph), bounds_check) in dataflow.graphs.iter().zip(bounds_checks.iter()) {
@@ -73,6 +89,11 @@ impl<'tcx> Opt<'tcx> {
                 dataflow.graphs.iter().zip(slice_contains_checks.iter())
             {
                 slice_contains_check.report(graph);
+            }
+            for ((_, graph), next_iterator_check) in
+                dataflow.graphs.iter().zip(next_iterator_checks.iter())
+            {
+                next_iterator_check.report(graph);
             }
         }
     }

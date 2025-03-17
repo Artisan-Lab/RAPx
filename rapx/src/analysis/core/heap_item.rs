@@ -10,7 +10,6 @@ use rustc_target::abi::VariantIdx;
 use colorful::{Color, Colorful};
 use std::collections::{HashMap, HashSet};
 use std::env;
-use std::fmt;
 
 //use stopwatch::Stopwatch;
 use crate::analysis::core::heap_item::ownership::OwnershipLayoutResult;
@@ -99,8 +98,9 @@ impl<'tcx, 'a> TypeAnalysis<'tcx, 'a> {
         let (owner, flags) = unit;
         let vec_str = flags
             .iter()
-            .map(|&b| if b { '1' } else { '0' })
-            .collect::<String>();
+            .map(|&b| if b { "1" } else { "0" })
+            .collect::<Vec<_>>()
+            .join(",");
         format!("({}, [{}])", owner, vec_str)
     }
 
@@ -110,11 +110,12 @@ impl<'tcx, 'a> TypeAnalysis<'tcx, 'a> {
                 "{:?}",
                 EarlyBinder::skip_binder(self.rcx.tcx().type_of(*elem.0))
             );
-            let mut owning = String::new();
-            for inn in elem.1.iter() {
-                let item = Self::format_owner_unit(inn);
-                owning.push_str(&item);
-            }
+            let owning = elem
+                .1
+                .iter()
+                .map(Self::format_owner_unit)
+                .collect::<Vec<_>>()
+                .join(", ");
             rap_info!(
                 "{} {}",
                 name.color(Color::Orange1),

@@ -1,5 +1,5 @@
 [package]
-name = "rcanary02"
+name = "alias_field"
 version = "0.1.0"
 edition = "2021"
 

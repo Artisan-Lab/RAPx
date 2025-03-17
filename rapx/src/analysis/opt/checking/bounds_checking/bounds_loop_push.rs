@@ -61,7 +61,11 @@ impl<'tcx> intravisit::Visitor<'tcx> for LoopFinder<'tcx> {
                 record: Vec::new(),
             };
             intravisit::walk_block(&mut push_finder, block);
-            if !push_finder.record.is_empty() {
+            // if !push_finder.record.is_empty() {
+            //     self.record.push((ex.span, push_finder.record));
+            // }
+            if push_finder.record.len() == 1 {
+                // we only use simple cases
                 self.record.push((ex.span, push_finder.record));
             }
         }
