@@ -97,6 +97,7 @@ pub struct Graph {
     pub nodes: GraphNodes, //constsis of locals in mir and newly created markers
     pub edges: GraphEdges,
     pub n_locals: usize,
+    pub closures: HashSet<DefId>,
 }
 
 impl Graph {
@@ -108,6 +109,7 @@ impl Graph {
             nodes: GraphNodes::from_elem_n(GraphNode::new(), n_locals),
             edges: GraphEdges::new(),
             n_locals,
+            closures: HashSet::new(),
         }
     }
 
@@ -247,6 +249,7 @@ impl Graph {
                             self.nodes[dst].ops[seq] = NodeOp::Aggregate(AggKind::Adt(def_id))
                         }
                         AggregateKind::Closure(def_id, ..) => {
+                            self.closures.insert(def_id);
                             self.nodes[dst].ops[seq] = NodeOp::Aggregate(AggKind::Closure(def_id))
                         }
                         AggregateKind::Coroutine(def_id, ..) => {
