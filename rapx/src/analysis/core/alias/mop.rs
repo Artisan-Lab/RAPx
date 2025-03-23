@@ -11,9 +11,9 @@ use crate::utils::source::*;
 use crate::{rap_debug, rap_info, rap_trace};
 use graph::MopGraph;
 use rustc_data_structures::fx::FxHashMap;
-use rustc_data_structures::fx::FxHashSet;
 use rustc_middle::ty::TyCtxt;
 use rustc_span::def_id::DefId;
+use std::collections::HashSet;
 
 pub const VISIT_LIMIT: usize = 100;
 
@@ -76,7 +76,7 @@ impl<'tcx> MopAlias<'tcx> {
         if self.tcx.is_mir_available(def_id) {
             let mut mop_graph = MopGraph::new(self.tcx, def_id);
             mop_graph.solve_scc();
-            let mut recursion_set = FxHashSet::default();
+            let mut recursion_set = HashSet::default();
             mop_graph.check(0, &mut self.fn_map, &mut recursion_set);
             if mop_graph.visit_times > VISIT_LIMIT {
                 rap_trace!("Over visited: {:?}", def_id);

@@ -1,6 +1,7 @@
+use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{
-    BasicBlock, BasicBlockData, Body, Local, Operand, Place, ProjectionElem, Rvalue, Statement,
-    StatementKind, Terminator, TerminatorKind,
+    AggregateKind, BasicBlock, BasicBlockData, Body, Local, Operand, Place, ProjectionElem, Rvalue,
+    Statement, StatementKind, Terminator, TerminatorKind,
 };
 use rustc_middle::ty::{self, Ty, TyKind, TypeVisitable};
 use rustc_span::source_map::Spanned;
@@ -25,12 +26,16 @@ use crate::utils::log::{
 use crate::utils::source::get_name;
 use crate::{rap_debug, rap_error, rap_trace, rap_warn};
 
+type Disc = Option<VariantIdx>;
+type Aggre = Option<usize>;
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum AsgnKind {
     Assign,
     Reference,
     Pointer,
     Cast,
+    Aggregate,
 }
 
 impl<'tcx, 'a> FlowAnalysis<'tcx, 'a> {
@@ -359,18 +364,21 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         match rvalue {
             Rvalue::Use(op) => {
                 let kind = AsgnKind::Assign;
+                let aggre = None;
                 match op {
                     Operand::Copy(rplace) => {
                         let rvalue_has_projection = has_projection(rplace);
                         match (lvalue_has_projection, rvalue_has_projection) {
                             (true, true) => {
                                 self.handle_copy_field_to_field(
-                                    ctx, goal, solver, kind, lplace, rplace, disc, bidx, sidx,
+                                    ctx, goal, solver, kind, lplace, rplace, disc, aggre, bidx,
+                                    sidx,
                                 );
                             }
                             (true, false) => {
                                 self.handle_copy_to_field(
-                                    ctx, goal, solver, kind, lplace, rplace, disc, bidx, sidx,
+                                    ctx, goal, solver, kind, lplace, rplace, disc, aggre, bidx,
+                                    sidx,
                                 );
                             }
                             (false, true) => {
@@ -390,12 +398,14 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                         match (lvalue_has_projection, rvalue_has_projection) {
                             (true, true) => {
                                 self.handle_move_field_to_field(
-                                    ctx, goal, solver, kind, lplace, rplace, disc, bidx, sidx,
+                                    ctx, goal, solver, kind, lplace, rplace, disc, aggre, bidx,
+                                    sidx,
                                 );
                             }
                             (true, false) => {
                                 self.handle_move_to_field(
-                                    ctx, goal, solver, kind, lplace, rplace, disc, bidx, sidx,
+                                    ctx, goal, solver, kind, lplace, rplace, disc, aggre, bidx,
+                                    sidx,
                                 );
                             }
                             (false, true) => {
@@ -415,16 +425,17 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             }
             Rvalue::Ref(.., rplace) => {
                 let kind = AsgnKind::Reference;
+                let aggre = None;
                 let rvalue_has_projection = has_projection(rplace);
                 match (lvalue_has_projection, rvalue_has_projection) {
                     (true, true) => {
                         self.handle_copy_field_to_field(
-                            ctx, goal, solver, kind, lplace, rplace, disc, bidx, sidx,
+                            ctx, goal, solver, kind, lplace, rplace, disc, aggre, bidx, sidx,
                         );
                     }
                     (true, false) => {
                         self.handle_copy_to_field(
-                            ctx, goal, solver, kind, lplace, rplace, disc, bidx, sidx,
+                            ctx, goal, solver, kind, lplace, rplace, disc, aggre, bidx, sidx,
                         );
                     }
                     (false, true) => {
@@ -439,16 +450,17 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             }
             Rvalue::RawPtr(_, ref rplace) => {
                 let kind = AsgnKind::Reference;
+                let aggre = None;
                 let rvalue_has_projection = has_projection(rplace);
                 match (lvalue_has_projection, rvalue_has_projection) {
                     (true, true) => {
                         self.handle_copy_field_to_field(
-                            ctx, goal, solver, kind, lplace, rplace, disc, bidx, sidx,
+                            ctx, goal, solver, kind, lplace, rplace, disc, aggre, bidx, sidx,
                         );
                     }
                     (true, false) => {
                         self.handle_copy_to_field(
-                            ctx, goal, solver, kind, lplace, rplace, disc, bidx, sidx,
+                            ctx, goal, solver, kind, lplace, rplace, disc, aggre, bidx, sidx,
                         );
                     }
                     (false, true) => {
@@ -463,18 +475,21 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             }
             Rvalue::Cast(_cast_kind, op, ..) => {
                 let kind = AsgnKind::Cast;
+                let aggre = None;
                 match op {
                     Operand::Copy(rplace) => {
                         let rvalue_has_projection = has_projection(rplace);
                         match (lvalue_has_projection, rvalue_has_projection) {
                             (true, true) => {
                                 self.handle_copy_field_to_field(
-                                    ctx, goal, solver, kind, lplace, rplace, disc, bidx, sidx,
+                                    ctx, goal, solver, kind, lplace, rplace, disc, aggre, bidx,
+                                    sidx,
                                 );
                             }
                             (true, false) => {
                                 self.handle_copy_to_field(
-                                    ctx, goal, solver, kind, lplace, rplace, disc, bidx, sidx,
+                                    ctx, goal, solver, kind, lplace, rplace, disc, aggre, bidx,
+                                    sidx,
                                 );
                             }
                             (false, true) => {
@@ -494,12 +509,14 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                         match (lvalue_has_projection, rvalue_has_projection) {
                             (true, true) => {
                                 self.handle_move_field_to_field(
-                                    ctx, goal, solver, kind, lplace, rplace, disc, bidx, sidx,
+                                    ctx, goal, solver, kind, lplace, rplace, disc, aggre, bidx,
+                                    sidx,
                                 );
                             }
                             (true, false) => {
                                 self.handle_move_to_field(
-                                    ctx, goal, solver, kind, lplace, rplace, disc, bidx, sidx,
+                                    ctx, goal, solver, kind, lplace, rplace, disc, aggre, bidx,
+                                    sidx,
                                 );
                             }
                             (false, true) => {
@@ -515,6 +532,62 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                         }
                     }
                     _ => (),
+                }
+            }
+            Rvalue::Aggregate(akind, operands) => {
+                if lvalue_has_projection {
+                    return;
+                }
+                let kind = AsgnKind::Aggregate;
+                match **akind {
+                    AggregateKind::Adt(did, vidx, ..) => {
+                        self.handle_aggregate_init(
+                            ctx, goal, solver, kind, lplace, did, vidx, disc, bidx, sidx,
+                        );
+                        for (fidx, op) in operands.iter().enumerate() {
+                            let aggre = Some(fidx);
+                            match op {
+                                Operand::Copy(ref rplace) => {
+                                    let rvalue_has_projection = has_projection(rplace);
+                                    match rvalue_has_projection {
+                                        true => {
+                                            self.handle_copy_field_to_field(
+                                                ctx, goal, solver, kind, lplace, rplace, disc,
+                                                aggre, bidx, sidx,
+                                            );
+                                        }
+                                        false => {
+                                            self.handle_copy_to_field(
+                                                ctx, goal, solver, kind, lplace, rplace, disc,
+                                                aggre, bidx, sidx,
+                                            );
+                                        }
+                                    }
+                                }
+                                Operand::Move(ref rplace) => {
+                                    let rvalue_has_projection = has_projection(rplace);
+                                    match rvalue_has_projection {
+                                        true => {
+                                            self.handle_move_field_to_field(
+                                                ctx, goal, solver, kind, lplace, rplace, disc,
+                                                aggre, bidx, sidx,
+                                            );
+                                        }
+                                        false => {
+                                            self.handle_move_to_field(
+                                                ctx, goal, solver, kind, lplace, rplace, disc,
+                                                aggre, bidx, sidx,
+                                            );
+                                        }
+                                    }
+                                }
+                                _ => (),
+                            }
+                        }
+                    }
+                    _ => {
+                        return;
+                    }
                 }
             }
             _ => (),
@@ -809,7 +882,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         // extract the ty of the rplace, the rplace has projection like _1.0
         // rpj ty is the exact ty of rplace, the first field ty of rplace
         let rpj_ty = rplace.ty(&self.body().local_decls, self.tcx());
-        let rpj_fields = extract_projection(rplace);
+        let rpj_fields = self.extract_projection(rplace, None);
         if rpj_fields.is_unsupported() {
             // we only support that the field depth is 1 in max
             self.handle_intra_var_unsupported(lu);
@@ -977,7 +1050,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         // extract the ty of the rplace, the rplace has projection like _1.0
         // rpj ty is the exact ty of rplace, the first field ty of rplace
         let rpj_ty = rplace.ty(&self.body().local_decls, self.tcx());
-        let rpj_fields = extract_projection(rplace);
+        let rpj_fields = self.extract_projection(rplace, None);
         if rpj_fields.is_unsupported() {
             // we only support that the field depth is 1 in max
             self.handle_intra_var_unsupported(lu);
@@ -1112,6 +1185,46 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         self.icx_slice_mut().var_mut()[ru] = IntraVar::Init(r_new_bv);
         self.handle_taint(lu, ru);
     }
+    pub(crate) fn handle_aggregate_init(
+        &mut self,
+        ctx: &'ctx z3::Context,
+        goal: &'ctx z3::Goal<'ctx>,
+        solver: &'ctx z3::Solver<'ctx>,
+        _kind: AsgnKind,
+        lplace: &Place<'tcx>,
+        _aggre_did: DefId,
+        vidx: VariantIdx,
+        disc: Disc,
+        bidx: usize,
+        sidx: usize,
+    ) {
+        let llocal = lplace.local;
+        let lu: usize = llocal.as_usize();
+
+        if self.icx_slice.var()[lu].is_unsupported() {
+            return;
+        }
+
+        let l_local_ty = self.body().local_decls[llocal].ty;
+        let default_ownership = self.extract_default_ty_layout(l_local_ty, Some(vidx));
+        if !default_ownership.get_requirement() || default_ownership.is_empty() {
+            return;
+        }
+
+        let llen = default_ownership.layout().len();
+        self.icx_slice_mut().len_mut()[lu] = llen;
+
+        if !self.icx_slice().var[lu].is_init() {
+            let l_ori_name_ctor = new_local_name(lu, bidx, sidx).add("_ctor_asgn");
+            let l_ori_bv_ctor = ast::BV::new_const(ctx, l_ori_name_ctor, llen as u32);
+            let l_ori_zero = ast::BV::from_u64(ctx, 0, llen as u32);
+            let constraint_l_ctor_zero = l_ori_bv_ctor._safe_eq(&l_ori_zero).unwrap();
+            goal.assert(&constraint_l_ctor_zero);
+            solver.assert(&constraint_l_ctor_zero);
+            self.icx_slice_mut().ty_mut()[lu] = TyWithIndex::new(l_local_ty, disc);
+            self.icx_slice_mut().var_mut()[lu] = IntraVar::Init(l_ori_bv_ctor);
+        }
+    }
 
     pub(crate) fn handle_copy_to_field(
         &mut self,
@@ -1122,6 +1235,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         lplace: &Place<'tcx>,
         rplace: &Place<'tcx>,
         mut disc: Disc,
+        aggre: Aggre,
         bidx: usize,
         sidx: usize,
     ) {
@@ -1146,7 +1260,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         // extract the ty of the rvalue
         let l_local_ty = self.body().local_decls[llocal].ty;
-        let lpj_fields = extract_projection(lplace);
+        let lpj_fields = self.extract_projection(lplace, aggre);
         if lpj_fields.is_unsupported() {
             // we only support that the field depth is 1 in max
             self.handle_intra_var_unsupported(lu);
@@ -1311,6 +1425,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         lplace: &Place<'tcx>,
         rplace: &Place<'tcx>,
         mut disc: Disc,
+        aggre: Aggre,
         bidx: usize,
         sidx: usize,
     ) {
@@ -1335,7 +1450,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         // extract the ty of the rvalue
         let l_local_ty = self.body().local_decls[llocal].ty;
-        let lpj_fields = extract_projection(lplace);
+        let lpj_fields = self.extract_projection(lplace, aggre);
         if lpj_fields.is_unsupported() {
             // we only support that the field depth is 1 in max
             self.handle_intra_var_unsupported(lu);
@@ -1480,6 +1595,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         lplace: &Place<'tcx>,
         rplace: &Place<'tcx>,
         disc: Disc,
+        aggre: Aggre,
         bidx: usize,
         sidx: usize,
     ) {
@@ -1505,7 +1621,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         // extract the ty of the rplace, the rplace has projection like _1.0
         // rpj ty is the exact ty of rplace, the first field ty of rplace
-        let rpj_fields = extract_projection(rplace);
+        let rpj_fields = self.extract_projection(rplace, None);
         if rpj_fields.is_unsupported() {
             // we only support that the field depth is 1 in max
             self.handle_intra_var_unsupported(lu);
@@ -1513,7 +1629,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             return;
         }
 
-        let lpj_fields = extract_projection(lplace);
+        let lpj_fields = self.extract_projection(lplace, aggre);
         if lpj_fields.is_unsupported() {
             // we only support that the field depth is 1 in max
             self.handle_intra_var_unsupported(lu);
@@ -1529,7 +1645,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             }
             (false, true) => {
                 self.handle_copy_to_field(
-                    ctx, goal, solver, _kind, lplace, rplace, disc, bidx, sidx,
+                    ctx, goal, solver, _kind, lplace, rplace, disc, aggre, bidx, sidx,
                 );
                 return;
             }
@@ -1666,6 +1782,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         lplace: &Place<'tcx>,
         rplace: &Place<'tcx>,
         disc: Disc,
+        aggre: Aggre,
         bidx: usize,
         sidx: usize,
     ) {
@@ -1692,7 +1809,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         // extract the ty of the rplace, the rplace has projection like _1.0
         // rpj ty is the exact ty of rplace, the first field ty of rplace
         //let rpj_ty = rplace.ty(&self.body().local_decls, self.tcx());
-        let rpj_fields = extract_projection(rplace);
+        let rpj_fields = self.extract_projection(rplace, None);
         if rpj_fields.is_unsupported() {
             // we only support that the field depth is 1 in max
             self.handle_intra_var_unsupported(lu);
@@ -1703,7 +1820,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         // extract the ty of the lplace, the lplace has projection like _1.0
         // lpj ty is the exact ty of lplace, the first field ty of lplace
         //let lpj_ty = lplace.ty(&self.body().local_decls, self.tcx());
-        let lpj_fields = extract_projection(lplace);
+        let lpj_fields = self.extract_projection(lplace, aggre);
         if lpj_fields.is_unsupported() {
             // we only support that the field depth is 1 in max
             self.handle_intra_var_unsupported(lu);
@@ -1719,7 +1836,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             }
             (false, true) => {
                 self.handle_move_to_field(
-                    ctx, goal, solver, _kind, lplace, rplace, disc, bidx, sidx,
+                    ctx, goal, solver, _kind, lplace, rplace, disc, aggre, bidx, sidx,
                 );
             }
             (false, false) => {
@@ -2231,7 +2348,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
                 let llen = self.icx_slice().len()[lu];
 
-                let lpj_fields = extract_projection(dest);
+                let lpj_fields = self.extract_projection(dest, None);
                 let index_needed = lpj_fields.index_needed();
 
                 if self.icx_slice().var()[lu].is_init() {
@@ -2416,7 +2533,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         let rust_bv = reverse_ownership_layout_to_rustbv(&self.icx_slice().layout()[u]);
         let ori_bv = self.icx_slice().var()[u].extract();
 
-        let f = extract_projection(dest);
+        let f = self.extract_projection(dest, None);
         if f.is_unsupported() {
             self.handle_intra_var_unsupported(u);
             return;
@@ -2676,6 +2793,60 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             _ => res,
         }
     }
+
+    fn extract_projection(&self, place: &Place<'tcx>, aggre: Aggre) -> ProjectionSupport<'tcx> {
+        // Extract the field index of the place:
+        // If the ProjectionElem finds the variant is not Field, stop and exit!
+        // This method is used for field sensitivity analysis only!
+        let mut prj: ProjectionSupport<'tcx> = ProjectionSupport::default();
+        if aggre.is_some() {
+            // if the 'Aggregate' is Some, that means ProjectionSupport is used for a local constructor.
+            // Therefore, we do not need to record the ty of such field, instead, the projection
+            // records the ty of the place, it is correct, because for local constructor, we do
+            // not use the type information of the filed, but only need the index to init them one by one.
+            let ty = place.ty(&self.body().local_decls, self.tcx());
+            prj.pf_vec.push((aggre.unwrap(), ty.ty));
+            return prj;
+        }
+        for (idx, each_pj) in place.projection.iter().enumerate() {
+            match each_pj {
+                ProjectionElem::Field(field, ty) => {
+                    prj.pf_push(field.index(), ty);
+                    if prj.pf_vec.len() > 1 {
+                        prj.unsupport = true;
+                        break;
+                    }
+                    if prj.deref {
+                        prj.unsupport = true;
+                        break;
+                    }
+                }
+                ProjectionElem::Deref => {
+                    prj.deref = true;
+                    if idx > 0 {
+                        prj.unsupport = true;
+                        break;
+                    }
+                }
+                ProjectionElem::Downcast(.., ref vidx) => {
+                    prj.downcast = Some(*vidx);
+                    if idx > 0 {
+                        prj.unsupport = true;
+                        break;
+                    }
+                }
+                ProjectionElem::ConstantIndex { .. }
+                | ProjectionElem::Subslice { .. }
+                | ProjectionElem::Index(..)
+                | ProjectionElem::OpaqueCast(..)
+                | ProjectionElem::Subtype(..) => {
+                    prj.unsupport = true;
+                    break;
+                }
+            }
+        }
+        prj
+    }
 }
 
 fn new_local_name(local: usize, bidx: usize, sidx: usize) -> String {
@@ -2757,51 +2928,6 @@ fn has_projection(place: &Place) -> bool {
     };
 }
 
-fn extract_projection<'tcx>(place: &Place<'tcx>) -> ProjectionSupport<'tcx> {
-    // extract the field index of the place
-    // if the ProjectionElem we find the variant is not Field, stop it and exit
-    // for field sensitivity analysis only
-    let mut ans: ProjectionSupport<'tcx> = ProjectionSupport::default();
-    for (idx, each_pj) in place.projection.iter().enumerate() {
-        match each_pj {
-            ProjectionElem::Field(field, ty) => {
-                ans.pf_push(field.index(), ty);
-                if ans.pf_vec.len() > 1 {
-                    ans.unsupport = true;
-                    break;
-                }
-                if ans.deref {
-                    ans.unsupport = true;
-                    break;
-                }
-            }
-            ProjectionElem::Deref => {
-                ans.deref = true;
-                if idx > 0 {
-                    ans.unsupport = true;
-                    break;
-                }
-            }
-            ProjectionElem::Downcast(.., ref vidx) => {
-                ans.downcast = Some(*vidx);
-                if idx > 0 {
-                    ans.unsupport = true;
-                    break;
-                }
-            }
-            ProjectionElem::ConstantIndex { .. }
-            | ProjectionElem::Subslice { .. }
-            | ProjectionElem::Index(..)
-            | ProjectionElem::OpaqueCast(..)
-            | ProjectionElem::Subtype(..) => {
-                ans.unsupport = true;
-                break;
-            }
-        }
-    }
-    ans
-}
-
 fn ownership_layout_to_rustbv(layout: &OwnershipLayout) -> RustBV {
     let mut v = Vec::default();
     for item in layout.iter() {
@@ -2868,5 +2994,3 @@ fn help_debug_goal_term<'tcx, 'ctx>(
     let dbg_bool = ast::Bool::new_const(ctx, debug_name);
     goal.assert(&dbg_bool);
 }
-
-type Disc = Option<VariantIdx>;

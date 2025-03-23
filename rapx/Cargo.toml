@@ -18,6 +18,7 @@ name = "cargo-rapx"
 
 [lib]
 name = "rapx"
+doctest = false
 
 [dependencies]
 lazy_static = "1.4"
