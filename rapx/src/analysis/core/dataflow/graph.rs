@@ -255,8 +255,12 @@ impl Graph {
                         AggregateKind::Coroutine(def_id, ..) => {
                             self.nodes[dst].ops[seq] = NodeOp::Aggregate(AggKind::Coroutine(def_id))
                         }
+                        AggregateKind::RawPtr(_, _mutability) => {
+                            self.nodes[dst].ops[seq] = NodeOp::Aggregate(AggKind::RawPtr)
+                            // We temporarily have not taken mutability into account
+                        }
                         _ => {
-                            println!("{:?}", statement);
+                            println!("{:?}", boxed_kind);
                             todo!()
                         }
                     }
@@ -576,4 +580,5 @@ pub enum AggKind {
     Adt(DefId),
     Closure(DefId),
     Coroutine(DefId),
+    RawPtr,
 }
