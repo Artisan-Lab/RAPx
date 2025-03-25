@@ -13,7 +13,7 @@ impl<'tcx> InterAnalysisRecord<'tcx> {
     pub fn new(
         pre_analysis_state: HashMap<usize, AbstractStateItem<'tcx>>,
         post_analysis_state: HashMap<usize, AbstractStateItem<'tcx>>,
-        ret_state: AbstractStateItem<'tcx>
+        ret_state: AbstractStateItem<'tcx>,
     ) -> Self {
         Self {
             pre_analysis_state,

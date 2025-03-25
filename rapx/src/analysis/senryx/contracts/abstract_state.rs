@@ -81,7 +81,11 @@ impl<'tcx> AbstractStateItem<'tcx> {
     }
 
     pub fn new_default() -> Self {
-        Self { value: (Value::None, Value::None), vtype: VType::None, state: HashSet::new() }
+        Self {
+            value: (Value::None, Value::None),
+            vtype: VType::None,
+            state: HashSet::new(),
+        }
     }
 
     pub fn meet_state_item(&mut self, other_state: &AbstractStateItem<'tcx>) {
@@ -126,11 +130,7 @@ impl<'tcx> PathInfo<'tcx> {
         }
     }
 
-    pub fn insert_abstate(
-        &mut self,
-        place: usize,
-        place_state_item: AbstractStateItem<'tcx>,
-    ) {
+    pub fn insert_abstate(&mut self, place: usize, place_state_item: AbstractStateItem<'tcx>) {
         self.state_map.insert(place, place_state_item);
     }
 }

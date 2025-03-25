@@ -2,6 +2,7 @@ use crate::analysis::senryx::matcher::parse_unsafe_api;
 use crate::analysis::unsafety_isolation::generate_dot::NodeType;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::DefId;
+use rustc_middle::mir::{BasicBlock, Terminator};
 use rustc_middle::ty::Ty;
 use rustc_middle::ty::TyCtxt;
 use rustc_middle::{
@@ -13,7 +14,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
-use rustc_middle::mir::{BasicBlock, Terminator};
 
 pub fn generate_node_ty(tcx: TyCtxt<'_>, def_id: DefId) -> NodeType {
     (def_id, check_safety(tcx, def_id), get_type(tcx, def_id))
@@ -309,8 +309,7 @@ pub fn match_std_unsafe_callee(tcx: TyCtxt<'_>, terminator: &Terminator<'_>) -> 
     match &terminator.kind {
         TerminatorKind::Call { func, .. } => {
             if let Operand::Constant(func_constant) = func {
-                if let ty::FnDef(ref callee_def_id, _raw_list) = func_constant.const_.ty().kind()
-                {
+                if let ty::FnDef(ref callee_def_id, _raw_list) = func_constant.const_.ty().kind() {
                     let func_name = get_cleaned_def_path_name(tcx, *callee_def_id);
                     if parse_unsafe_api(&func_name).is_some() {
                         results.push(func_name);

@@ -53,8 +53,8 @@ impl<'tcx> SenryxCheck<'tcx> {
     pub fn start(&mut self, check_level: CheckLevel, is_verify: bool) {
         let hir_map = self.tcx.hir().clone();
         let tcx = self.tcx;
-        let mut mop =  MopAlias::new(self.tcx);
-        let fn_map =mop.start();
+        let mut mop = MopAlias::new(self.tcx);
+        let fn_map = mop.start();
         let related_items = RelatedFnCollector::collect(tcx);
         for (_, &ref vec) in &related_items.clone() {
             for (body_id, _span) in vec {
@@ -88,8 +88,8 @@ impl<'tcx> SenryxCheck<'tcx> {
         }
     }
 
-    pub fn check_soundness(&mut self, def_id: DefId, fn_map:&FnMap) {
-        let check_results = self.body_visit_and_check(def_id,fn_map);
+    pub fn check_soundness(&mut self, def_id: DefId, fn_map: &FnMap) {
+        let check_results = self.body_visit_and_check(def_id, fn_map);
         let tcx = self.tcx;
         if check_results.len() > 0 {
             Self::show_check_results(tcx, def_id, check_results);
@@ -104,7 +104,11 @@ impl<'tcx> SenryxCheck<'tcx> {
         Self::show_annotate_results(self.tcx, def_id, annotation_results);
     }
 
-    pub fn body_visit_and_check(&mut self, def_id: DefId, fn_map:&FnMap) -> Vec<CheckResult<'tcx>> {
+    pub fn body_visit_and_check(
+        &mut self,
+        def_id: DefId,
+        fn_map: &FnMap,
+    ) -> Vec<CheckResult<'tcx>> {
         let mut body_visitor = BodyVisitor::new(self.tcx, def_id, self.global_recorder.clone(), 0);
         let func_type = get_type(self.tcx, def_id);
         if func_type == 1 {
@@ -192,7 +196,11 @@ impl<'tcx> SenryxCheck<'tcx> {
                 check_result.failed_contracts.len()
             );
             for failed_contract in &check_result.failed_contracts {
-                cond_print!(check_result.failed_contracts.len() > 0, "      Contract failed: {:?}", failed_contract);
+                cond_print!(
+                    check_result.failed_contracts.len() > 0,
+                    "      Contract failed: {:?}",
+                    failed_contract
+                );
             }
         }
     }

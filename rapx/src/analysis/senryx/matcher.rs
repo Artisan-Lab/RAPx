@@ -1,7 +1,7 @@
-use std::collections::{HashMap, HashSet};
 use rustc_middle::mir::Operand;
 use rustc_span::source_map::Spanned;
 use rustc_span::Span;
+use std::collections::{HashMap, HashSet};
 
 use crate::analysis::utils::fn_info::get_sp_json;
 
@@ -11,7 +11,7 @@ use super::{
         checker::{Checker, SliceFromRawPartsChecker},
         contract::check_contract,
     },
-    visitor::CheckResult
+    visitor::CheckResult,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -32,9 +32,7 @@ pub struct UnsafeApi {
     pub sps: Vec<HashSet<Sp>>,
 }
 
-pub fn parse_unsafe_api(
-    func_name: &str,
-) -> Option<UnsafeApi> {
+pub fn parse_unsafe_api(func_name: &str) -> Option<UnsafeApi> {
     let json_data = get_sp_json();
     let function_info = json_data.get(func_name)?;
 
@@ -49,14 +47,12 @@ pub fn parse_unsafe_api(
                             // split sp_name and sank set
                             let (name, nums) = match s.split_once(':') {
                                 Some((n, ns)) => (n, ns.split(',')),
-                                None => (s, "".split(','))
+                                None => (s, "".split(',')),
                             };
-                            
+
                             // parse sank set num
-                            let sank_set = nums
-                                .filter_map(|n| n.trim().parse().ok())
-                                .collect();
-                            
+                            let sank_set = nums.filter_map(|n| n.trim().parse().ok()).collect();
+
                             Some(Sp {
                                 sp_name: name.to_string(),
                                 sank_set,
@@ -71,13 +67,12 @@ pub fn parse_unsafe_api(
 
     let mut sorted_params: Vec<_> = params.into_iter().collect();
     sorted_params.sort_by_key(|(k, _)| *k);
-    
+
     Some(UnsafeApi {
         api_name: func_name.to_string(),
         sps: sorted_params.into_iter().map(|(_, v)| v).collect(),
     })
 }
-
 
 pub fn match_unsafe_api_and_check_contracts<'tcx, T>(
     func_name: &str,

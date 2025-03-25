@@ -3,16 +3,16 @@ use crate::analysis::safedrop::graph::SafeDropGraph;
 use crate::analysis::utils::fn_info::get_cleaned_def_path_name;
 use crate::analysis::utils::show_mir::display_mir;
 use crate::rap_warn;
+use rustc_middle::mir::Local;
+use rustc_middle::mir::ProjectionElem;
 use rustc_span::source_map::Spanned;
 use rustc_span::Span;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
-use rustc_middle::mir::Local;
-use rustc_middle::mir::ProjectionElem;
 
 use super::contracts::abstract_state::{
-    PathInfo, AbstractStateItem, AlignState, StateType, VType, Value
+    AbstractStateItem, AlignState, PathInfo, StateType, VType, Value,
 };
 use super::contracts::contract::Contract;
 use super::dominated_chain::DominatedGraph;
@@ -65,7 +65,7 @@ impl<'tcx> PlaceTy<'tcx> {
                 set
             }
             PlaceTy::GenericTy(_, _, tys) => tys.iter().map(|ty| ty.0).collect(),
-            _ => HashSet::new()
+            _ => HashSet::new(),
         }
     }
 }
@@ -117,18 +117,18 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
-    pub fn get_ty_by_place(&self,p:usize) -> Ty<'tcx> {
+    pub fn get_ty_by_place(&self, p: usize) -> Ty<'tcx> {
         let body = self.tcx.optimized_mir(self.def_id);
         let locals = body.local_decls.clone();
         return locals[Local::from(p)].ty;
     }
 
-    pub fn path_forward_check(&mut self, fn_map:&FnMap) {
-        if self.visit_time >= 1000{
+    pub fn path_forward_check(&mut self, fn_map: &FnMap) {
+        if self.visit_time >= 1000 {
             return;
         }
         let paths = self.get_all_paths();
-        if self.visit_time == 0{
+        if self.visit_time == 0 {
             // rap_warn!("{:?}",self.chains.variables);
         }
         let body = self.tcx.optimized_mir(self.def_id);
@@ -177,12 +177,12 @@ impl<'tcx> BodyVisitor<'tcx> {
         block: &BasicBlockData<'tcx>,
         path_index: usize,
         bb_index: usize,
-        fn_map:&FnMap,
+        fn_map: &FnMap,
     ) {
         for statement in block.statements.iter() {
             self.path_analyze_statement(statement, path_index);
         }
-        self.path_analyze_terminator(&block.terminator(), path_index, bb_index,fn_map);
+        self.path_analyze_terminator(&block.terminator(), path_index, bb_index, fn_map);
     }
 
     pub fn path_analyze_terminator(
@@ -190,7 +190,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         terminator: &Terminator<'tcx>,
         path_index: usize,
         _bb_index: usize,
-        fn_map:&FnMap
+        fn_map: &FnMap,
     ) {
         match &terminator.kind {
             TerminatorKind::Call {
@@ -233,7 +233,14 @@ impl<'tcx> BodyVisitor<'tcx> {
                                 }
                             }
                         }
-                        self.handle_call(dst_place,callee_def_id, args, path_index,fn_map,*fn_span);
+                        self.handle_call(
+                            dst_place,
+                            callee_def_id,
+                            args,
+                            path_index,
+                            fn_map,
+                            *fn_span,
+                        );
                     }
                 }
             }
@@ -249,14 +256,10 @@ impl<'tcx> BodyVisitor<'tcx> {
             StatementKind::Intrinsic(box ref intrinsic) => match intrinsic {
                 mir::NonDivergingIntrinsic::CopyNonOverlapping(cno) => {
                     if cno.src.place().is_some() && cno.dst.place().is_some() {
-                        let _src_pjc_local = self.handle_proj(
-                            true,
-                            cno.src.place().unwrap().clone(),
-                        );
-                        let _dst_pjc_local = self.handle_proj(
-                            true,
-                            cno.dst.place().unwrap().clone(),
-                        );
+                        let _src_pjc_local =
+                            self.handle_proj(true, cno.src.place().unwrap().clone());
+                        let _dst_pjc_local =
+                            self.handle_proj(true, cno.dst.place().unwrap().clone());
                     }
                 }
                 _ => {}
@@ -278,8 +281,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         match rvalue {
             Rvalue::Use(op) => match op {
                 Operand::Move(rplace) | Operand::Copy(rplace) => {
-                    let rpjc_local = self
-                        .handle_proj( true, rplace.clone());
+                    let rpjc_local = self.handle_proj(true, rplace.clone());
                     if let Some(ab_state) = self.abstract_states.get(&path_index) {
                         if let Some(r_state_item) = ab_state.state_map.get(&rpjc_local) {
                             self.insert_path_abstate(path_index, lpjc_local, r_state_item.clone());
@@ -291,14 +293,12 @@ impl<'tcx> BodyVisitor<'tcx> {
             },
             Rvalue::Repeat(op, _const) => match op {
                 Operand::Move(rplace) | Operand::Copy(rplace) => {
-                    let _rpjc_local = self
-                        .handle_proj( true, rplace.clone());
+                    let _rpjc_local = self.handle_proj(true, rplace.clone());
                 }
                 _ => {}
             },
             Rvalue::Ref(_, _, rplace) | Rvalue::RawPtr(_, rplace) => {
-                let rpjc_local = self
-                        .handle_proj( true, rplace.clone());
+                let rpjc_local = self.handle_proj(true, rplace.clone());
                 self.chains.point(lpjc_local, rpjc_local);
                 let ty = self.get_layout_by_place_usize(rpjc_local);
                 let abitem = AbstractStateItem::new(
@@ -310,8 +310,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             }
             Rvalue::Cast(cast_kind, op, ty) => match op {
                 Operand::Move(rplace) | Operand::Copy(rplace) => {
-                    let rpjc_local = self
-                        .handle_proj( true, rplace.clone());
+                    let rpjc_local = self.handle_proj(true, rplace.clone());
                     self.chains.point(lpjc_local, rpjc_local);
                     self.handle_cast(rpjc_local, lpjc_local, ty, path_index, cast_kind);
                 }
@@ -320,8 +319,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             Rvalue::BinaryOp(_bin_op, box (ref _op1, ref _op2)) => {}
             Rvalue::ShallowInitBox(op, _ty) => match op {
                 Operand::Move(rplace) | Operand::Copy(rplace) => {
-                    let _rpjc_local = self
-                        .handle_proj( true, rplace.clone());
+                    let _rpjc_local = self.handle_proj(true, rplace.clone());
                 }
                 _ => {}
             },
@@ -334,7 +332,6 @@ impl<'tcx> BodyVisitor<'tcx> {
             }
             _ => {}
         }
-        
     }
 
     pub fn handle_call(
@@ -343,15 +340,21 @@ impl<'tcx> BodyVisitor<'tcx> {
         def_id: &DefId,
         args: &Box<[Spanned<Operand>]>,
         path_index: usize,
-        fn_map:&FnMap,
+        fn_map: &FnMap,
         fn_span: Span,
     ) {
         if !self.tcx.is_mir_available(def_id) {
-            self.insert_path_abstate(path_index, dst_place.local.as_usize(), AbstractStateItem::new_default());
+            self.insert_path_abstate(
+                path_index,
+                dst_place.local.as_usize(),
+                AbstractStateItem::new_default(),
+            );
             return;
         }
 
-        if let Some(fn_result) = parse_unsafe_api(get_cleaned_def_path_name(self.tcx, *def_id).as_str()){
+        if let Some(fn_result) =
+            parse_unsafe_api(get_cleaned_def_path_name(self.tcx, *def_id).as_str())
+        {
             for (idx, sp_set) in fn_result.sps.iter().enumerate() {
                 let arg_place = get_arg_place(&args[idx].node);
                 if arg_place == 0 {
@@ -359,12 +362,12 @@ impl<'tcx> BodyVisitor<'tcx> {
                 }
                 let self_func_name = get_cleaned_def_path_name(self.tcx, self.def_id);
                 let func_name = get_cleaned_def_path_name(self.tcx, *def_id);
-                for sp in sp_set{
+                for sp in sp_set {
                     match sp.sp_name.as_str() {
                         "Aligned" => {
-                            if !self.check_align(arg_place){
+                            if !self.check_align(arg_place) {
                                 rap_warn!("Safe function {:?} uses unsafe callee {:?}, but the pointer may be unaligned!",self_func_name, func_name);
-                                rap_warn!("{:?}",fn_span);
+                                rap_warn!("{:?}", fn_span);
                             }
                         }
                         _ => {}
@@ -372,14 +375,16 @@ impl<'tcx> BodyVisitor<'tcx> {
                 }
             }
         }
-        
+
         if let Some(retalias) = fn_map.get(def_id) {
             for alias_set in retalias.aliases() {
-                let (l,r) = (alias_set.left_index,alias_set.right_index);
+                let (l, r) = (alias_set.left_index, alias_set.right_index);
                 if l == 0 {
-                    self.chains.point(dst_place.local.as_usize(), get_arg_place(&args[r-1].node));
+                    self.chains
+                        .point(dst_place.local.as_usize(), get_arg_place(&args[r - 1].node));
                 } else if r == 0 {
-                    self.chains.point(dst_place.local.as_usize(), get_arg_place(&args[l-1].node));
+                    self.chains
+                        .point(dst_place.local.as_usize(), get_arg_place(&args[l - 1].node));
                 } else {
                     let d = dst_place.local.as_usize();
                 }
@@ -401,7 +406,11 @@ impl<'tcx> BodyVisitor<'tcx> {
         if let Some(record) = gr.get_mut(def_id) {
             if record.is_pre_state_same(&pre_analysis_state) {
                 self.update_post_state(&record.post_analysis_state, args, path_index);
-                self.insert_path_abstate(path_index, dst_place.local.as_usize(), record.ret_state.clone());
+                self.insert_path_abstate(
+                    path_index,
+                    dst_place.local.as_usize(),
+                    record.ret_state.clone(),
+                );
                 return;
             }
         }
@@ -447,7 +456,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         let mut result_states = HashMap::new();
         let fn_sig = tcx.fn_sig(def_id).skip_binder();
         let num_params = fn_sig.inputs().skip_binder().len();
-        for i in 0..num_params+1 {
+        for i in 0..num_params + 1 {
             if let Some(state) = final_states.state_map.get(&(i)) {
                 result_states.insert(i, state.clone());
             } else {
@@ -544,7 +553,7 @@ impl<'tcx> BodyVisitor<'tcx> {
     }
 
     pub fn get_layout_by_place_usize(&self, place: usize) -> PlaceTy<'tcx> {
-        if let Some(pt) = self.local_ty.get(&place){
+        if let Some(pt) = self.local_ty.get(&place) {
             return pt.clone();
         } else {
             if let Some(ty) = self.get_proj_ty(place) {
@@ -571,7 +580,11 @@ impl<'tcx> BodyVisitor<'tcx> {
                 let ty_set = self.generic_map.get(&generic_name.clone());
                 if ty_set.is_none() {
                     if self.visit_time == 0 {
-                        rap_warn!("Can not get generic type set: {:?}, def_id:{:?}", generic_name, self.def_id);
+                        rap_warn!(
+                            "Can not get generic type set: {:?}, def_id:{:?}",
+                            generic_name,
+                            self.def_id
+                        );
                     }
                     return PlaceTy::GenericTy(generic_name, HashSet::new(), layout_set);
                 }
@@ -582,19 +595,17 @@ impl<'tcx> BodyVisitor<'tcx> {
                 }
                 return PlaceTy::GenericTy(generic_name, ty_set.unwrap().clone(), layout_set);
             }
-            TyKind::Adt(def,_list) => {
+            TyKind::Adt(def, _list) => {
                 if def.is_enum() {
-                    return PlaceTy::Unknown
+                    return PlaceTy::Unknown;
                 } else {
                     PlaceTy::Unknown
                 }
             }
-            TyKind::Closure(_,_) => {
-                PlaceTy::Unknown
-            }
-            TyKind::Alias(_,ty) => {
+            TyKind::Closure(_, _) => PlaceTy::Unknown,
+            TyKind::Alias(_, ty) => {
                 // rap_warn!("self ty {:?}",ty.self_ty());
-                return self.visit_ty_and_get_layout(ty.self_ty())
+                return self.visit_ty_and_get_layout(ty.self_ty());
             }
             _ => {
                 let param_env = self.tcx.param_env(self.def_id);
@@ -622,7 +633,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             }
         }
         return AbstractStateItem::new_default();
-    } 
+    }
 
     pub fn handle_cast(
         &mut self,
@@ -646,7 +657,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                         }
                     }
                 }
-                
+
                 let dst_ty = self.visit_ty_and_get_layout(*ty);
                 let align_state =
                     StateType::AlignState(AlignState::Cast(src_ty.clone(), dst_ty.clone()));
@@ -686,7 +697,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
-    pub fn get_proj_ty(&self, place:usize) -> Option<Ty<'tcx>> {
+    pub fn get_proj_ty(&self, place: usize) -> Option<Ty<'tcx>> {
         let graph_node = &self.safedrop_graph.values[place];
         let local_place = Place::from(Local::from_usize(graph_node.local));
         for proj in local_place.projection {
@@ -699,10 +710,10 @@ impl<'tcx> BodyVisitor<'tcx> {
                 _ => {}
             }
         }
-        return None
+        return None;
     }
 
-    pub fn handle_proj(&mut self, is_right:bool, place:Place<'tcx>) -> usize {
+    pub fn handle_proj(&mut self, is_right: bool, place: Place<'tcx>) -> usize {
         let mut proj_id = place.local.as_usize();
         for proj in place.projection {
             match proj {
@@ -710,7 +721,9 @@ impl<'tcx> BodyVisitor<'tcx> {
                     proj_id = self.chains.get_point_to_id(place.local.as_usize());
                 }
                 ProjectionElem::Field(field, ty) => {
-                    proj_id = self.chains.get_or_insert_field(proj_id, field.as_usize(), ty);
+                    proj_id = self
+                        .chains
+                        .get_or_insert_field(proj_id, field.as_usize(), ty);
                 }
                 _ => {}
             }
