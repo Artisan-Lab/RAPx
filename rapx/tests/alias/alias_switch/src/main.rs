@@ -16,7 +16,7 @@ fn foo<'a>(x: &'a i32, y: &'a i32, choice: Selector) -> &'a i32 {
 }
 
 fn main() {
-    let a = Box::new(10);
-    let b = Box::new(20);
+    let a = 1;
+    let b = 2;
     let _result = foo(&a, &b, Selector::First);
 }

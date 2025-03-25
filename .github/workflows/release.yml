@@ -22,8 +22,10 @@ jobs:
     - name: Build RAPx 
       run: ./install.sh
 
+    - name: Running Cargo Test
+      run: cd rapx && cargo test
+
     - run: sudo apt install colorized-logs -y # Insall ansi2txt
 
     - name: Check test cases 
       run: cd tests && ./batch.sh -F -M -O -A
-
