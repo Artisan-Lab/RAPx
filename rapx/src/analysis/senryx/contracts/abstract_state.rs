@@ -60,6 +60,7 @@ pub enum InitState {
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum VType<'tcx> {
     Pointer(PlaceTy<'tcx>),
+    None,
     // todo
 }
 
@@ -77,6 +78,10 @@ impl<'tcx> AbstractStateItem<'tcx> {
             vtype,
             state,
         }
+    }
+
+    pub fn new_default() -> Self {
+        Self { value: (Value::None, Value::None), vtype: VType::None, state: HashSet::new() }
     }
 
     pub fn meet_state_item(&mut self, other_state: &AbstractStateItem<'tcx>) {
@@ -110,11 +115,11 @@ impl<'tcx> AbstractStateItem<'tcx> {
 }
 
 #[derive(PartialEq)]
-pub struct AbstractState<'tcx> {
-    pub state_map: HashMap<usize, Option<AbstractStateItem<'tcx>>>,
+pub struct PathInfo<'tcx> {
+    pub state_map: HashMap<usize, AbstractStateItem<'tcx>>,
 }
 
-impl<'tcx> AbstractState<'tcx> {
+impl<'tcx> PathInfo<'tcx> {
     pub fn new() -> Self {
         Self {
             state_map: HashMap::new(),
@@ -124,7 +129,7 @@ impl<'tcx> AbstractState<'tcx> {
     pub fn insert_abstate(
         &mut self,
         place: usize,
-        place_state_item: Option<AbstractStateItem<'tcx>>,
+        place_state_item: AbstractStateItem<'tcx>,
     ) {
         self.state_map.insert(place, place_state_item);
     }

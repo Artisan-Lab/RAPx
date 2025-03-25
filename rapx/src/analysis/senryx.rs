@@ -3,7 +3,9 @@ pub mod generic_check;
 pub mod inter_record;
 pub mod matcher;
 pub mod visitor;
-
+pub mod visitor_check;
+// #[allow(unused)]
+pub mod dominated_chain;
 use crate::analysis::utils::fn_info::*;
 use crate::{
     analysis::unsafety_isolation::{
@@ -19,6 +21,13 @@ use rustc_middle::ty;
 use rustc_middle::ty::TyCtxt;
 use std::collections::{HashMap, HashSet};
 use visitor::{BodyVisitor, CheckResult};
+
+use super::core::alias::mop::MopAlias;
+use super::core::alias::FnMap;
+
+macro_rules! cond_print {
+    ($cond:expr, $($t:tt)*) => {if $cond {rap_warn!($($t)*)} else {rap_info!($($t)*)}};
+}
 
 pub enum CheckLevel {
     High,
@@ -41,9 +50,11 @@ impl<'tcx> SenryxCheck<'tcx> {
         }
     }
 
-    pub fn start(&mut self, check_level: CheckLevel) {
+    pub fn start(&mut self, check_level: CheckLevel, is_verify: bool) {
         let hir_map = self.tcx.hir().clone();
         let tcx = self.tcx;
+        let mut mop =  MopAlias::new(self.tcx);
+        let fn_map =mop.start();
         let related_items = RelatedFnCollector::collect(tcx);
         for (_, &ref vec) in &related_items.clone() {
             for (body_id, _span) in vec {
@@ -53,11 +64,14 @@ impl<'tcx> SenryxCheck<'tcx> {
                 if !Self::filter_by_check_level(tcx, &check_level, def_id) {
                     continue;
                 }
-                if block_unsafe {
-                    self.check_soundness(def_id);
+                if block_unsafe && is_verify {
+                    // if get_all_std_unsafe_callees(self.tcx, def_id).len() > 0{
+                    //     rap_warn!("{:?}",get_cleaned_def_path_name(self.tcx, def_id));
+                    // }
+                    self.check_soundness(def_id, &fn_map);
                 }
-                if function_unsafe {
-                    // self.annotate_safety(def_id, &mut global_recorder);
+                if function_unsafe && !is_verify {
+                    self.annotate_safety(def_id);
                 }
             }
         }
@@ -74,23 +88,23 @@ impl<'tcx> SenryxCheck<'tcx> {
         }
     }
 
-    pub fn check_soundness(&mut self, def_id: DefId) {
-        let check_results = self.body_visit_and_check(def_id);
+    pub fn check_soundness(&mut self, def_id: DefId, fn_map:&FnMap) {
+        let check_results = self.body_visit_and_check(def_id,fn_map);
         let tcx = self.tcx;
         if check_results.len() > 0 {
             Self::show_check_results(tcx, def_id, check_results);
         }
     }
 
-    pub fn annotate_safety(&self, _def_id: DefId) {
-        // let annotation_results = self.get_annotation(def_id, global_recorder);
-        // if annotation_results.len() == 0 {
-        //     return;
-        // }
-        // Self::show_annotate_results(self.tcx, def_id, annotation_results);
+    pub fn annotate_safety(&self, def_id: DefId) {
+        let annotation_results = self.get_annotation(def_id);
+        if annotation_results.len() == 0 {
+            return;
+        }
+        Self::show_annotate_results(self.tcx, def_id, annotation_results);
     }
 
-    pub fn body_visit_and_check(&mut self, def_id: DefId) -> Vec<CheckResult<'tcx>> {
+    pub fn body_visit_and_check(&mut self, def_id: DefId, fn_map:&FnMap) -> Vec<CheckResult<'tcx>> {
         let mut body_visitor = BodyVisitor::new(self.tcx, def_id, self.global_recorder.clone(), 0);
         let func_type = get_type(self.tcx, def_id);
         if func_type == 1 {
@@ -98,16 +112,16 @@ impl<'tcx> SenryxCheck<'tcx> {
             for func_con in func_cons {
                 let mut cons_body_visitor =
                     BodyVisitor::new(self.tcx, func_con.0, self.global_recorder.clone(), 0);
-                cons_body_visitor.path_forward_check();
+                cons_body_visitor.path_forward_check(fn_map);
                 // TODO: cache fields' states
 
                 // TODO: update method body's states
 
                 // analyze body's states
-                body_visitor.path_forward_check();
+                body_visitor.path_forward_check(fn_map);
             }
         } else {
-            body_visitor.path_forward_check();
+            body_visitor.path_forward_check(fn_map);
         }
         return body_visitor.check_results;
     }
@@ -169,15 +183,16 @@ impl<'tcx> SenryxCheck<'tcx> {
             "--------In safe function {:?}---------",
             get_cleaned_def_path_name(tcx, def_id)
         );
-        for check_result in check_results {
-            rap_info!(
+        for check_result in &check_results {
+            cond_print!(
+                check_result.failed_contracts.len() > 0,
                 "  Unsafe api {:?}: {} passed, {} failed!",
                 check_result.func_name,
                 check_result.passed_contracts.len(),
                 check_result.failed_contracts.len()
             );
-            for failed_contract in check_result.failed_contracts {
-                rap_warn!("      Contract failed: {:?}", failed_contract);
+            for failed_contract in &check_result.failed_contracts {
+                cond_print!(check_result.failed_contracts.len() > 0, "      Contract failed: {:?}", failed_contract);
             }
         }
     }

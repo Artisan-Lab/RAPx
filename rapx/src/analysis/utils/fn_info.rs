@@ -1,3 +1,4 @@
+use crate::analysis::senryx::matcher::parse_unsafe_api;
 use crate::analysis::unsafety_isolation::generate_dot::NodeType;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::DefId;
@@ -8,7 +9,11 @@ use rustc_middle::{
     ty,
 };
 use rustc_span::def_id::LocalDefId;
+use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fmt::Debug;
+use std::hash::Hash;
+use rustc_middle::mir::{BasicBlock, Terminator};
 
 pub fn generate_node_ty(tcx: TyCtxt<'_>, def_id: DefId) -> NodeType {
     (def_id, check_safety(tcx, def_id), get_type(tcx, def_id))
@@ -109,7 +114,7 @@ pub fn get_sp(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<String> {
     let json_data: serde_json::Value = get_sp_json();
 
     if let Some(function_info) = json_data.get(&cleaned_path_name) {
-        if let Some(sp_list) = function_info.get("sp") {
+        if let Some(sp_list) = function_info.get("0") {
             let mut result = HashSet::new();
             if let Some(sp_array) = sp_list.as_array() {
                 for sp in sp_array {
@@ -261,4 +266,59 @@ pub fn get_pointee(matched_ty: Ty<'_>) -> Ty<'_> {
         matched_ty
     };
     pointee
+}
+
+pub fn is_ptr(matched_ty: Ty<'_>) -> bool {
+    get_pointee(matched_ty) != matched_ty
+}
+
+pub fn display_hashmap<K, V>(map: &HashMap<K, V>, level: usize)
+where
+    K: Ord + Debug + Hash,
+    V: Debug,
+{
+    let indent = "  ".repeat(level);
+    let mut sorted_keys: Vec<_> = map.keys().collect();
+    sorted_keys.sort();
+
+    for key in sorted_keys {
+        if let Some(value) = map.get(key) {
+            println!("{}{:?}: {:?}", indent, key, value);
+        }
+    }
+}
+
+pub fn get_all_std_unsafe_callees(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<String> {
+    let mut results = Vec::new();
+    let body = tcx.optimized_mir(def_id);
+    let bb_len = body.basic_blocks.len();
+    for i in 0..bb_len {
+        let callees = match_std_unsafe_callee(
+            tcx,
+            body.basic_blocks[BasicBlock::from_usize(i)]
+                .clone()
+                .terminator(),
+        );
+        results.extend(callees);
+    }
+    results
+}
+
+pub fn match_std_unsafe_callee(tcx: TyCtxt<'_>, terminator: &Terminator<'_>) -> Vec<String> {
+    let mut results = Vec::new();
+    match &terminator.kind {
+        TerminatorKind::Call { func, .. } => {
+            if let Operand::Constant(func_constant) = func {
+                if let ty::FnDef(ref callee_def_id, _raw_list) = func_constant.const_.ty().kind()
+                {
+                    let func_name = get_cleaned_def_path_name(tcx, *callee_def_id);
+                    if parse_unsafe_api(&func_name).is_some() {
+                        results.push(func_name);
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    results
 }
