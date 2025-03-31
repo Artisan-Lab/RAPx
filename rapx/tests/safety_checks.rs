@@ -135,6 +135,15 @@ fn test_alias_switch() {
 }
 
 #[test]
+fn test_alias_copy_on_deref() {
+    let output = running_tests_with_arg("alias/alias_copy_for_deref", "-alias");
+    assert_eq!(
+        output.contains("Alias found in Some(\"::{impl#0}::new\"): {(0,1.0)}"),
+        true
+    );
+}
+
+#[test]
 fn test_leak_ctor() {
     let output = running_tests_with_arg("leak/leak_ctor", "-M");
     assert_eq!(

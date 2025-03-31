@@ -252,7 +252,9 @@ impl<'tcx> MopGraph<'tcx> {
                                 }
                             }
                         }
-                        Rvalue::Ref(_, _, ref p) | Rvalue::RawPtr(_, ref p) => {
+                        Rvalue::Ref(_, _, ref p)
+                        | Rvalue::RawPtr(_, ref p)
+                        | Rvalue::CopyForDeref(ref p) => {
                             let rv_local = p.local.as_usize();
                             if values[lv_local].may_drop && values[rv_local].may_drop {
                                 let rv = *p;
