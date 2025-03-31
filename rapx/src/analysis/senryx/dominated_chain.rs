@@ -43,7 +43,7 @@ impl<'tcx> VariableNode<'tcx> {
         points_to: Option<usize>,
         pointed_by: HashSet<usize>,
         ty: Ty<'tcx>,
-        states: States
+        states: States,
     ) -> Self {
         VariableNode {
             id,
@@ -101,7 +101,16 @@ impl<'tcx> DominatedGraph<'tcx> {
             // Init the pointed obj node when the input param is ref or ptr.
             if idx > 0 && idx <= param_len {
                 if is_ptr(local_ty) {
-                    var_map.insert(idx, VariableNode::new(idx, Some(locals.len() + obj_cnt), HashSet::new(), local_ty, States::new_unknown()));
+                    var_map.insert(
+                        idx,
+                        VariableNode::new(
+                            idx,
+                            Some(locals.len() + obj_cnt),
+                            HashSet::new(),
+                            local_ty,
+                            States::new_unknown(),
+                        ),
+                    );
                     var_map.insert(
                         locals.len() + obj_cnt,
                         VariableNode::new_with_states(
@@ -112,7 +121,16 @@ impl<'tcx> DominatedGraph<'tcx> {
                     );
                     obj_cnt = obj_cnt + 1;
                 } else if is_ref(local_ty) {
-                    var_map.insert(idx, VariableNode::new(idx, Some(locals.len() + obj_cnt), HashSet::new(), local_ty, States::new()));
+                    var_map.insert(
+                        idx,
+                        VariableNode::new(
+                            idx,
+                            Some(locals.len() + obj_cnt),
+                            HashSet::new(),
+                            local_ty,
+                            States::new(),
+                        ),
+                    );
                     var_map.insert(
                         locals.len() + obj_cnt,
                         VariableNode::new_with_states(
