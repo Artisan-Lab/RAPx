@@ -1,5 +1,6 @@
 use crate::analysis::core::alias::FnMap;
 use crate::analysis::safedrop::graph::SafeDropGraph;
+use crate::analysis::utils::fn_info::get_callees;
 use crate::analysis::utils::fn_info::get_cleaned_def_path_name;
 use crate::analysis::utils::show_mir::display_mir;
 use crate::rap_warn;
@@ -18,6 +19,7 @@ use super::contracts::contract::Contract;
 use super::dominated_chain::DominatedGraph;
 use super::generic_check::GenericChecker;
 use super::inter_record::InterAnalysisRecord;
+use super::matcher::UnsafeApi;
 use super::matcher::{get_arg_place, match_unsafe_api_and_check_contracts, parse_unsafe_api};
 use crate::analysis::core::heap_item::AdtOwner;
 use rustc_hir::def_id::DefId;
@@ -265,7 +267,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                 _ => {}
             },
             StatementKind::StorageDead(local) => {
-                self.chains.delete_node(local.as_usize());
+                // self.chains.delete_node(local.as_usize());
             }
             _ => {}
         }
@@ -287,7 +289,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                             self.insert_path_abstate(path_index, lpjc_local, r_state_item.clone());
                         }
                     }
-                    self.chains.point(lpjc_local, rpjc_local);
+                    self.chains.merge(lpjc_local, rpjc_local);
                 }
                 _ => {}
             },
@@ -355,25 +357,9 @@ impl<'tcx> BodyVisitor<'tcx> {
         if let Some(fn_result) =
             parse_unsafe_api(get_cleaned_def_path_name(self.tcx, *def_id).as_str())
         {
-            for (idx, sp_set) in fn_result.sps.iter().enumerate() {
-                let arg_place = get_arg_place(&args[idx].node);
-                if arg_place == 0 {
-                    continue;
-                }
-                let self_func_name = get_cleaned_def_path_name(self.tcx, self.def_id);
-                let func_name = get_cleaned_def_path_name(self.tcx, *def_id);
-                for sp in sp_set {
-                    match sp.sp_name.as_str() {
-                        "Aligned" => {
-                            if !self.check_align(arg_place) {
-                                rap_warn!("Safe function {:?} uses unsafe callee {:?}, but the pointer may be unaligned!",self_func_name, func_name);
-                                rap_warn!("{:?}", fn_span);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
+            self.handle_std_unsafe_call(
+                dst_place, def_id, args, path_index, fn_map, fn_span, fn_result,
+            );
         }
 
         if let Some(retalias) = fn_map.get(def_id) {

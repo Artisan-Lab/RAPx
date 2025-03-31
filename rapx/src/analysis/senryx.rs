@@ -2,6 +2,7 @@ pub mod contracts;
 pub mod generic_check;
 pub mod inter_record;
 pub mod matcher;
+#[allow(unused)]
 pub mod visitor;
 pub mod visitor_check;
 // #[allow(unused)]
@@ -66,7 +67,11 @@ impl<'tcx> SenryxCheck<'tcx> {
                 }
                 if block_unsafe && is_verify {
                     // if get_all_std_unsafe_callees(self.tcx, def_id).len() > 0{
-                    //     rap_warn!("{:?}",get_cleaned_def_path_name(self.tcx, def_id));
+                    //     let results = get_all_std_unsafe_callees(self.tcx, def_id);
+                    //     rap_warn!("In func {:?} contains:",get_cleaned_def_path_name(self.tcx, def_id));
+                    //     for re in results {
+                    //         rap_warn!(" - {:?}",re);
+                    //     }
                     // }
                     self.check_soundness(def_id, &fn_map);
                 }

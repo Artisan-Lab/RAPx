@@ -2,10 +2,29 @@ use rustc_hir::def_id::DefId;
 use rustc_middle::ty::{Ty, TyCtxt};
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::{
-    analysis::utils::fn_info::{get_pointee, is_ptr},
-    rap_warn,
-};
+use crate::analysis::utils::fn_info::{get_pointee, is_ptr, is_ref};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct States {
+    pub nonnull: bool,
+    pub allocator_consistency: bool,
+}
+
+impl States {
+    pub fn new() -> Self {
+        Self {
+            nonnull: true,
+            allocator_consistency: true,
+        }
+    }
+
+    pub fn new_unknown() -> Self {
+        Self {
+            nonnull: false,
+            allocator_consistency: false,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct VariableNode<'tcx> {
@@ -15,6 +34,7 @@ pub struct VariableNode<'tcx> {
     pub field: HashMap<usize, usize>,
     pub ty: Ty<'tcx>,
     pub is_dropped: bool,
+    pub states: States,
 }
 
 impl<'tcx> VariableNode<'tcx> {
@@ -23,6 +43,7 @@ impl<'tcx> VariableNode<'tcx> {
         points_to: Option<usize>,
         pointed_by: HashSet<usize>,
         ty: Ty<'tcx>,
+        states: States
     ) -> Self {
         VariableNode {
             id,
@@ -31,6 +52,7 @@ impl<'tcx> VariableNode<'tcx> {
             field: HashMap::new(),
             ty,
             is_dropped: false,
+            states,
         }
     }
 
@@ -42,6 +64,19 @@ impl<'tcx> VariableNode<'tcx> {
             field: HashMap::new(),
             ty,
             is_dropped: false,
+            states: States::new(),
+        }
+    }
+
+    pub fn new_with_states(id: usize, ty: Ty<'tcx>, states: States) -> Self {
+        VariableNode {
+            id,
+            points_to: None,
+            pointed_by: HashSet::new(),
+            field: HashMap::new(),
+            ty,
+            is_dropped: false,
+            states,
         }
     }
 }
@@ -63,15 +98,36 @@ impl<'tcx> DominatedGraph<'tcx> {
         let mut obj_cnt = 0;
         for (idx, local) in locals.iter().enumerate() {
             let local_ty = local.ty;
-            var_map.insert(idx, VariableNode::new_default(idx, local_ty));
             // Init the pointed obj node when the input param is ref or ptr.
-            if idx > 0 && idx <= param_len && is_ptr(local_ty) {
-                var_map.insert(
-                    idx,
-                    VariableNode::new_default(locals.len() + obj_cnt, get_pointee(local_ty)),
-                );
-                obj_cnt = obj_cnt + 1;
+            if idx > 0 && idx <= param_len {
+                if is_ptr(local_ty) {
+                    var_map.insert(idx, VariableNode::new(idx, Some(locals.len() + obj_cnt), HashSet::new(), local_ty, States::new_unknown()));
+                    var_map.insert(
+                        locals.len() + obj_cnt,
+                        VariableNode::new_with_states(
+                            locals.len() + obj_cnt,
+                            get_pointee(local_ty),
+                            States::new_unknown(),
+                        ),
+                    );
+                    obj_cnt = obj_cnt + 1;
+                } else if is_ref(local_ty) {
+                    var_map.insert(idx, VariableNode::new(idx, Some(locals.len() + obj_cnt), HashSet::new(), local_ty, States::new()));
+                    var_map.insert(
+                        locals.len() + obj_cnt,
+                        VariableNode::new_with_states(
+                            locals.len() + obj_cnt,
+                            get_pointee(local_ty),
+                            States::new(),
+                        ),
+                    );
+                    obj_cnt = obj_cnt + 1;
+                } else {
+                    var_map.insert(idx, VariableNode::new_default(idx, local_ty));
+                }
+                continue;
             }
+            var_map.insert(idx, VariableNode::new_default(idx, local_ty));
         }
         Self {
             tcx,
@@ -83,7 +139,7 @@ impl<'tcx> DominatedGraph<'tcx> {
 
     pub fn get_obj_ty_through_chain(&self, arg: usize) -> Option<Ty<'tcx>> {
         let var = self.variables.get(&arg)?;
-        if !is_ptr(var.ty) {
+        if !is_ptr(var.ty) && !is_ref(var.ty) {
             return Some(var.ty);
         }
         if let Some(pointed_idx) = var.points_to {
@@ -95,7 +151,7 @@ impl<'tcx> DominatedGraph<'tcx> {
 
     pub fn get_point_to_id(&self, arg: usize) -> usize {
         let var = self.variables.get(&arg).unwrap();
-        if !is_ptr(var.ty) {
+        if !is_ptr(var.ty) && !is_ref(var.ty) {
             return arg;
         }
         if let Some(pointed_idx) = var.points_to {
@@ -138,6 +194,17 @@ impl<'tcx> DominatedGraph<'tcx> {
         }
     }
 
+    pub fn merge(&mut self, lv: usize, rv: usize) {
+        let rv_node = self.variables.get_mut(&rv).unwrap().clone();
+        let lv_node = self.variables.get_mut(&lv).unwrap();
+        lv_node.points_to = rv_node.points_to;
+        lv_node.states = rv_node.states;
+        if let Some(to) = &rv_node.points_to {
+            let ori_to_node = self.variables.get_mut(&to).unwrap();
+            ori_to_node.pointed_by.insert(lv);
+        }
+    }
+
     pub fn insert_node(&mut self, dv: usize, ty: Ty<'tcx>) {
         if self.variables.get(&dv).is_none() {
             self.variables.insert(dv, VariableNode::new_default(dv, ty));
@@ -174,7 +241,6 @@ impl<'tcx> DominatedGraph<'tcx> {
                     subgraph.push(current_id);
 
                     if let Some(node) = self.variables.get(&current_id) {
-                        // 处理正向指向
                         if let Some(next_id) = node.points_to {
                             if !visited.contains(&next_id) {
                                 visited.insert(next_id);
@@ -182,7 +248,6 @@ impl<'tcx> DominatedGraph<'tcx> {
                             }
                         }
 
-                        // 处理反向被指向
                         for &pointer_id in &node.pointed_by {
                             if !visited.contains(&pointer_id) {
                                 visited.insert(pointer_id);
