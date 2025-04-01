@@ -294,5 +294,5 @@ fn test_verify() {
         "others/support/safety_check/slice_from_raw_parts",
         "-verify",
     );
-    assert_eq!(output.contains("|RAP|WARN|"), true);
+    assert_eq!(output.contains("unaligned"), true);
 }
