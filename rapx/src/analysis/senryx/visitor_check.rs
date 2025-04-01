@@ -128,7 +128,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             );
         }
         let ori_ty = self.visit_ty_and_get_layout(obj_ty.unwrap());
-        let cur_ty = self.visit_ty_and_get_layout(var_ty.unwrap().ty);
+        let cur_ty = self.visit_ty_and_get_layout(var_ty.unwrap().ty.unwrap());
         return AlignState::Cast(ori_ty, cur_ty).check();
     }
 

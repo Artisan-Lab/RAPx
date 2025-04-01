@@ -87,8 +87,6 @@ pub fn match_unsafe_api_and_check_contracts<'tcx, T>(
         }
         _ => None,
     };
-
-    // println!("{:?}",parse_unsafe_api(func_name));
     if let Some(c) = checker {
         return Some(process_checker(&*c, args, abstate, func_name, span));
     }

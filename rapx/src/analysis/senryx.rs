@@ -5,7 +5,7 @@ pub mod matcher;
 #[allow(unused)]
 pub mod visitor;
 pub mod visitor_check;
-// #[allow(unused)]
+#[allow(unused)]
 pub mod dominated_chain;
 use crate::analysis::utils::fn_info::*;
 use crate::{

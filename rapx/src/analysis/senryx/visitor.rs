@@ -1,5 +1,6 @@
 use crate::analysis::core::alias::FnMap;
 use crate::analysis::safedrop::graph::SafeDropGraph;
+use crate::analysis::utils::fn_info::display_hashmap;
 use crate::analysis::utils::fn_info::get_callees;
 use crate::analysis::utils::fn_info::get_cleaned_def_path_name;
 use crate::analysis::utils::show_mir::display_mir;
@@ -169,6 +170,10 @@ impl<'tcx> BodyVisitor<'tcx> {
                     }
                 }
             }
+            if self.visit_time == 0 {
+                // rap_warn!("In path {index}");
+                // display_hashmap(&self.chains.variables, 1);
+            }
         }
         // self.abstract_states_mop();
         // self.abstate_debug();
@@ -246,6 +251,10 @@ impl<'tcx> BodyVisitor<'tcx> {
                     }
                 }
             }
+            TerminatorKind::Drop{place, target,unwind:_,replace:_} => {
+                let drop_local = self.handle_proj(false, *place);
+                self.chains.set_drop(drop_local);
+            },
             _ => {}
         }
     }
@@ -282,14 +291,13 @@ impl<'tcx> BodyVisitor<'tcx> {
         let lpjc_local = self.handle_proj(false, lplace.clone());
         match rvalue {
             Rvalue::Use(op) => match op {
-                Operand::Move(rplace) | Operand::Copy(rplace) => {
+                Operand::Move(rplace) => {
                     let rpjc_local = self.handle_proj(true, rplace.clone());
-                    if let Some(ab_state) = self.abstract_states.get(&path_index) {
-                        if let Some(r_state_item) = ab_state.state_map.get(&rpjc_local) {
-                            self.insert_path_abstate(path_index, lpjc_local, r_state_item.clone());
-                        }
-                    }
                     self.chains.merge(lpjc_local, rpjc_local);
+                }
+                Operand::Copy(rplace) => {
+                    let rpjc_local = self.handle_proj(true, rplace.clone());
+                    self.chains.copy_node(lpjc_local, rpjc_local);
                 }
                 _ => {}
             },
@@ -301,14 +309,8 @@ impl<'tcx> BodyVisitor<'tcx> {
             },
             Rvalue::Ref(_, _, rplace) | Rvalue::RawPtr(_, rplace) => {
                 let rpjc_local = self.handle_proj(true, rplace.clone());
+                // self.chains.insert_node(lpjc_local, self.chains.get_local_ty_by_place(lpjc_local));
                 self.chains.point(lpjc_local, rpjc_local);
-                let ty = self.get_layout_by_place_usize(rpjc_local);
-                let abitem = AbstractStateItem::new(
-                    (Value::None, Value::None),
-                    VType::Pointer(ty),
-                    HashSet::from([StateType::AlignState(AlignState::Aligned)]),
-                );
-                self.insert_path_abstate(path_index, lpjc_local, abitem);
             }
             Rvalue::Cast(cast_kind, op, ty) => match op {
                 Operand::Move(rplace) | Operand::Copy(rplace) => {
@@ -354,6 +356,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             return;
         }
 
+        // Find std unsafe API call, then check the contracts.
         if let Some(fn_result) =
             parse_unsafe_api(get_cleaned_def_path_name(self.tcx, *def_id).as_str())
         {
@@ -362,22 +365,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             );
         }
 
-        if let Some(retalias) = fn_map.get(def_id) {
-            for alias_set in retalias.aliases() {
-                let (l, r) = (alias_set.left_index, alias_set.right_index);
-                if l == 0 {
-                    self.chains
-                        .point(dst_place.local.as_usize(), get_arg_place(&args[r - 1].node));
-                } else if r == 0 {
-                    self.chains
-                        .point(dst_place.local.as_usize(), get_arg_place(&args[l - 1].node));
-                } else {
-                    let d = dst_place.local.as_usize();
-                }
-            }
-        } else {
-            let d = dst_place.local.as_usize();
-        }
+        self.handle_ret_alias(dst_place, def_id, fn_map, args);
 
         // get pre analysis state
         let mut pre_analysis_state = HashMap::new();
@@ -418,6 +406,42 @@ impl<'tcx> BodyVisitor<'tcx> {
             *def_id,
             InterAnalysisRecord::new(pre_analysis_state, post_analysis_state, ret_state),
         );
+    }
+
+    // Use the alias analysis to support quick merge inter analysis results.
+    pub fn handle_ret_alias(&mut self, 
+        dst_place: &Place<'_>,
+        def_id: &DefId,
+        fn_map: &FnMap,
+        args: &Box<[Spanned<Operand>]>) 
+    {
+        let d_local = dst_place.local.as_usize();
+        // Find alias relationship in cache.
+        // If one of the op is ptr, then alias the pointed node with another.
+        if let Some(retalias) = fn_map.get(def_id) {
+            for alias_set in retalias.aliases() {
+                let (l, r) = (alias_set.left_index, alias_set.right_index);
+                let (l_fields, r_fields) = (alias_set.left_field_seq.clone(), alias_set.right_field_seq.clone());
+                if l == 0 && r!=0 {
+                    // Get origin var.
+                    let l_var = self.chains.find_var_id_with_fields_seq(d_local, l_fields);
+                    // If this var is ptr or ref, then get the next level node.
+                    let l_pointed_var = self.chains.get_point_to_id(l_var);
+                    let r_place = get_arg_place(&args[r - 1].node);
+                    let r_var = self.chains.find_var_id_with_fields_seq(r_place, r_fields);
+                    self.chains.point(l_var, r_var);
+                } else if l != 0 && r == 0 {
+                    self.chains
+                        .point(d_local, get_arg_place(&args[l - 1].node));
+                } else {
+                    
+                }
+            }
+        } 
+        // If no alias cache is found and dst is a ptr, then initialize dst's states.
+        else {
+            let d = dst_place.local.as_usize();
+        }
     }
 
     // if inter analysis's params are in mut_ref, then we should update their post states
@@ -539,18 +563,10 @@ impl<'tcx> BodyVisitor<'tcx> {
     }
 
     pub fn get_layout_by_place_usize(&self, place: usize) -> PlaceTy<'tcx> {
-        if let Some(pt) = self.local_ty.get(&place) {
-            return pt.clone();
+        if let Some(ty) = self.chains.get_obj_ty_through_chain(place){
+            return self.visit_ty_and_get_layout(ty);
         } else {
-            if let Some(ty) = self.get_proj_ty(place) {
-                return self.visit_ty_and_get_layout(ty);
-            } else {
-                if let Some(ty) = self.proj_ty.get(&place) {
-                    return self.visit_ty_and_get_layout(*ty);
-                }
-                rap_warn!("Get place {place} layout fault!");
-                return PlaceTy::Unknown;
-            }
+            return PlaceTy::Unknown;
         }
     }
 
@@ -709,7 +725,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                 ProjectionElem::Field(field, ty) => {
                     proj_id = self
                         .chains
-                        .get_or_insert_field(proj_id, field.as_usize(), ty);
+                        .get_field_node_id(proj_id, field.as_usize(), Some(ty));
                 }
                 _ => {}
             }
