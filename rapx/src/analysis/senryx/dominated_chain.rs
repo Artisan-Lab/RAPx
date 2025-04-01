@@ -1,8 +1,11 @@
+use crate::{
+    analysis::utils::fn_info::{display_hashmap, get_pointee, is_ptr, is_ref},
+    rap_warn,
+};
 use rustc_hir::def_id::DefId;
+use rustc_middle::mir::Local;
 use rustc_middle::ty::{Ty, TyCtxt};
 use std::collections::{HashMap, HashSet, VecDeque};
-use rustc_middle::mir::Local;
-use crate::{analysis::utils::fn_info::{display_hashmap, get_pointee, is_ptr, is_ref}, rap_warn};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct States {
@@ -18,7 +21,7 @@ impl States {
         }
     }
 
-    pub fn new_unknown() -> Self{
+    pub fn new_unknown() -> Self {
         Self {
             nonnull: false,
             allocator_consistency: false,
@@ -107,7 +110,7 @@ impl<'tcx> DominatedGraph<'tcx> {
             // Init the pointed obj node when the input param is ref or ptr.
             if idx > 0 && idx <= param_len {
                 if is_ptr(local_ty) {
-                    // insert ptr node 
+                    // insert ptr node
                     var_map.insert(
                         idx,
                         VariableNode::new(
@@ -208,16 +211,20 @@ impl<'tcx> DominatedGraph<'tcx> {
 // This implementation has the auxiliary function of DominatedGraph,
 // including c/r/u/d nodes and printing chains' structure.
 impl<'tcx> DominatedGraph<'tcx> {
-
     // Only for inserting field obj node or pointed obj node.
     pub fn generate_node_id(&self) -> usize {
         if self.variables.len() == 0 || *self.variables.keys().max().unwrap() < self.local_len {
             return self.local_len;
         }
-        return *self.variables.keys().max().unwrap()+1;
+        return *self.variables.keys().max().unwrap() + 1;
     }
 
-    pub fn get_field_node_id(&mut self, local: usize, field_idx: usize, ty: Option<Ty<'tcx>>) -> usize {
+    pub fn get_field_node_id(
+        &mut self,
+        local: usize,
+        field_idx: usize,
+        ty: Option<Ty<'tcx>>,
+    ) -> usize {
         let node = self.get_var_node(local).unwrap();
         if let Some(alias_local) = node.field.get(&field_idx) {
             return *alias_local;
@@ -225,9 +232,14 @@ impl<'tcx> DominatedGraph<'tcx> {
             self.insert_field_node(local, field_idx, ty)
         }
     }
-    
+
     // Insert the responding field node of one local, then return its genrated node_id.
-    pub fn insert_field_node(&mut self, local: usize, field_idx: usize, ty: Option<Ty<'tcx>>) -> usize {
+    pub fn insert_field_node(
+        &mut self,
+        local: usize,
+        field_idx: usize,
+        ty: Option<Ty<'tcx>>,
+    ) -> usize {
         let new_id = self.generate_node_id();
         self.variables
             .insert(new_id, VariableNode::new_default(new_id, ty));
@@ -238,7 +250,7 @@ impl<'tcx> DominatedGraph<'tcx> {
 
     pub fn find_var_id_with_fields_seq(&mut self, local: usize, fields: Vec<usize>) -> usize {
         let mut cur = local;
-        for field in fields{
+        for field in fields {
             cur = self.get_field_node_id(cur, field, None);
         }
         return cur;
@@ -258,25 +270,25 @@ impl<'tcx> DominatedGraph<'tcx> {
         }
     }
 
-    pub fn get_var_node(&self, local_id:usize) -> Option<&VariableNode<'tcx>> {
+    pub fn get_var_node(&self, local_id: usize) -> Option<&VariableNode<'tcx>> {
         for (_idx, var_node) in &self.variables {
             if var_node.alias_set.contains(&local_id) {
                 return Some(var_node);
             }
         }
-        rap_warn!("def id:{:?}, local_id: {local_id}",self.def_id);
+        rap_warn!("def id:{:?}, local_id: {local_id}", self.def_id);
         display_hashmap(&self.variables, 1);
         None
     }
 
-    pub fn get_var_node_mut(&mut self, local_id:usize) -> Option<&mut VariableNode<'tcx>> {
+    pub fn get_var_node_mut(&mut self, local_id: usize) -> Option<&mut VariableNode<'tcx>> {
         let va = self.variables.clone();
         for (_idx, var_node) in &mut self.variables {
             if var_node.alias_set.contains(&local_id) {
                 return Some(var_node);
             }
         }
-        rap_warn!("def id:{:?}, local_id: {local_id}",self.def_id);
+        rap_warn!("def id:{:?}, local_id: {local_id}", self.def_id);
         display_hashmap(&va, 1);
         None
     }
@@ -286,7 +298,7 @@ impl<'tcx> DominatedGraph<'tcx> {
     pub fn merge(&mut self, lv: usize, rv: usize) {
         let rv_node = self.get_var_node_mut(rv).unwrap();
         rv_node.alias_set.insert(lv);
-        if let Some(lv_node) = self.get_var_node_mut(lv){
+        if let Some(lv_node) = self.get_var_node_mut(lv) {
             lv_node.alias_set.remove(&lv);
         }
     }
@@ -312,7 +324,7 @@ impl<'tcx> DominatedGraph<'tcx> {
     pub fn insert_node(&mut self, dv: usize, ty: Option<Ty<'tcx>>) {
         if let Some(ori_node) = self.get_var_node_mut(dv) {
             ori_node.alias_set.remove(&dv);
-        } 
+        }
         self.variables.insert(dv, VariableNode::new_default(dv, ty));
     }
 
@@ -335,7 +347,7 @@ impl<'tcx> DominatedGraph<'tcx> {
                 rap_warn!("Double free detected!"); // todo: update reports
             }
             ori_node.is_dropped = true;
-        } 
+        }
     }
 
     pub fn print_graph(&self) {

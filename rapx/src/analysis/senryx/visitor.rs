@@ -251,10 +251,15 @@ impl<'tcx> BodyVisitor<'tcx> {
                     }
                 }
             }
-            TerminatorKind::Drop{place, target,unwind:_,replace:_} => {
+            TerminatorKind::Drop {
+                place,
+                target,
+                unwind: _,
+                replace: _,
+            } => {
                 let drop_local = self.handle_proj(false, *place);
                 self.chains.set_drop(drop_local);
-            },
+            }
             _ => {}
         }
     }
@@ -409,20 +414,24 @@ impl<'tcx> BodyVisitor<'tcx> {
     }
 
     // Use the alias analysis to support quick merge inter analysis results.
-    pub fn handle_ret_alias(&mut self, 
+    pub fn handle_ret_alias(
+        &mut self,
         dst_place: &Place<'_>,
         def_id: &DefId,
         fn_map: &FnMap,
-        args: &Box<[Spanned<Operand>]>) 
-    {
+        args: &Box<[Spanned<Operand>]>,
+    ) {
         let d_local = dst_place.local.as_usize();
         // Find alias relationship in cache.
         // If one of the op is ptr, then alias the pointed node with another.
         if let Some(retalias) = fn_map.get(def_id) {
             for alias_set in retalias.aliases() {
                 let (l, r) = (alias_set.left_index, alias_set.right_index);
-                let (l_fields, r_fields) = (alias_set.left_field_seq.clone(), alias_set.right_field_seq.clone());
-                if l == 0 && r!=0 {
+                let (l_fields, r_fields) = (
+                    alias_set.left_field_seq.clone(),
+                    alias_set.right_field_seq.clone(),
+                );
+                if l == 0 && r != 0 {
                     // Get origin var.
                     let l_var = self.chains.find_var_id_with_fields_seq(d_local, l_fields);
                     // If this var is ptr or ref, then get the next level node.
@@ -431,13 +440,11 @@ impl<'tcx> BodyVisitor<'tcx> {
                     let r_var = self.chains.find_var_id_with_fields_seq(r_place, r_fields);
                     self.chains.point(l_var, r_var);
                 } else if l != 0 && r == 0 {
-                    self.chains
-                        .point(d_local, get_arg_place(&args[l - 1].node));
+                    self.chains.point(d_local, get_arg_place(&args[l - 1].node));
                 } else {
-                    
                 }
             }
-        } 
+        }
         // If no alias cache is found and dst is a ptr, then initialize dst's states.
         else {
             let d = dst_place.local.as_usize();
@@ -563,7 +570,7 @@ impl<'tcx> BodyVisitor<'tcx> {
     }
 
     pub fn get_layout_by_place_usize(&self, place: usize) -> PlaceTy<'tcx> {
-        if let Some(ty) = self.chains.get_obj_ty_through_chain(place){
+        if let Some(ty) = self.chains.get_obj_ty_through_chain(place) {
             return self.visit_ty_and_get_layout(ty);
         } else {
             return PlaceTy::Unknown;

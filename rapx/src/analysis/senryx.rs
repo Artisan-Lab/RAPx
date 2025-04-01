@@ -1,12 +1,12 @@
 pub mod contracts;
+#[allow(unused)]
+pub mod dominated_chain;
 pub mod generic_check;
 pub mod inter_record;
 pub mod matcher;
 #[allow(unused)]
 pub mod visitor;
 pub mod visitor_check;
-#[allow(unused)]
-pub mod dominated_chain;
 use crate::analysis::utils::fn_info::*;
 use crate::{
     analysis::unsafety_isolation::{
