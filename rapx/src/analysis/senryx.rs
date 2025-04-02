@@ -112,11 +112,7 @@ impl<'tcx> SenryxCheck<'tcx> {
         Self::show_annotate_results(self.tcx, def_id, annotation_results);
     }
 
-    pub fn body_visit_and_check(
-        &mut self,
-        def_id: DefId,
-        fn_map: &FnMap,
-    ) -> Vec<CheckResult<'tcx>> {
+    pub fn body_visit_and_check(&mut self, def_id: DefId, fn_map: &FnMap) -> Vec<CheckResult> {
         let mut body_visitor = BodyVisitor::new(self.tcx, def_id, self.global_recorder.clone(), 0);
         let func_type = get_type(self.tcx, def_id);
         if func_type == 1 {

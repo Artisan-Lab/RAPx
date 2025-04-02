@@ -1,7 +1,9 @@
+use std::collections::HashSet;
+
 use super::{
     contracts::{abstract_state::AlignState, state_lattice::Lattice},
     matcher::{get_arg_place, UnsafeApi},
-    visitor::{BodyVisitor, PlaceTy},
+    visitor::{BodyVisitor, CheckResult, PlaceTy},
 };
 use crate::analysis::senryx::FnMap;
 use crate::{analysis::utils::fn_info::get_cleaned_def_path_name, rap_warn};
@@ -36,14 +38,36 @@ impl<'tcx> BodyVisitor<'tcx> {
                 match sp.sp_name.as_str() {
                     "Aligned" => {
                         if !self.check_align(arg_place) {
-                            rap_warn!("Safe function {:?} uses unsafe callee {:?}, but the pointer may be unaligned!",self_func_name, func_name);
-                            rap_warn!("{:?}", fn_span);
+                            self.insert_failed_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "Aligned",
+                            );
+                        } else {
+                            self.insert_successful_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "Aligned",
+                            );
                         }
                     }
                     "NonNull" => {
                         if !self.check_non_null(arg_place) {
-                            rap_warn!("Safe function {:?} uses unsafe callee {:?}, but the pointer may be null!",self_func_name, func_name);
-                            rap_warn!("{:?}", fn_span);
+                            self.insert_failed_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "NonNull",
+                            );
+                        } else {
+                            self.insert_successful_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "NonNull",
+                            );
                         }
                     }
                     "AllocatorConsistency" => {
@@ -115,6 +139,78 @@ impl<'tcx> BodyVisitor<'tcx> {
                     _ => {}
                 }
             }
+        }
+    }
+
+    pub fn insert_failed_check_result(
+        &mut self,
+        func_name: String,
+        fn_span: Span,
+        idx: usize,
+        sp: &str,
+    ) {
+        if let Some(existing) = self
+            .check_results
+            .iter_mut()
+            .find(|result| result.func_name == func_name && result.func_span == fn_span)
+        {
+            if let Some(passed_set) = existing.passed_contracts.get_mut(&idx) {
+                passed_set.remove(sp);
+                if passed_set.is_empty() {
+                    existing.passed_contracts.remove(&idx);
+                }
+            }
+            existing
+                .failed_contracts
+                .entry(idx)
+                .and_modify(|set| {
+                    set.insert(sp.to_string());
+                })
+                .or_insert_with(|| {
+                    let mut new_set = HashSet::new();
+                    new_set.insert(sp.to_string());
+                    new_set
+                });
+        } else {
+            let mut new_result = CheckResult::new(&func_name, fn_span);
+            new_result
+                .failed_contracts
+                .insert(idx, HashSet::from([sp.to_string()]));
+            self.check_results.push(new_result);
+        }
+    }
+
+    pub fn insert_successful_check_result(
+        &mut self,
+        func_name: String,
+        fn_span: Span,
+        idx: usize,
+        sp: &str,
+    ) {
+        if let Some(existing) = self
+            .check_results
+            .iter_mut()
+            .find(|result| result.func_name == func_name && result.func_span == fn_span)
+        {
+            if let Some(failed_set) = existing.failed_contracts.get_mut(&idx) {
+                if failed_set.contains(sp) {
+                    return;
+                }
+            }
+
+            existing
+                .passed_contracts
+                .entry(idx)
+                .and_modify(|set| {
+                    set.insert(sp.to_string());
+                })
+                .or_insert_with(|| HashSet::from([sp.to_string()]));
+        } else {
+            let mut new_result = CheckResult::new(&func_name, fn_span);
+            new_result
+                .passed_contracts
+                .insert(idx, HashSet::from([sp.to_string()]));
+            self.check_results.push(new_result);
         }
     }
 

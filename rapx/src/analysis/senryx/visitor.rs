@@ -37,20 +37,20 @@ use rustc_middle::{
 };
 
 //TODO: modify contracts vec to contract-bool pairs (we can also use path index to record path info)
-pub struct CheckResult<'tcx> {
+pub struct CheckResult {
     pub func_name: String,
     pub func_span: Span,
-    pub failed_contracts: Vec<(usize, Contract<'tcx>)>,
-    pub passed_contracts: Vec<(usize, Contract<'tcx>)>,
+    pub failed_contracts: HashMap<usize, HashSet<String>>,
+    pub passed_contracts: HashMap<usize, HashSet<String>>,
 }
 
-impl<'tcx> CheckResult<'tcx> {
+impl CheckResult {
     pub fn new(func_name: &str, func_span: Span) -> Self {
         Self {
             func_name: func_name.to_string(),
             func_span,
-            failed_contracts: Vec::new(),
-            passed_contracts: Vec::new(),
+            failed_contracts: HashMap::new(),
+            passed_contracts: HashMap::new(),
         }
     }
 }
@@ -89,7 +89,7 @@ pub struct BodyVisitor<'tcx> {
     pub unsafe_callee_report: HashMap<String, usize>,
     pub local_ty: HashMap<usize, PlaceTy<'tcx>>,
     pub visit_time: usize,
-    pub check_results: Vec<CheckResult<'tcx>>,
+    pub check_results: Vec<CheckResult>,
     pub generic_map: HashMap<String, HashSet<Ty<'tcx>>>,
     pub global_recorder: HashMap<DefId, InterAnalysisRecord<'tcx>>,
     pub proj_ty: HashMap<usize, Ty<'tcx>>,

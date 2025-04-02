@@ -80,7 +80,7 @@ pub fn match_unsafe_api_and_check_contracts<'tcx, T>(
     abstate: &PathInfo<'tcx>,
     span: Span,
     _ty: T,
-) -> Option<CheckResult<'tcx>> {
+) -> Option<CheckResult> {
     let checker: Option<Box<dyn Checker>> = match func_name {
         "core::slice::raw::from_raw_parts" | "core::slice::raw::from_raw_parts_mut" => {
             Some(Box::new(SliceFromRawPartsChecker::<T>::new()))
@@ -99,8 +99,8 @@ fn process_checker<'tcx>(
     abstate: &PathInfo<'tcx>,
     func_name: &str,
     span: Span,
-) -> CheckResult<'tcx> {
-    let mut check_result = CheckResult::new(func_name, span);
+) -> CheckResult {
+    let check_result = CheckResult::new(func_name, span);
     for (idx, contracts_vec) in checker.variable_contracts().iter() {
         for contract in contracts_vec {
             let arg_place = get_arg_place(&args[*idx].node);
@@ -109,9 +109,9 @@ fn process_checker<'tcx>(
             }
             if let Some(abstate_item) = abstate.state_map.get(&arg_place) {
                 if !check_contract(contract, &abstate_item.clone()) {
-                    check_result.failed_contracts.push((*idx, contract.clone()));
+                    // check_result.failed_contracts.push((*idx, contract.clone()));
                 } else {
-                    check_result.passed_contracts.push((*idx, contract.clone()));
+                    // check_result.passed_contracts.push((*idx, contract.clone()));
                 }
             }
         }
