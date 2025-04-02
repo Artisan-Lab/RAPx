@@ -72,68 +72,189 @@ impl<'tcx> BodyVisitor<'tcx> {
                     }
                     "AllocatorConsistency" => {
                         if !self.check_allocator_consistency(arg_place) {
-                            rap_warn!("Safe function {:?} uses unsafe callee {:?}, but allocator may be inconsistency!",self_func_name, func_name);
-                            rap_warn!("{:?}", fn_span);
+                            self.insert_failed_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "AllocatorConsistency",
+                            );
+                        } else {
+                            self.insert_successful_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "AllocatorConsistency",
+                            );
                         }
                     }
                     "!ZST" => {
                         if !self.check_non_zst(arg_place) {
-                            rap_warn!("Safe function {:?} uses unsafe callee {:?}, but the argument may be ZST!",self_func_name, func_name);
-                            rap_warn!("{:?}", fn_span);
+                            self.insert_failed_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "!ZST",
+                            );
+                        } else {
+                            self.insert_successful_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "!ZST",
+                            );
                         }
                     }
                     "Typed" => {
                         if !self.check_typed(arg_place) {
-                            rap_warn!("Safe function {:?} uses unsafe callee {:?}, but the argument may not be typed!",self_func_name, func_name);
-                            rap_warn!("{:?}", fn_span);
+                            self.insert_failed_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "Typed",
+                            );
+                        } else {
+                            self.insert_successful_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "Typed",
+                            );
                         }
                     }
                     "Allocated" => {
                         if !self.check_allocated(arg_place) {
-                            rap_warn!("Safe function {:?} uses unsafe callee {:?}, but the memory access may be out of range!",self_func_name, func_name);
-                            rap_warn!("{:?}", fn_span);
+                            self.insert_failed_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "Allocated",
+                            );
+                        } else {
+                            self.insert_successful_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "Allocated",
+                            );
                         }
                     }
                     "InBounded" => {
                         if !self.check_inbounded(arg_place) {
-                            rap_warn!("Safe function {:?} uses unsafe callee {:?}, but the access may be out of range!",self_func_name, func_name);
-                            rap_warn!("{:?}", fn_span);
+                            self.insert_failed_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "InBounded",
+                            );
+                        } else {
+                            self.insert_successful_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "InBounded",
+                            );
                         }
                     }
                     "ValidString" => {
                         if !self.check_valid_string(arg_place) {
-                            rap_warn!("Safe function {:?} uses unsafe callee {:?}, but the input may be invalid!",self_func_name, func_name);
-                            rap_warn!("{:?}", fn_span);
+                            self.insert_failed_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "ValidString",
+                            );
+                        } else {
+                            self.insert_successful_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "ValidString",
+                            );
                         }
                     }
                     "ValidCStr" => {
                         if !self.check_valid_cstr(arg_place) {
-                            rap_warn!("Safe function {:?} uses unsafe callee {:?}, but the input may be invalid!",self_func_name, func_name);
-                            rap_warn!("{:?}", fn_span);
+                            self.insert_failed_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "ValidCStr",
+                            );
+                        } else {
+                            self.insert_successful_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "ValidCStr",
+                            );
                         }
                     }
                     "ValidInt" => {
                         if !self.check_valid_int(arg_place) {
-                            rap_warn!("Safe function {:?} uses unsafe callee {:?}, but the input may be invalid!",self_func_name, func_name);
-                            rap_warn!("{:?}", fn_span);
+                            self.insert_failed_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "ValidInt",
+                            );
+                        } else {
+                            self.insert_successful_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "ValidInt",
+                            );
                         }
                     }
                     "Init" => {
                         if !self.check_init(arg_place) {
-                            rap_warn!("Safe function {:?} uses unsafe callee {:?}, but the memory may be uninitialized!",self_func_name, func_name);
-                            rap_warn!("{:?}", fn_span);
+                            self.insert_failed_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "Init",
+                            );
+                        } else {
+                            self.insert_successful_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "Init",
+                            );
                         }
                     }
                     "ValidPtr" => {
                         if !self.check_valid_ptr(arg_place) {
-                            rap_warn!("Safe function {:?} uses unsafe callee {:?}, but the ptr may be invalid!",self_func_name, func_name);
-                            rap_warn!("{:?}", fn_span);
+                            self.insert_failed_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "ValidPtr",
+                            );
+                        } else {
+                            self.insert_successful_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "ValidPtr",
+                            );
                         }
                     }
                     "Ref2Ptr" => {
                         if !self.check_ref_to_ptr(arg_place) {
-                            rap_warn!("Safe function {:?} uses unsafe callee {:?}, but the ref may be invalid!",self_func_name, func_name);
-                            rap_warn!("{:?}", fn_span);
+                            self.insert_failed_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "Ref2Ptr",
+                            );
+                        } else {
+                            self.insert_successful_check_result(
+                                func_name.clone(),
+                                fn_span,
+                                idx + 1,
+                                "Ref2Ptr",
+                            );
                         }
                     }
                     _ => {}
