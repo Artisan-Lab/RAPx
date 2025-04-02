@@ -523,9 +523,8 @@ impl<'tcx> BodyVisitor<'tcx> {
         let mut results: Vec<Vec<usize>> = self.safedrop_graph.get_paths();
         let contains_unsafe_blocks = get_all_std_unsafe_callees_block_id(self.tcx, self.def_id);
         results.retain(|path| {
-            path.iter().any(|block_id| 
-                contains_unsafe_blocks.contains(block_id)
-            )
+            path.iter()
+                .any(|block_id| contains_unsafe_blocks.contains(block_id))
         });
         results
     }

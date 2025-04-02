@@ -347,7 +347,6 @@ pub fn get_all_std_unsafe_callees(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<String>
     results
 }
 
-
 pub fn get_all_std_unsafe_callees_block_id(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<usize> {
     let mut results = Vec::new();
     let body = tcx.optimized_mir(def_id);
@@ -358,7 +357,10 @@ pub fn get_all_std_unsafe_callees_block_id(tcx: TyCtxt<'_>, def_id: DefId) -> Ve
             body.basic_blocks[BasicBlock::from_usize(i)]
                 .clone()
                 .terminator(),
-        ).len() > 0{
+        )
+        .len()
+            > 0
+        {
             results.push(i);
         }
     }
