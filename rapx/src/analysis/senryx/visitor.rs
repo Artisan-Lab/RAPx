@@ -1,6 +1,7 @@
 use crate::analysis::core::alias::FnMap;
 use crate::analysis::safedrop::graph::SafeDropGraph;
 use crate::analysis::utils::fn_info::display_hashmap;
+use crate::analysis::utils::fn_info::get_all_std_unsafe_callees_block_id;
 use crate::analysis::utils::fn_info::get_callees;
 use crate::analysis::utils::fn_info::get_cleaned_def_path_name;
 use crate::analysis::utils::fn_info::is_ptr;
@@ -519,7 +520,13 @@ impl<'tcx> BodyVisitor<'tcx> {
 
     pub fn get_all_paths(&mut self) -> Vec<Vec<usize>> {
         self.safedrop_graph.solve_scc();
-        let results = self.safedrop_graph.get_paths();
+        let mut results: Vec<Vec<usize>> = self.safedrop_graph.get_paths();
+        let contains_unsafe_blocks = get_all_std_unsafe_callees_block_id(self.tcx, self.def_id);
+        results.retain(|path| {
+            path.iter().any(|block_id| 
+                contains_unsafe_blocks.contains(block_id)
+            )
+        });
         results
     }
 

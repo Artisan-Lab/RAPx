@@ -347,6 +347,24 @@ pub fn get_all_std_unsafe_callees(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<String>
     results
 }
 
+
+pub fn get_all_std_unsafe_callees_block_id(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<usize> {
+    let mut results = Vec::new();
+    let body = tcx.optimized_mir(def_id);
+    let bb_len = body.basic_blocks.len();
+    for i in 0..bb_len {
+        if match_std_unsafe_callee(
+            tcx,
+            body.basic_blocks[BasicBlock::from_usize(i)]
+                .clone()
+                .terminator(),
+        ).len() > 0{
+            results.push(i);
+        }
+    }
+    results
+}
+
 pub fn match_std_unsafe_callee(tcx: TyCtxt<'_>, terminator: &Terminator<'_>) -> Vec<String> {
     let mut results = Vec::new();
     match &terminator.kind {
