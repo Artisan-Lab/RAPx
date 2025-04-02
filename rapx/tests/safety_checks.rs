@@ -284,15 +284,12 @@ fn test_heap_proxy() {
 
 #[test]
 fn test_audit_case1() {
-    let output = running_tests_with_arg("others/support/safety_check/audit_case1", "-I");
+    let output = running_tests_with_arg("safety_check/audit_case1", "-I");
     assert_eq!(output.contains("Lack safety annotations"), true);
 }
 
 #[test]
 fn test_verify() {
-    let output = running_tests_with_arg(
-        "others/support/safety_check/slice_from_raw_parts",
-        "-verify",
-    );
+    let output = running_tests_with_arg("safety_check/slice_from_raw_parts", "-verify");
     assert_eq!(output.contains("unaligned"), true);
 }

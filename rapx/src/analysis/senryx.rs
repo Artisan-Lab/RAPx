@@ -66,14 +66,17 @@ impl<'tcx> SenryxCheck<'tcx> {
                     continue;
                 }
                 if block_unsafe && is_verify {
-                    // if get_all_std_unsafe_callees(self.tcx, def_id).len() > 0{
-                    //     let results = get_all_std_unsafe_callees(self.tcx, def_id);
-                    //     rap_warn!("In func {:?} contains:",get_cleaned_def_path_name(self.tcx, def_id));
-                    //     for re in results {
-                    //         rap_warn!(" - {:?}",re);
-                    //     }
-                    // }
-                    self.check_soundness(def_id, &fn_map);
+                    if get_all_std_unsafe_callees(self.tcx, def_id).len() > 0 {
+                        let results = get_all_std_unsafe_callees(self.tcx, def_id);
+                        rap_warn!(
+                            "In func {:?} contains:",
+                            get_cleaned_def_path_name(self.tcx, def_id)
+                        );
+                        for re in results {
+                            rap_warn!(" - {:?}", re);
+                        }
+                    }
+                    // self.check_soundness(def_id, &fn_map);
                 }
                 if function_unsafe && !is_verify {
                     self.annotate_safety(def_id);

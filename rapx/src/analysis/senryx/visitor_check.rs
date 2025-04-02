@@ -120,7 +120,7 @@ impl<'tcx> BodyVisitor<'tcx> {
 
     pub fn check_align(&self, arg: usize) -> bool {
         let obj_ty = self.chains.get_obj_ty_through_chain(arg);
-        let var_ty = self.chains.variables.get(&arg);
+        let var_ty = self.chains.get_var_node(arg);
         if obj_ty.is_none() || var_ty.is_none() {
             rap_warn!(
                 "In func {:?}, visitor checker error! Can't get {arg} in chain!",
@@ -165,7 +165,8 @@ impl<'tcx> BodyVisitor<'tcx> {
     }
 
     pub fn check_non_null(&self, arg: usize) -> bool {
-        let var_ty = self.chains.variables.get(&arg);
+        let point_to_id = self.chains.get_point_to_id(arg);
+        let var_ty = self.chains.get_var_node(point_to_id);
         if var_ty.is_none() {
             rap_warn!(
                 "In func {:?}, visitor checker error! Can't get {arg} in chain!",

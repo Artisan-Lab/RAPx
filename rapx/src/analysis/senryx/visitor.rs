@@ -3,6 +3,8 @@ use crate::analysis::safedrop::graph::SafeDropGraph;
 use crate::analysis::utils::fn_info::display_hashmap;
 use crate::analysis::utils::fn_info::get_callees;
 use crate::analysis::utils::fn_info::get_cleaned_def_path_name;
+use crate::analysis::utils::fn_info::is_ptr;
+use crate::analysis::utils::fn_info::is_ref;
 use crate::analysis::utils::show_mir::display_mir;
 use crate::rap_warn;
 use rustc_middle::mir::Local;
@@ -91,6 +93,7 @@ pub struct BodyVisitor<'tcx> {
     pub global_recorder: HashMap<DefId, InterAnalysisRecord<'tcx>>,
     pub proj_ty: HashMap<usize, Ty<'tcx>>,
     pub chains: DominatedGraph<'tcx>,
+    pub paths: Vec<Vec<usize>>,
 }
 
 impl<'tcx> BodyVisitor<'tcx> {
@@ -117,6 +120,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             global_recorder,
             proj_ty: HashMap::new(),
             chains: DominatedGraph::new(tcx, def_id),
+            paths: Vec::new(),
         }
     }
 
@@ -130,7 +134,8 @@ impl<'tcx> BodyVisitor<'tcx> {
         if self.visit_time >= 1000 {
             return;
         }
-        let paths = self.get_all_paths();
+        let paths: Vec<Vec<usize>> = self.get_all_paths();
+        self.paths = paths.clone();
         if self.visit_time == 0 {
             // rap_warn!("{:?}",self.chains.variables);
         }
@@ -145,6 +150,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         // display_mir(self.def_id,&body);
         for (index, path_info) in paths.iter().enumerate() {
             self.chains = DominatedGraph::new(self.tcx, self.def_id);
+            self.chains.init_arg();
             self.abstract_states.insert(index, PathInfo::new());
             for block_index in path_info.iter() {
                 if block_index >= &body.basic_blocks.len() {
@@ -175,8 +181,6 @@ impl<'tcx> BodyVisitor<'tcx> {
                 // display_hashmap(&self.chains.variables, 1);
             }
         }
-        // self.abstract_states_mop();
-        // self.abstate_debug();
     }
 
     pub fn path_analyze_block(
@@ -196,7 +200,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         &mut self,
         terminator: &Terminator<'tcx>,
         path_index: usize,
-        _bb_index: usize,
+        bb_index: usize,
         fn_map: &FnMap,
     ) {
         match &terminator.kind {
@@ -258,7 +262,13 @@ impl<'tcx> BodyVisitor<'tcx> {
                 replace: _,
             } => {
                 let drop_local = self.handle_proj(false, *place);
-                self.chains.set_drop(drop_local);
+                if !self.chains.set_drop(drop_local) {
+                    // display_hashmap(&self.chains.variables, 1);
+                    rap_warn!(
+                        "In path {:?}, double drop {drop_local} in block {bb_index}",
+                        self.paths[path_index]
+                    );
+                }
             }
             _ => {}
         }
@@ -345,7 +355,7 @@ impl<'tcx> BodyVisitor<'tcx> {
 
     pub fn handle_call(
         &mut self,
-        dst_place: &Place<'_>,
+        dst_place: &Place<'tcx>,
         def_id: &DefId,
         args: &Box<[Spanned<Operand>]>,
         path_index: usize,
@@ -416,12 +426,12 @@ impl<'tcx> BodyVisitor<'tcx> {
     // Use the alias analysis to support quick merge inter analysis results.
     pub fn handle_ret_alias(
         &mut self,
-        dst_place: &Place<'_>,
+        dst_place: &Place<'tcx>,
         def_id: &DefId,
         fn_map: &FnMap,
         args: &Box<[Spanned<Operand>]>,
     ) {
-        let d_local = dst_place.local.as_usize();
+        let d_local = self.handle_proj(false, dst_place.clone());
         // Find alias relationship in cache.
         // If one of the op is ptr, then alias the pointed node with another.
         if let Some(retalias) = fn_map.get(def_id) {
@@ -431,23 +441,47 @@ impl<'tcx> BodyVisitor<'tcx> {
                     alias_set.left_field_seq.clone(),
                     alias_set.right_field_seq.clone(),
                 );
+                let mut fst_var;
+                let mut snd_var;
                 if l == 0 && r != 0 {
-                    // Get origin var.
-                    let l_var = self.chains.find_var_id_with_fields_seq(d_local, l_fields);
-                    // If this var is ptr or ref, then get the next level node.
-                    let l_pointed_var = self.chains.get_point_to_id(l_var);
+                    fst_var = self.chains.find_var_id_with_fields_seq(d_local, l_fields);
                     let r_place = get_arg_place(&args[r - 1].node);
-                    let r_var = self.chains.find_var_id_with_fields_seq(r_place, r_fields);
-                    self.chains.point(l_var, r_var);
+                    snd_var = self.chains.find_var_id_with_fields_seq(r_place, r_fields);
                 } else if l != 0 && r == 0 {
-                    self.chains.point(d_local, get_arg_place(&args[l - 1].node));
+                    let l_place = get_arg_place(&args[l - 1].node);
+                    fst_var = self.chains.find_var_id_with_fields_seq(l_place, l_fields);
+                    snd_var = self.chains.find_var_id_with_fields_seq(d_local, r_fields);
+                } else if l != 0 && r != 0 {
+                    let l_place = get_arg_place(&args[l - 1].node);
+                    fst_var = self.chains.find_var_id_with_fields_seq(l_place, l_fields);
+                    let r_place = get_arg_place(&args[r - 1].node);
+                    snd_var = self.chains.find_var_id_with_fields_seq(r_place, r_fields);
                 } else {
+                    fst_var = self.chains.find_var_id_with_fields_seq(d_local, l_fields);
+                    snd_var = self.chains.find_var_id_with_fields_seq(d_local, r_fields);
+                }
+                // If this var is ptr or ref, then get the next level node.
+                let fst_to = self.chains.get_point_to_id(fst_var);
+                let snd_to = self.chains.get_point_to_id(snd_var);
+                let is_fst_ptr = fst_to != fst_var;
+                let is_snd_ptr = snd_to != snd_var;
+                match (is_fst_ptr, is_snd_ptr) {
+                    (false, true) => {
+                        self.chains.merge(snd_to, fst_to);
+                    }
+                    _ => {
+                        self.chains.merge(fst_to, snd_to);
+                    }
                 }
             }
         }
         // If no alias cache is found and dst is a ptr, then initialize dst's states.
         else {
-            let d = dst_place.local.as_usize();
+            let d_ty = self.chains.get_local_ty_by_place(d_local);
+            if d_ty.is_some() && (is_ptr(d_ty.unwrap()) || is_ref(d_ty.unwrap())) {
+                self.chains
+                    .generate_ptr_with_obj_node(d_ty.unwrap(), d_local);
+            }
         }
     }
 

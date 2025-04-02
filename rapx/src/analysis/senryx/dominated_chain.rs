@@ -103,63 +103,10 @@ impl<'tcx> DominatedGraph<'tcx> {
         let locals = body.local_decls.clone();
         let fn_sig = tcx.fn_sig(def_id).skip_binder();
         let param_len = fn_sig.inputs().skip_binder().len();
-        let mut var_map = HashMap::new();
+        let mut var_map: HashMap<usize, VariableNode<'_>> = HashMap::new();
         let mut obj_cnt = 0;
         for (idx, local) in locals.iter().enumerate() {
             let local_ty = local.ty;
-            // Init the pointed obj node when the input param is ref or ptr.
-            if idx > 0 && idx <= param_len {
-                if is_ptr(local_ty) {
-                    // insert ptr node
-                    var_map.insert(
-                        idx,
-                        VariableNode::new(
-                            idx,
-                            Some(locals.len() + obj_cnt),
-                            HashSet::new(),
-                            Some(local_ty),
-                            States::new_unknown(),
-                        ),
-                    );
-                    // insert pointed object node
-                    var_map.insert(
-                        locals.len() + obj_cnt,
-                        VariableNode::new(
-                            locals.len() + obj_cnt,
-                            None,
-                            HashSet::from([idx]),
-                            Some(get_pointee(local_ty)),
-                            States::new_unknown(),
-                        ),
-                    );
-                    obj_cnt = obj_cnt + 1;
-                } else if is_ref(local_ty) {
-                    var_map.insert(
-                        idx,
-                        VariableNode::new(
-                            idx,
-                            Some(locals.len() + obj_cnt),
-                            HashSet::new(),
-                            Some(local_ty),
-                            States::new(),
-                        ),
-                    );
-                    var_map.insert(
-                        locals.len() + obj_cnt,
-                        VariableNode::new(
-                            locals.len() + obj_cnt,
-                            None,
-                            HashSet::from([idx]),
-                            Some(get_pointee(local_ty)),
-                            States::new(),
-                        ),
-                    );
-                    obj_cnt = obj_cnt + 1;
-                } else {
-                    var_map.insert(idx, VariableNode::new_default(idx, Some(local_ty)));
-                }
-                continue;
-            }
             var_map.insert(idx, VariableNode::new_default(idx, Some(local_ty)));
         }
         Self {
@@ -167,6 +114,44 @@ impl<'tcx> DominatedGraph<'tcx> {
             def_id,
             local_len: locals.len(),
             variables: var_map,
+        }
+    }
+
+    pub fn init_arg(&mut self) {
+        let body = self.tcx.optimized_mir(self.def_id);
+        let locals = body.local_decls.clone();
+        let fn_sig = self.tcx.fn_sig(self.def_id).skip_binder();
+        let param_len = fn_sig.inputs().skip_binder().len();
+        for idx in 1..param_len + 1 {
+            let local_ty = locals[Local::from(idx)].ty;
+            self.generate_ptr_with_obj_node(local_ty, idx);
+        }
+    }
+
+    pub fn generate_ptr_with_obj_node(&mut self, local_ty: Ty<'tcx>, idx: usize) {
+        let new_id = self.generate_node_id();
+        if is_ptr(local_ty) {
+            // modify ptr node pointed
+            self.get_var_node_mut(idx).unwrap().points_to = Some(new_id);
+            // insert pointed object node
+            self.insert_node(
+                new_id,
+                Some(get_pointee(local_ty)),
+                idx,
+                None,
+                States::new_unknown(),
+            );
+        } else if is_ref(local_ty) {
+            // modify ptr node pointed
+            self.get_var_node_mut(idx).unwrap().points_to = Some(new_id);
+            // insert ref object node
+            self.insert_node(
+                new_id,
+                Some(get_pointee(local_ty)),
+                idx,
+                None,
+                States::new(),
+            );
         }
     }
 
@@ -270,6 +255,10 @@ impl<'tcx> DominatedGraph<'tcx> {
         }
     }
 
+    pub fn get_var_nod_id(&self, local_id: usize) -> usize {
+        self.get_var_node(local_id).unwrap().id
+    }
+
     pub fn get_var_node(&self, local_id: usize) -> Option<&VariableNode<'tcx>> {
         for (_idx, var_node) in &self.variables {
             if var_node.alias_set.contains(&local_id) {
@@ -295,12 +284,19 @@ impl<'tcx> DominatedGraph<'tcx> {
 
     // Merge node when (lv = move rv);
     // In this case, lv will be the same with rv.
+    // And the nodes pointing to lv originally will re-point to rv.
     pub fn merge(&mut self, lv: usize, rv: usize) {
+        let lv_node = self.get_var_node_mut(lv).unwrap().clone();
+        if lv_node.alias_set.contains(&rv) {
+            return;
+        }
+        for lv_pointed_by in lv_node.pointed_by.clone() {
+            self.point(lv_pointed_by, rv);
+        }
+        let lv_node = self.get_var_node_mut(lv).unwrap();
+        lv_node.alias_set.remove(&lv);
         let rv_node = self.get_var_node_mut(rv).unwrap();
         rv_node.alias_set.insert(lv);
-        if let Some(lv_node) = self.get_var_node_mut(lv) {
-            lv_node.alias_set.remove(&lv);
-        }
     }
 
     // Called when (lv = copy rv);
@@ -321,11 +317,18 @@ impl<'tcx> DominatedGraph<'tcx> {
         lv_node.points_to = None;
     }
 
-    pub fn insert_node(&mut self, dv: usize, ty: Option<Ty<'tcx>>) {
-        if let Some(ori_node) = self.get_var_node_mut(dv) {
-            ori_node.alias_set.remove(&dv);
-        }
-        self.variables.insert(dv, VariableNode::new_default(dv, ty));
+    pub fn insert_node(
+        &mut self,
+        dv: usize,
+        ty: Option<Ty<'tcx>>,
+        parent_id: usize,
+        child_id: Option<usize>,
+        state: States,
+    ) {
+        self.variables.insert(
+            dv,
+            VariableNode::new(dv, child_id, HashSet::from([parent_id]), ty, state),
+        );
     }
 
     pub fn delete_node(&mut self, idx: usize) {
@@ -341,13 +344,15 @@ impl<'tcx> DominatedGraph<'tcx> {
         self.variables.remove(&idx);
     }
 
-    pub fn set_drop(&mut self, idx: usize) {
+    pub fn set_drop(&mut self, idx: usize) -> bool {
         if let Some(ori_node) = self.get_var_node_mut(idx) {
             if ori_node.is_dropped == true {
-                rap_warn!("Double free detected!"); // todo: update reports
+                // rap_warn!("Double free detected!"); // todo: update reports
+                return false;
             }
             ori_node.is_dropped = true;
         }
+        return true;
     }
 
     pub fn print_graph(&self) {
