@@ -32,7 +32,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             if arg_place == 0 {
                 continue;
             }
-            let self_func_name = get_cleaned_def_path_name(self.tcx, self.def_id);
+            let _self_func_name = get_cleaned_def_path_name(self.tcx, self.def_id);
             let func_name = get_cleaned_def_path_name(self.tcx, *def_id);
             for sp in sp_set {
                 match sp.sp_name.as_str() {
