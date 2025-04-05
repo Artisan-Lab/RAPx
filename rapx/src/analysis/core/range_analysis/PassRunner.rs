@@ -28,7 +28,6 @@ impl<'tcx> PassRunner<'tcx> {
     // pub fn print_diff(&self, body: &Body<'tcx>) {
     //     let dir_path = "passrunner_mir";
     //     // PassRunner::new(self.tcx);
-    //     // 动态生成文件路径
     //     let mir_file_path = format!("{}/origin_mir.txt", dir_path);
     //     let phi_mir_file_path = format!("{}/after_rename_mir.txt", dir_path);
     //     let mut file = File::create(&mir_file_path).unwrap();

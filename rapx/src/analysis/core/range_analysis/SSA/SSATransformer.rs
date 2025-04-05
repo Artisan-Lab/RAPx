@@ -91,34 +91,35 @@ impl<'tcx> SSATransformer<'tcx> {
         &self.body
     }
 
-    pub fn analyze(&self) {
-        println!("{:?}", self.cfg);
-        println!("{:?}", self.dominators);
-        println!("!!!!!!!!!!!!!!!!!!!!!!!!");
-        Self::print_dominance_tree(&self.dom_tree, START_BLOCK, 0);
-        print!("{:?}", self.df);
-        println!("!!!!!!!!!!!!!!!!!!!!!!!!");
-        print!("{:?}", self.local_assign_blocks);
+    // pub fn analyze(&self) {
+    //     println!("{:?}", self.cfg);
+    //     println!("{:?}", self.dominators);
+    //     println!("!!!!!!!!!!!!!!!!!!!!!!!!");
+    //     Self::print_dominance_tree(&self.dom_tree, START_BLOCK, 0);
+    //     print!("{:?}", self.df);
+    //     println!("!!!!!!!!!!!!!!!!!!!!!!!!");
+    //     print!("{:?}", self.local_assign_blocks);
 
-        let dir_path = "ssa_mir";
 
-        let mir_file_path = format!("{}/mir_{:?}.txt", dir_path, self.def_id);
-        let phi_mir_file_path = format!("{}/ssa_mir_{:?}.txt", dir_path, self.def_id);
-        let mut file = File::create(&mir_file_path).unwrap();
-        let mut w1 = io::BufWriter::new(&mut file);
-        write_mir_pretty(self.tcx, None, &mut w1).unwrap();
-        let mut file2 = File::create(&phi_mir_file_path).unwrap();
-        let mut w2 = io::BufWriter::new(&mut file2);
-        let options = PrettyPrintMirOptions::from_cli(self.tcx);
-        write_mir_fn(
-            self.tcx,
-            &self.body.borrow(),
-            &mut |_, _| Ok(()),
-            &mut w2,
-            options,
-        )
-        .unwrap();
-    }
+    //     let dir_path = "ssa_mir";
+
+    //     let mir_file_path = format!("{}/mir_{:?}.txt", dir_path, self.def_id);
+    //     let phi_mir_file_path = format!("{}/ssa_mir_{:?}.txt", dir_path, self.def_id);
+    //     let mut file = File::create(&mir_file_path).unwrap();
+    //     let mut w1 = io::BufWriter::new(&mut file);
+    //     write_mir_pretty(self.tcx, None, &mut w1).unwrap();
+    //     let mut file2 = File::create(&phi_mir_file_path).unwrap();
+    //     let mut w2 = io::BufWriter::new(&mut file2);
+    //     let options = PrettyPrintMirOptions::from_cli(self.tcx);
+    //     write_mir_fn(
+    //         self.tcx,
+    //         &self.body.borrow(),
+    //         &mut |_, _| Ok(()),
+    //         &mut w2,
+    //         options,
+    //     )
+    //     .unwrap();
+    // }
     fn map_locals_to_definition_block(body: &Body) -> HashMap<Local, BasicBlock> {
         let mut local_to_block_map: HashMap<Local, BasicBlock> = HashMap::new();
 
@@ -263,7 +264,6 @@ impl<'tcx> SSATransformer<'tcx> {
         current: BasicBlock,
         depth: usize,
     ) {
-        println!("{}{:?}", "  ".repeat(depth), current);
 
         if let Some(children) = dom_tree.get(&current) {
             for &child in children {
@@ -288,277 +288,4 @@ impl<'tcx> SSATransformer<'tcx> {
             return false;
         }
     }
-    // pub fn rename_variables(
-    //     &mut self,
-    //     tcx: TyCtxt<'tcx>,
-    //     body: &mut Body<'tcx>,
-    //     dominator_tree: &HashMap<BasicBlock, Vec<BasicBlock>>,
-    // ) {
-    //     // 初始化每个变量的 reachingDef
-    //     for local in body.local_decls.indices() {
-    //         self.reaching_def.insert(local, vec![local]);
-    //     }
-
-    //     // 深度优先先序遍历支配树
-    //     for bb in Self::depth_first_search_postorder(dominator_tree) {
-    //         self.process_basic_block(bb, body);
-    //     }
-    //     // for succ_bb in body.basic_blocks[bb].terminator().successors() {
-    //     //     self.process_phi_functions(succ_bb, body);
-    //     // }
-    // }
-
-    // /// 处理单个基本块
-    // fn process_basic_block(&mut self, bb: BasicBlock, body: &mut Body<'tcx>) {
-    //     let statements = &mut body.basic_blocks_mut()[bb].statements;
-
-    //     // 线性处理基本块中的每条指令
-    //     for stmt in statements.iter_mut() {
-    //         match &mut stmt.kind {
-    //             StatementKind::Assign(box (place, rvalue)) => {
-    //                 // 仅处理非聚合类型的赋值
-    //                 if !matches!(rvalue, Rvalue::Aggregate(..)) {
-    //                     match rvalue {
-    //                         Rvalue::Use(ref mut operand) => {
-    //                             self.replace_with_latest_def(operand);
-    //                         }
-    //                         Rvalue::BinaryOp(op, box (ref mut operand1, ref mut operand2)) => {
-    //                             self.replace_with_latest_def(operand1);
-    //                             self.replace_with_latest_def(operand2);
-    //                         }
-    //                         Rvalue::UnaryOp(op, ref mut operand) => {
-    //                             self.replace_with_latest_def(operand);
-    //                         }
-    //                         Rvalue::Repeat(operand, _) => todo!(),
-    //                         Rvalue::Ref(region, borrow_kind, place) => todo!(),
-    //                         Rvalue::ThreadLocalRef(def_id) => todo!(),
-    //                         Rvalue::Len(place) => todo!(),
-    //                         Rvalue::Cast(cast_kind, operand, ty) => todo!(),
-    //                         Rvalue::NullaryOp(null_op, ty) => todo!(),
-    //                         Rvalue::Discriminant(place) => todo!(),
-    //                         Rvalue::Aggregate(aggregate_kind, index_vec) => todo!(),
-    //                         Rvalue::ShallowInitBox(operand, ty) => todo!(),
-    //                         Rvalue::CopyForDeref(place) => todo!(),
-    //                         Rvalue::RawPtr(mutability, place) => todo!(),
-    //                     }
-    //                     // 遍历 rvalue 中的操作数，并执行变量重命名
-    //                     // for operand in rvalue.operands_mut() {
-    //                     //     if let Operand::Copy(place) | Operand::Move(place) = operand {
-    //                     //         if let Some(local) = place.as_local() {
-    //                     //             // 替换使用变量为其最新定义
-    //                     //             self.update_reaching_def(local);
-    //                     //             if let Some(current_def) =
-    //                     //                 self.reaching_def.get(&local).and_then(|stack| stack.last())
-    //                     //             {
-    //                     //                 *place = Place::from(*current_def);
-    //                     //             }
-    //                     //         }
-    //                     //     }
-    //                     // }
-    //                 }
-    //                 if place.as_local().is_some() {
-    //                     // replace_with_latest_def(place);
-    //                     // self.rename_def(place, body);
-    //                 }
-    //             }
-    //             _ => {}
-    //         }
-    //     }
-
-    //     // 处理后继块中的 φ 函数
-    //     let successors: Vec<_> = body.basic_blocks_mut()[bb]
-    //         .terminator()
-    //         .successors()
-    //         .collect();
-    //     for successor in successors {
-    //         self.process_phi_functions(successor, body);
-    //     }
-    // }
-
-    // /// 重命名指令中的使用变量
-    // // fn rename_uses(&mut self, rvalue: &mut Rvalue<'tcx>) {
-    // //     // 遍历 Rvalue 中的变量使用
-    // //     for operand in rvalue.operands_mut() {
-    // //         if let Operand::Copy(place) | Operand::Move(place) = operand {
-    // //             if let Some(local) = place.as_local() {
-    // //                 if let Some(def_stack) = self.reaching_def.get(&local) {
-    // //                     if let Some(current_def) = def_stack.last() {
-    // //                         *place = Place::from(*current_def);
-    // //                     }
-    // //                 }
-    // //             }
-    // //         }
-    // //     }
-    // // }
-
-    // // /// 为指令中定义的变量分配新版本
-    // fn rename_def(&mut self, place: &mut Place<'tcx>, body: &mut Body<'tcx>) {
-    //     if let Some(local) = place.as_local() {
-    //         let new_local = self.create_fresh_variable(local, body);
-    //         if let Some(def_stack) = self.reaching_def.get_mut(&local) {
-    //             def_stack.push(new_local);
-    //         }
-    //         *place = Place::from(new_local);
-    //     }
-    // }
-
-    // /// 处理后继块中的 φ 函数
-    // fn process_phi_functions(&mut self, bb: BasicBlock, body: &mut Body<'tcx>) {
-    //     // if let Some(Terminator {
-    //     //     kind: TerminatorKind::Call { args, .. },
-    //     //     ..
-    //     // }) = &body.basic_blocks[bb].terminator
-    //     // {
-    //     //     for arg in args {
-    //     //         if let Operand::Copy(place) | Operand::Move(place) = arg {
-    //     //             if let Some(local) = place.as_local() {
-    //     //                 if let Some(def_stack) = self.reaching_def.get(&local) {
-    //     //                     if let Some(current_def) = def_stack.last() {
-    //     //                         *place = Place::from(*current_def);
-    //     //                     }
-    //     //                 }
-    //     //             }
-    //     //         }
-    //     //     }
-    //     // }
-    // }
-
-    // /// 创建一个新的变量版本
-    // fn create_fresh_variable(&mut self, local: Local, body: &mut Body<'_>) -> Local {
-    //     // 假设新的 Local 分配基于现有的数量
-    //     let new_local_index = body.local_decls.len();
-
-    //     // 创建一个新的变量声明
-    //     let new_decl = body.local_decls[local].clone();
-    //     let new_local = body.local_decls.push(new_decl);
-    //     new_local
-    // }
-    // pub fn insert_phi_statment(&mut self,body: &mut Body<'tcx>) {
-    //     // 初始化所有基本块的 phi 函数集合
-    //     let mut phi_functions: HashMap<BasicBlock, HashSet<Local>> = HashMap::new();
-    //     for bb in self.body.basic_blocks.indices() {
-    //         phi_functions.insert(bb, HashSet::new());
-    //     }
-    //     let variables: Vec<Local> = self
-    //         .local_assign_blocks
-    //         .iter()
-    //         .filter(|(_, blocks)| blocks.len() >= 2) // 只保留基本块数量大于等于 2 的条目
-    //         .map(|(&local, _)| local) // 提取 Local
-    //         .collect();
-    //     print!("{:?}", variables);
-    //     for var in &variables {
-    //         // 获取变量的定义位置
-    //         if let Some(def_blocks) = self.local_assign_blocks.get(var) {
-    //             let mut worklist: VecDeque<BasicBlock> = def_blocks.iter().cloned().collect();
-    //             let mut processed: HashSet<BasicBlock> = HashSet::new();
-
-    //             while let Some(block) = worklist.pop_front() {
-    //                 if let Some(df_blocks) = self.df.get(&block) {
-    //                     for &df_block in df_blocks {
-    //                         if !processed.contains(&df_block) {
-    //                             phi_functions.get_mut(&df_block).unwrap().insert(*var);
-    //                             processed.insert(df_block);
-    //                             if self.local_assign_blocks[var].contains(&df_block) {
-    //                                 worklist.push_back(df_block);
-    //                             }
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
-
-    //     for (block, vars) in phi_functions {
-    //         for var in vars {
-    //             let decl = self.body.local_decls[var].clone();
-    //             let new_var = self.body.local_decls.push(decl);
-    //             let predecessors = self.body.basic_blocks.predecessors()[block].clone();
-
-    //             // 构造元组元素，使用占位变量
-    //             let mut operands = IndexVec::with_capacity(predecessors.len());
-    //             for _ in 0..predecessors.len() {
-    //                 operands.push(Operand::Copy(Place::from(var)));
-    //             } // 创建 phi 语句
-    //             let phi_stmt = Statement {
-    //                 source_info: SourceInfo::outermost(self.body.span),
-    //                 kind: StatementKind::Assign(Box::new((
-    //                     Place::from(new_var), // 左值是变量
-    //                     Rvalue::Aggregate(
-    //                         Box::new(AggregateKind::Tuple), // 元组类型
-    //                         operands,
-    //                     ),
-    //                 ))),
-    //             };
-
-    //             // 插入到基本块的开头
-    //             self.body.basic_blocks_mut()[block]
-    //                 .statements
-    //                 .insert(0, phi_stmt);
-    //         }
-    //     }
-    // }
-    // // pub fn insert_phi_statment(&mut self) {
-    // //     // 初始化所有基本块的 phi 函数集合
-    // //     let mut phi_functions: HashMap<BasicBlock, HashSet<Local>> = HashMap::new();
-    // //     for bb in self.body.basic_blocks.indices() {
-    // //         phi_functions.insert(bb, HashSet::new());
-    // //     }
-    // //     let variables: Vec<Local> = self
-    // //         .local_assign_blocks
-    // //         .iter()
-    // //         .filter(|(_, blocks)| blocks.len() >= 2) // 只保留基本块数量大于等于 2 的条目
-    // //         .map(|(&local, _)| local) // 提取 Local
-    // //         .collect();
-    // //     print!("{:?}", variables);
-    // //     for var in &variables {
-    // //         // 获取变量的定义位置
-    // //         if let Some(def_blocks) = self.local_assign_blocks.get(var) {
-    // //             let mut worklist: VecDeque<BasicBlock> = def_blocks.iter().cloned().collect();
-    // //             let mut processed: HashSet<BasicBlock> = HashSet::new();
-
-    // //             while let Some(block) = worklist.pop_front() {
-    // //                 if let Some(df_blocks) = self.df.get(&block) {
-    // //                     for &df_block in df_blocks {
-    // //                         if !processed.contains(&df_block) {
-    // //                             phi_functions.get_mut(&df_block).unwrap().insert(*var);
-    // //                             processed.insert(df_block);
-    // //                             if self.local_assign_blocks[var].contains(&df_block) {
-    // //                                 worklist.push_back(df_block);
-    // //                             }
-    // //                         }
-    // //                     }
-    // //                 }
-    // //             }
-    // //         }
-    // //     }
-
-    // //     for (block, vars) in phi_functions {
-    // //         for var in vars {
-    // //             let decl = self.body.local_decls[var].clone();
-    // //             let new_var = self.body.local_decls.push(decl);
-    // //             let predecessors = self.body.basic_blocks.predecessors()[block].clone();
-
-    // //             // 构造元组元素，使用占位变量
-    // //             let mut operands = IndexVec::with_capacity(predecessors.len());
-    // //             for _ in 0..predecessors.len() {
-    // //                 operands.push(Operand::Copy(Place::from(var)));
-    // //             } // 创建 phi 语句
-    // //             let phi_stmt = Statement {
-    // //                 source_info: SourceInfo::outermost(self.body.span),
-    // //                 kind: StatementKind::Assign(Box::new((
-    // //                     Place::from(new_var), // 左值是变量
-    // //                     Rvalue::Aggregate(
-    // //                         Box::new(AggregateKind::Tuple), // 元组类型
-    // //                         operands,
-    // //                     ),
-    // //                 ))),
-    // //             };
-
-    // //             // 插入到基本块的开头
-    // //             self.body.basic_blocks_mut()[block]
-    // //                 .statements
-    // //                 .insert(0, phi_stmt);
-    // //         }
-    // //     }
-    // // }
 }

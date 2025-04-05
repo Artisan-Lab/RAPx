@@ -29,7 +29,6 @@ impl<'tcx> Replacer<'tcx> {
             .filter(|(_, blocks)| blocks.len() >= 2) // 只保留基本块数量大于等于 2 的条目
             .map(|(&local, _)| local) // 提取 Local
             .collect();
-        // print!("{:?}", variables);
         for var in &variables {
             if let Some(def_blocks) = self.ssatransformer.local_assign_blocks.get(var) {
                 let mut worklist: VecDeque<BasicBlock> = def_blocks.iter().cloned().collect();
@@ -84,7 +83,6 @@ impl<'tcx> Replacer<'tcx> {
                     .unwrap();
                 let phi_ptr = phi_in_body as *const _;
                 self.ssatransformer.phi_statements.insert(phi_ptr, true);
-                print!(" {:?} {:?}\n ", phi_ptr, phi_in_body);
             }
         }
     }
@@ -97,10 +95,8 @@ impl<'tcx> Replacer<'tcx> {
         for &bb in &order {
             self.essa_process_basic_block(bb, body);
         }
-        print!(
-            "self.ssatransformer.essa_statment {:?}\n ",
-            self.ssatransformer.essa_statements
-        );
+
+        
     }
 
     fn essa_process_basic_block(&mut self, bb: BasicBlock, body: &mut Body<'tcx>) {
@@ -110,12 +106,10 @@ impl<'tcx> Replacer<'tcx> {
             if let TerminatorKind::SwitchInt { discr, targets, .. } = &terminator.kind {
                 {
                     for (value, target) in targets.iter() {
-                        print!("essa block process {:?} value {:?}\n ", target, value);
 
                         self.essa_assign_statement(&target, &bb, value, discr, body);
                     }
                     let otherwise = targets.otherwise();
-                    print!("essa block process {:?} value {:?}\n ", otherwise, 1);
 
                     self.essa_assign_statement(&otherwise, &bb, 1, discr, body);
                 }
@@ -199,13 +193,10 @@ impl<'tcx> Replacer<'tcx> {
             user_ty: None,
             const_: Const::from_usize(self.tcx, 4),
         }));
-        print!("essa block  {:?} discr {:?}\n ", bb, discr);
         if let Operand::Copy(switch_place) | Operand::Move(switch_place) = discr {
-            print!("essa block  {:?} switch_place {:?}\n ", bb, switch_place);
             if let Some((op1, op2, cmp_op)) =
                 self.extract_condition(switch_place, switch_block_data)
             {
-                print!("essa block  {:?} op1 {:?}\n ", bb, op1);
 
                 let const_op1: Option<&ConstOperand<'_>> = op1.constant();
                 let const_op2: Option<&ConstOperand<'_>> = op2.constant();
@@ -276,14 +267,12 @@ impl<'tcx> Replacer<'tcx> {
                                     source_info: SourceInfo::outermost(body.span),
                                     kind: StatementKind::Assign(Box::new((place2, rvalue2))),
                                 };
-                                print!("two new essa {:?}  {:?}\n ", assign_stmt1, assign_stmt2);
                                 block_data.statements.insert(0, assign_stmt1);
                                 block_data.statements.insert(0, assign_stmt2);
                                 for i in 0..2 {
                                     let essa_in_body = block_data.statements.get_mut(i).unwrap();
                                     let essa_ptr = essa_in_body as *const _; // 获取 statement 的指针作为 key
                                     self.ssatransformer.essa_statements.insert(essa_ptr, true);
-                                    print!(" {:?} {:?}\n ", essa_ptr, essa_in_body);
                                 }
                             }
                             _ => panic!("Expected a place"),
@@ -315,7 +304,6 @@ impl<'tcx> Replacer<'tcx> {
                             let essa_in_body = block_data.statements.get_mut(i).unwrap();
                             let essa_ptr = essa_in_body as *const _; // 获取 statement 的指针作为 key
                             self.ssatransformer.essa_statements.insert(essa_ptr, true);
-                            print!(" {:?} {:?}\n ", essa_ptr, essa_in_body);
                         }
                     }
 
@@ -340,27 +328,11 @@ impl<'tcx> Replacer<'tcx> {
             self.ssatransformer.reaching_def.insert(local, None);
         }
         // self.ssatransformer.local_defination_block = Self::map_locals_to_definition_block(&self.body.borrow());
-        print!(
-            "self.ssatransformer.dom_tree {:?}\n ",
-            self.ssatransformer.dom_tree
-        );
-        print!(
-            "self.ssatransformer.phi_statment {:?}\n ",
-            self.ssatransformer.phi_statements
-        );
-        print!(
-            "self.ssatransformer.essa_statment {:?}\n ",
-            self.ssatransformer.essa_statements
-        );
-        print!(
-            "local_defination_block after phi {:?}\n ",
-            self.ssatransformer.local_defination_block
-        );
+
         let order = SSATransformer::depth_first_search_preorder(
             &self.ssatransformer.dom_tree,
             body.basic_blocks.indices().next().unwrap().clone(),
         );
-        // print!("order {:?}\n ", order);
         for bb in order {
             self.process_basic_block(bb, body);
         }
@@ -373,13 +345,11 @@ impl<'tcx> Replacer<'tcx> {
         let successors: Vec<_> = terminator.successors().collect();
         if let TerminatorKind::SwitchInt { .. } = &terminator.kind {
             for succ_bb in successors.clone() {
-                println!("&&&& process essa rename{:?}  \n", succ_bb);
                 self.process_essa_statments(succ_bb, body, bb);
             }
         }
 
         for succ_bb in successors {
-            print!("&&&& process successors {:?}  \n", succ_bb);
 
             self.process_phi_functions(succ_bb, body, bb);
         }
@@ -459,10 +429,7 @@ impl<'tcx> Replacer<'tcx> {
             let phi_stmt = statement as *const _;
 
             if SSATransformer::is_phi_statement(&self.ssatransformer, statement) {
-                print!(
-                    "*******phi statement {:?} in {:?}*******\n",
-                    statement, succ_bb
-                );
+
 
                 if let StatementKind::Assign(box (_, rvalue)) = &mut statement.kind {
                     if let Rvalue::Aggregate(_, operands) = rvalue {
@@ -475,14 +442,6 @@ impl<'tcx> Replacer<'tcx> {
                             .clone();
 
                         if index < operand_count {
-                            print!(
-                                "*******phi statement {:?} *******\n",
-                                self.ssatransformer.phi_index
-                            );
-                            print!(
-                                "*******phi statement operand  {:?} index {:?}*******\n",
-                                operands, index
-                            );
 
                             // self.replace_operand(&mut operands[(index).into()], &succ_bb);s
                             match &mut operands[(index).into()] {
@@ -499,17 +458,13 @@ impl<'tcx> Replacer<'tcx> {
                     }
                 }
 
-                print!(
-                    "*******phi statement after {:?} in {:?}*******\n",
-                    statement, succ_bb
-                );
+
             }
         }
     }
 
     pub fn rename_statement(&mut self, bb: BasicBlock, body: &mut Body<'tcx>) {
         for statement in body.basic_blocks.as_mut()[bb].statements.iter_mut() {
-            print!("*******statment {:?} in {:?}*******\n", statement, bb);
 
             // let rc_stat = Rc::new(RefCell::new(statement));
             let is_phi = SSATransformer::is_phi_statement(&self.ssatransformer, statement);
@@ -544,14 +499,12 @@ impl<'tcx> Replacer<'tcx> {
                 }
                 _ => {}
             }
-            print!("*******statment after {:?} in {:?}*******\n", statement, bb);
         }
     }
 
     fn rename_terminator(&mut self, bb: BasicBlock, body: &mut Body<'tcx>) {
         let terminator: &mut Terminator<'tcx> = body.basic_blocks.as_mut()[bb].terminator_mut();
         match &mut terminator.kind {
-            // 1. 函数调用: 参数使用，返回值定义
             TerminatorKind::Call {
                 args, destination, ..
             } => {
@@ -562,15 +515,12 @@ impl<'tcx> Replacer<'tcx> {
                 //     self.rename_def(place);
                 // }
             }
-            // 2. 断言: 变量使用
             TerminatorKind::Assert { cond, .. } => {
                 self.replace_operand(cond, &bb);
             }
-            // 3. Drop: 变量使用
             TerminatorKind::Drop { place, .. } => {
                 self.replace_place(place, &bb);
             }
-            // 4. SwitchInt: 变量使用
             TerminatorKind::SwitchInt { discr, .. } => {
                 self.replace_operand(discr, &bb);
             }
@@ -601,7 +551,6 @@ impl<'tcx> Replacer<'tcx> {
     }
 
     fn replace_operand(&mut self, operand: &mut Operand<'tcx>, bb: &BasicBlock) {
-        // print!("old Operand: {:?} \n", operand);
         match operand {
             Operand::Copy(place) | Operand::Move(place) => {
                 self.replace_place(place, bb);
@@ -609,24 +558,18 @@ impl<'tcx> Replacer<'tcx> {
             }
             _ => {}
         }
-        // print!("New Operand: {:?} \n", operand);
     }
 
     fn replace_place(&mut self, place: &mut Place<'tcx>, bb: &BasicBlock) {
         let old_local = place.local;
         self.update_reachinf_def(&place.local, &bb);
-        // print!("old place: {:?} \n", place);
 
         if let Some(Some(reaching_local)) = self.ssatransformer.reaching_def.get(&place.local) {
             let local = reaching_local.clone();
             *place = Place::from(local);
-            print!("replace_place: {:?} -> {:?}\n", old_local, place.local,);
-            print!("replaced place: {:?} \n", place);
+
         } else {
-            eprintln!(
-                "Warning: place.local {:?} not found in reaching_def",
-                place.local
-            );
+
         }
     }
 
@@ -642,18 +585,12 @@ impl<'tcx> Replacer<'tcx> {
             self.ssatransformer
                 .reaching_def
                 .insert(*old_local, Some(*old_local));
-            print!(
-                "%%%%reaching_def{:?} keep {:?}%%%%\n",
-                self.ssatransformer.reaching_def, old_local
-            );
+
             return;
         }
         let new_local = Local::from_u32(self.ssatransformer.local_index);
         self.ssatransformer.local_index += 1;
-        print!(
-            "fuck!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!{:?}\n",
-            new_local
-        );
+
         let _old_local = old_local.clone();
         *place = Place::from(new_local);
         self.ssatransformer
@@ -672,14 +609,7 @@ impl<'tcx> Replacer<'tcx> {
             .reaching_def
             .insert(_old_local.clone(), Some(new_local.clone()));
 
-        print!(
-            "local_defination_block after  {:?}\n ",
-            self.ssatransformer.local_defination_block
-        );
-        print!(
-            "%%%%reaching_def{:?} insert {:?}%%%%\n",
-            self.ssatransformer.reaching_def, new_local
-        );
+
 
         // self.reaching_def
         //     .entry(old_local)
@@ -729,10 +659,8 @@ impl<'tcx> Replacer<'tcx> {
         if let Some(entry) = self.ssatransformer.reaching_def.get_mut(local) {
             *entry = r.clone();
         }
-        print!(
-            "%%%%reaching_def{:?} use {:?}%%%%\n",
-            self.ssatransformer.reaching_def, local
-        );
+
+        
     }
 }
 
