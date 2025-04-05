@@ -7,11 +7,13 @@ use rustc_middle::mir::{BasicBlock, Terminator};
 use rustc_middle::ty::Mutability;
 use rustc_middle::ty::Ty;
 use rustc_middle::ty::TyCtxt;
+use rustc_middle::ty::TyKind;
 use rustc_middle::{
     mir::{Operand, TerminatorKind},
     ty,
 };
 use rustc_span::def_id::LocalDefId;
+use rustc_span::sym;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
@@ -176,6 +178,35 @@ pub fn get_type(tcx: TyCtxt<'_>, def_id: DefId) -> usize {
                 if output == ty {
                     node_type = 0;
                 }
+            }
+            match output.kind() {
+                TyKind::Ref(_, ref_ty, _) => {
+                    if ref_ty.is_param(0) {
+                        node_type = 0;
+                    }
+                    if let Some(impl_id) = assoc_item.impl_container(tcx) {
+                        let ty = tcx.type_of(impl_id).skip_binder();
+                        if *ref_ty == ty {
+                            println!("find ref:{:?}", output);
+                            node_type = 0;
+                        }
+                    }
+                }
+                TyKind::Adt(adt_def, substs) => {
+                    if adt_def.is_enum() && tcx.is_diagnostic_item(sym::Option, adt_def.did()) {
+                        let inner_ty = substs.type_at(0);
+                        if inner_ty.is_param(0) {
+                            node_type = 0;
+                        }
+                        if let Some(impl_id) = assoc_item.impl_container(tcx) {
+                            let ty_impl = tcx.type_of(impl_id).skip_binder();
+                            if inner_ty == ty_impl {
+                                node_type = 0;
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
         }
     }
