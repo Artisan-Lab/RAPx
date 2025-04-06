@@ -1,14 +1,14 @@
-pub mod SSA;
-pub mod PassRunner;
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::Write;
-use std::process::Command;
+#![allow(non_snake_case)]
 
+pub mod PassRunner;
+pub mod SSA;
 use rustc_hir::def::DefKind;
-use rustc_hir::def_id::DefId;
 use rustc_middle::mir::Body;
 use rustc_middle::ty::TyCtxt;
+// use std::collections::HashMap;
+// use std::fs::File;
+// use std::io::Write;
+// use std::process::Command;
 pub struct RangeAnalyzer<'tcx> {
     pub tcx: TyCtxt<'tcx>,
     pub debug: bool,

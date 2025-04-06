@@ -1,11 +1,11 @@
-fn test1() {
-    let mut x = 0;
+// fn test1() {
+//     let mut x = 0;
 
-    while x < 10 {
-        x += 1;
-    }
-}
-fn test2() {
+//     while x < 10 {
+//         x += 1;
+//     }
+// }
+fn main() {
     let mut k = 0;
 
     while k < 100 {

@@ -59,7 +59,6 @@ pub struct RapCallback {
     opt: bool,
     heap_item: bool,
     range: bool,
-
 }
 
 #[allow(clippy::derivable_impls)]
@@ -79,7 +78,6 @@ impl Default for RapCallback {
             opt: false,
             heap_item: false,
             range: false,
-
         }
     }
 }
@@ -211,7 +209,7 @@ impl RapCallback {
     pub fn is_heap_item_enabled(self) -> bool {
         self.heap_item
     }
-    pub fn enable_range(&mut self, ) {
+    pub fn enable_range(&mut self) {
         self.range = true;
     }
     pub fn is_range_analysis_enabled(self) -> bool {

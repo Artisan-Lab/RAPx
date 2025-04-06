@@ -1,35 +1,29 @@
+#![allow(unused_imports)]
+#![allow(non_snake_case)]
+#![allow(unused_variables)]
+#![allow(dead_code)]
 use rustc_data_structures::graph::dominators::Dominators;
-// use rustc_mir_transform::ssa::SsaLocals;
-// use crate::ssa::SsaLocals;
 use rustc_data_structures::graph::{dominators, Predecessors};
-use rustc_driver::Compilation;
 use rustc_driver::{Callbacks, RunCompiler};
 use rustc_hir::def_id::LocalDefId;
-use rustc_index::IndexVec;
-use rustc_interface::{interface::Compiler, Queries};
-use rustc_middle::mir::pretty::*;
 use rustc_middle::mir::*;
 use rustc_middle::{
     mir::{visit::Visitor, Body, Local, Location},
     ty::TyCtxt,
 };
-use rustc_target::abi::FieldIdx;
-use std::borrow::Borrow;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::fs::File;
-use std::io::{self, Write};
-use std::path::PathBuf;
-// use tracing::{debug, error, info, warn};
+use std::collections::{HashMap, HashSet};
 
-use rustc_data_structures::fx::FxHashMap;
-
-use rustc_index::bit_set::BitSet;
-use rustc_index::IndexSlice;
-use rustc_middle::mir::visit::*;
-use rustc_middle::mir::visit::*;
-use rustc_middle::mir::*;
-
-use super::Replacer::*;
+// use std::path::PathBuf;
+// // use tracing::{debug, error, info, warn};
+// use rustc_target::abi::FieldIdx;
+// use std::borrow::Borrow;
+// use rustc_index::bit_set::BitSet;
+// use rustc_index::IndexSlice;
+// use rustc_middle::mir::visit::*;
+// use rustc_middle::mir::visit::*;
+// use rustc_middle::mir::*;
+// use rustc_index::IndexVec;
+// use super::Replacer::*;
 pub struct SSATransformer<'tcx> {
     pub tcx: TyCtxt<'tcx>,
     pub def_id: LocalDefId,
@@ -99,7 +93,6 @@ impl<'tcx> SSATransformer<'tcx> {
     //     print!("{:?}", self.df);
     //     println!("!!!!!!!!!!!!!!!!!!!!!!!!");
     //     print!("{:?}", self.local_assign_blocks);
-
 
     //     let dir_path = "ssa_mir";
 
@@ -232,8 +225,8 @@ impl<'tcx> SSATransformer<'tcx> {
             dominance_frontier.entry(block).or_default();
         }
 
-        for (block, block_data) in body.basic_blocks.iter_enumerated() {
-            if (predecessors[block].len() > 1) {
+        for (block, _) in body.basic_blocks.iter_enumerated() {
+            if predecessors[block].len() > 1 {
                 let preds = body.basic_blocks.predecessors()[block].clone();
 
                 for &pred in &preds {
@@ -264,7 +257,6 @@ impl<'tcx> SSATransformer<'tcx> {
         current: BasicBlock,
         depth: usize,
     ) {
-
         if let Some(children) = dom_tree.get(&current) {
             for &child in children {
                 Self::print_dominance_tree(dom_tree, child, depth + 1);

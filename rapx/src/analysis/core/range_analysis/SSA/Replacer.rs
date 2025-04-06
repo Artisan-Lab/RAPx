@@ -1,17 +1,19 @@
-use rustc_index::IndexSlice;
-use rustc_index::{bit_set::BitSet, IndexVec};
-use rustc_middle::mir::visit::*;
+#![allow(non_snake_case)]
+#![allow(unused_variables)]
+#![allow(dead_code)]
+
+use rustc_index:: IndexVec;
 use rustc_middle::mir::*;
 use rustc_middle::ty::TyCtxt;
-use stable_mir::mir::FieldIdx;
-use stable_mir::ty::ConstantKind;
 use std::collections::{HashMap, HashSet, VecDeque};
-
 use super::SSATransformer::SSATransformer;
+// use stable_mir::mir::FieldIdx;
+// use stable_mir::ty::ConstantKind;
+// // use rustc_middle::mir::visit::*;
+// // use rustc_index::IndexSlice;
 
 pub struct Replacer<'tcx> {
     pub(crate) tcx: TyCtxt<'tcx>,
-
     pub(crate) ssatransformer: super::SSATransformer::SSATransformer<'tcx>,
     pub(crate) new_local_collection: HashSet<Local>,
 }
@@ -95,8 +97,6 @@ impl<'tcx> Replacer<'tcx> {
         for &bb in &order {
             self.essa_process_basic_block(bb, body);
         }
-
-        
     }
 
     fn essa_process_basic_block(&mut self, bb: BasicBlock, body: &mut Body<'tcx>) {
@@ -106,7 +106,6 @@ impl<'tcx> Replacer<'tcx> {
             if let TerminatorKind::SwitchInt { discr, targets, .. } = &terminator.kind {
                 {
                     for (value, target) in targets.iter() {
-
                         self.essa_assign_statement(&target, &bb, value, discr, body);
                     }
                     let otherwise = targets.otherwise();
@@ -197,7 +196,6 @@ impl<'tcx> Replacer<'tcx> {
             if let Some((op1, op2, cmp_op)) =
                 self.extract_condition(switch_place, switch_block_data)
             {
-
                 let const_op1: Option<&ConstOperand<'_>> = op1.constant();
                 let const_op2: Option<&ConstOperand<'_>> = op2.constant();
                 let cmp_operand: Operand<'_> = match cmp_op.clone() {
@@ -350,7 +348,6 @@ impl<'tcx> Replacer<'tcx> {
         }
 
         for succ_bb in successors {
-
             self.process_phi_functions(succ_bb, body, bb);
         }
     }
@@ -362,7 +359,7 @@ impl<'tcx> Replacer<'tcx> {
     ) {
         let switch_block_data = body.basic_blocks[switch_bb].clone();
         if let Some(terminator) = &switch_block_data.clone().terminator {
-            if let TerminatorKind::SwitchInt { discr, targets, .. } = &terminator.kind {
+            if let TerminatorKind::SwitchInt { discr, .. } = &terminator.kind {
                 if let Operand::Copy(switch_place) | Operand::Move(switch_place) = discr {
                     if let Some((op1, op2, cmp_op)) =
                         self.extract_condition(switch_place, switch_block_data)
@@ -429,8 +426,6 @@ impl<'tcx> Replacer<'tcx> {
             let phi_stmt = statement as *const _;
 
             if SSATransformer::is_phi_statement(&self.ssatransformer, statement) {
-
-
                 if let StatementKind::Assign(box (_, rvalue)) = &mut statement.kind {
                     if let Rvalue::Aggregate(_, operands) = rvalue {
                         let operand_count = operands.len();
@@ -442,7 +437,6 @@ impl<'tcx> Replacer<'tcx> {
                             .clone();
 
                         if index < operand_count {
-
                             // self.replace_operand(&mut operands[(index).into()], &succ_bb);s
                             match &mut operands[(index).into()] {
                                 Operand::Copy(place) | Operand::Move(place) => {
@@ -457,15 +451,12 @@ impl<'tcx> Replacer<'tcx> {
                         }
                     }
                 }
-
-
             }
         }
     }
 
     pub fn rename_statement(&mut self, bb: BasicBlock, body: &mut Body<'tcx>) {
         for statement in body.basic_blocks.as_mut()[bb].statements.iter_mut() {
-
             // let rc_stat = Rc::new(RefCell::new(statement));
             let is_phi = SSATransformer::is_phi_statement(&self.ssatransformer, statement);
             let is_essa = SSATransformer::is_essa_statement(&self.ssatransformer, statement);
@@ -537,7 +528,7 @@ impl<'tcx> Replacer<'tcx> {
             | Rvalue::ShallowInitBox(operand, _) => {
                 self.replace_operand(operand, &bb);
             }
-            Rvalue::BinaryOp(_, box (lhs, rhs)) | Rvalue::BinaryOp(_, box (lhs, rhs)) => {
+            Rvalue::BinaryOp(_, box (lhs, rhs)) => {
                 self.replace_operand(lhs, &bb);
                 self.replace_operand(rhs, &bb);
             }
@@ -561,15 +552,13 @@ impl<'tcx> Replacer<'tcx> {
     }
 
     fn replace_place(&mut self, place: &mut Place<'tcx>, bb: &BasicBlock) {
-        let old_local = place.local;
+        // let old_local = place.local;
         self.update_reachinf_def(&place.local, &bb);
 
         if let Some(Some(reaching_local)) = self.ssatransformer.reaching_def.get(&place.local) {
             let local = reaching_local.clone();
             *place = Place::from(local);
-
         } else {
-
         }
     }
 
@@ -608,8 +597,6 @@ impl<'tcx> Replacer<'tcx> {
         self.ssatransformer
             .reaching_def
             .insert(_old_local.clone(), Some(new_local.clone()));
-
-
 
         // self.reaching_def
         //     .entry(old_local)
@@ -659,8 +646,6 @@ impl<'tcx> Replacer<'tcx> {
         if let Some(entry) = self.ssatransformer.reaching_def.get_mut(local) {
             *entry = r.clone();
         }
-
-        
     }
 }
 
