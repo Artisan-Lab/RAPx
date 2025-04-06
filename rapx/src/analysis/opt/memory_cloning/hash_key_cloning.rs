@@ -5,6 +5,7 @@ use once_cell::sync::OnceCell;
 
 use crate::analysis::core::dataflow::graph::DFSStatus;
 use crate::analysis::core::dataflow::graph::Direction;
+use crate::analysis::opt::OptCheck;
 use rustc_hir::{intravisit, Expr, ExprKind};
 use rustc_middle::mir::Local;
 use rustc_middle::ty::{TyCtxt, TyKind, TypeckResults};
@@ -145,26 +146,42 @@ fn report_hash_key_cloning(graph: &Graph, clone_span: Span, insert_span: Span) {
     println!("{}", renderer.render(message));
 }
 
-pub fn check(graph: &Graph, tcx: &TyCtxt) {
-    let _ = &DEFPATHS.get_or_init(|| DefPaths::new(tcx));
-    let def_id = graph.def_id;
-    let body = tcx.hir().body_owned_by(def_id.as_local().unwrap());
-    let typeck_results = tcx.typeck(def_id.as_local().unwrap());
-    let mut hashset_finder = HashSetInsertFinder {
-        typeck_results,
-        record: HashSet::new(),
-    };
-    intravisit::walk_body(&mut hashset_finder, body);
-    for node in graph.nodes.iter() {
-        if hashset_finder.record.contains(&node.span) {
-            if let Some(clone_node_idx) = find_first_param_upside_clone(graph, node) {
-                if let Some(new_node_idx) = find_hashset_new_node(graph, node) {
-                    if !graph.is_connected(new_node_idx, Local::from_usize(0)) {
-                        let clone_span = graph.nodes[clone_node_idx].span;
-                        report_hash_key_cloning(graph, clone_span, node.span);
+pub struct HashKeyCloningCheck {
+    record: Vec<(Span, Span)>,
+}
+
+impl OptCheck for HashKeyCloningCheck {
+    fn new() -> Self {
+        Self { record: Vec::new() }
+    }
+
+    fn check(&mut self, graph: &Graph, tcx: &TyCtxt) {
+        let _ = &DEFPATHS.get_or_init(|| DefPaths::new(tcx));
+        let def_id = graph.def_id;
+        let body = tcx.hir().body_owned_by(def_id.as_local().unwrap());
+        let typeck_results = tcx.typeck(def_id.as_local().unwrap());
+        let mut hashset_finder = HashSetInsertFinder {
+            typeck_results,
+            record: HashSet::new(),
+        };
+        intravisit::walk_body(&mut hashset_finder, body);
+        for node in graph.nodes.iter() {
+            if hashset_finder.record.contains(&node.span) {
+                if let Some(clone_node_idx) = find_first_param_upside_clone(graph, node) {
+                    if let Some(new_node_idx) = find_hashset_new_node(graph, node) {
+                        if !graph.is_connected(new_node_idx, Local::from_usize(0)) {
+                            let clone_span = graph.nodes[clone_node_idx].span;
+                            self.record.push((clone_span, node.span));
+                        }
                     }
                 }
             }
+        }
+    }
+
+    fn report(&self, graph: &Graph) {
+        for (clone_span, insert_span) in self.record.iter() {
+            report_hash_key_cloning(graph, *clone_span, *insert_span);
         }
     }
 }

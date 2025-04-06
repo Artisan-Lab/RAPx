@@ -5,13 +5,11 @@ pub mod memory_cloning;
 
 use rustc_middle::ty::TyCtxt;
 
-use crate::rap_warn;
-
 use super::core::dataflow::{graph::Graph, DataFlow};
 use checking::bounds_checking::BoundsCheck;
 use data_collection::slice_contains::SliceContainsCheck;
 use iterator::next_iterator::NextIteratorCheck;
-use memory_cloning::used_as_immutable::UsedAsImmutableCheck;
+use memory_cloning::hash_key_cloning::HashKeyCloningCheck;
 
 pub struct Opt<'tcx> {
     pub tcx: TyCtxt<'tcx>,
@@ -40,13 +38,13 @@ impl<'tcx> Opt<'tcx> {
                 bounds_check
             })
             .collect();
-        let used_as_immutable_checks: Vec<UsedAsImmutableCheck> = dataflow
+        let hash_key_cloning_checks: Vec<HashKeyCloningCheck> = dataflow
             .graphs
             .iter()
             .map(|(_, graph)| {
-                let mut used_as_immutable_check = UsedAsImmutableCheck::new();
-                used_as_immutable_check.check(graph, &self.tcx);
-                used_as_immutable_check
+                let mut hash_key_cloning_check = HashKeyCloningCheck::new();
+                hash_key_cloning_check.check(graph, &self.tcx);
+                hash_key_cloning_check
             })
             .collect();
         let slice_contains_checks: Vec<SliceContainsCheck> = dataflow
@@ -72,18 +70,17 @@ impl<'tcx> Opt<'tcx> {
             })
             .collect();
         if !(bounds_checks.is_empty()
-            && used_as_immutable_checks.is_empty()
+            && hash_key_cloning_checks.is_empty()
             && slice_contains_checks.is_empty()
             && next_iterator_checks.is_empty())
         {
-            rap_warn!("Performance Issues detected");
             for ((_, graph), bounds_check) in dataflow.graphs.iter().zip(bounds_checks.iter()) {
                 bounds_check.report(graph);
             }
-            for ((_, graph), used_as_immutable_check) in
-                dataflow.graphs.iter().zip(used_as_immutable_checks.iter())
+            for ((_, graph), hash_key_cloning_check) in
+                dataflow.graphs.iter().zip(hash_key_cloning_checks.iter())
             {
-                used_as_immutable_check.report(graph);
+                hash_key_cloning_check.report(graph);
             }
             for ((_, graph), slice_contains_check) in
                 dataflow.graphs.iter().zip(slice_contains_checks.iter())
