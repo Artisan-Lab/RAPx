@@ -141,15 +141,25 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
         let mut unsafe_constructors = Vec::new();
         let mut unsafe_methods = Vec::new();
         let mut safe_methods = Vec::new();
+        let mut mut_methods = Vec::new();
         let mut struct_name = "".to_string();
+        let mut ty_flag = 0;
         if let Some(assoc_item) = tcx.opt_associated_item(def_id) {
             if let Some(impl_id) = assoc_item.impl_container(tcx) {
                 // get struct ty
                 let ty = tcx.type_of(impl_id).skip_binder();
                 if let Some(adt_def) = ty.ty_adt_def() {
+                    if adt_def.is_union() {
+                        ty_flag = 1;
+                    } else if adt_def.is_enum() {
+                        ty_flag = 2;
+                    }
                     let adt_def_id = adt_def.did();
                     struct_name = get_cleaned_def_path_name(tcx, adt_def_id);
                     if !cache.insert(adt_def_id) {
+                        return;
+                    }
+                    if !check_visibility(self.tcx, adt_def_id) {
                         return;
                     }
                     let impl_vec = get_impls_for_struct(self.tcx, adt_def_id);
@@ -158,6 +168,9 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                         for item in associated_items.in_definition_order() {
                             if let ty::AssocKind::Fn = item.kind {
                                 let item_def_id = item.def_id;
+                                if !check_visibility(self.tcx, item_def_id) {
+                                    continue;
+                                }
                                 if get_type(self.tcx, item_def_id) == 0
                                     && check_safety(self.tcx, item_def_id) == true
                                 {
@@ -180,6 +193,11 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                                         safe_methods.push(item_def_id);
                                     }
                                 }
+                                if get_type(self.tcx, item_def_id) == 1
+                                    && has_mut_self_param(self.tcx, item_def_id) == true
+                                {
+                                    mut_methods.push(item_def_id);
+                                }
                             }
                         }
                     }
@@ -193,23 +211,35 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
         {
             return;
         }
-        println!("Struct:{:?}", struct_name);
-        println!("Safe Cons: ");
-        for safe_cons in safe_constructors {
-            println!(" {:?}", get_cleaned_def_path_name(tcx, safe_cons));
+        if ty_flag == 0 {
+            println!("Struct:{:?}", struct_name);
         }
-        println!("Unsafe Cons: ");
-        for unsafe_cons in unsafe_constructors {
-            println!(" {:?}", get_cleaned_def_path_name(tcx, unsafe_cons));
+        if ty_flag == 1 {
+            println!("Union:{:?}", struct_name);
         }
-        println!("Unsafe Methods: ");
-        for method in unsafe_methods {
-            println!(" {:?}", get_cleaned_def_path_name(tcx, method));
+        if ty_flag == 2 {
+            println!("Enum:{:?}", struct_name);
         }
-        println!("Safe Methods with unsafe callee: ");
-        for method in safe_methods {
-            println!(" {:?}", get_cleaned_def_path_name(tcx, method));
-        }
+        println!("Safe Cons: {}", safe_constructors.len());
+        // for safe_cons in safe_constructors {
+        //     println!(" {:?}", get_cleaned_def_path_name(tcx, safe_cons));
+        // }
+        println!("Unsafe Cons: {}", unsafe_constructors.len());
+        // for unsafe_cons in unsafe_constructors {
+        //     println!(" {:?}", get_cleaned_def_path_name(tcx, unsafe_cons));
+        // }
+        println!("Unsafe Methods: {}", unsafe_methods.len());
+        // for method in unsafe_methods {
+        //     println!(" {:?}", get_cleaned_def_path_name(tcx, method));
+        // }
+        println!("Safe Methods with unsafe callee: {}", safe_methods.len());
+        // for method in safe_methods {
+        //     println!(" {:?}", get_cleaned_def_path_name(tcx, method));
+        // }
+        println!("Mut self Methods: {}", mut_methods.len());
+        // for method in mut_methods {
+        //     println!(" {:?}", get_cleaned_def_path_name(tcx, method));
+        // }
     }
 
     pub fn get_units_data(&mut self, tcx: TyCtxt<'tcx>) {

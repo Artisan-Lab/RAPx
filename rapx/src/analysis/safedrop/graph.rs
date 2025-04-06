@@ -69,7 +69,6 @@ pub struct BlockNode<'tcx> {
     pub const_value: Vec<(usize, usize)>,
     //store switch stmts in current block for the path filtering in path-sensitive analysis.
     pub switch_stmts: Vec<Terminator<'tcx>>,
-
     pub modified_value: FxHashSet<usize>,
     // (SwitchInt target, enum index) -> outside nodes.
     pub scc_outer: SccOuter,

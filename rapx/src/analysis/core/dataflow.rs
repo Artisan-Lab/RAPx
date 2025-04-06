@@ -41,14 +41,16 @@ impl<'tcx> DataFlow<'tcx> {
                 let hir_map = self.tcx.hir();
                 if hir_map.maybe_body_owned_by(local_def_id).is_some() {
                     let def_id = local_def_id.to_def_id();
-                    let graph = self.build_graph(def_id);
-                    self.graphs.insert(def_id, graph);
+                    self.build_graph(def_id);
                 }
             }
         }
     }
 
-    fn build_graph(&self, def_id: DefId) -> Graph {
+    fn build_graph(&mut self, def_id: DefId) {
+        if self.graphs.contains_key(&def_id) {
+            return;
+        }
         let body: &Body = self.tcx.optimized_mir(def_id);
         let mut graph = Graph::new(def_id, body.span, body.arg_count, body.local_decls.len());
         let basic_blocks = &body.basic_blocks;
@@ -60,7 +62,10 @@ impl<'tcx> DataFlow<'tcx> {
                 graph.add_terminator_to_graph(&terminator);
             }
         }
-        graph
+        for closure_id in graph.closures.iter() {
+            self.build_graph(*closure_id);
+        }
+        self.graphs.insert(def_id, graph);
     }
 
     pub fn draw_graphs(&self) {

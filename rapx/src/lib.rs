@@ -47,7 +47,8 @@ pub type Elapsed = (i64, i64);
 pub struct RapCallback {
     rcanary: bool,
     safedrop: bool,
-    annotation: bool,
+    verify: bool,
+    infer: bool,
     unsafety_isolation: usize,
     mop: bool,
     callgraph: bool,
@@ -64,7 +65,8 @@ impl Default for RapCallback {
         Self {
             rcanary: false,
             safedrop: false,
-            annotation: false,
+            verify: false,
+            infer: false,
             unsafety_isolation: 0,
             mop: false,
             callgraph: false,
@@ -149,12 +151,20 @@ impl RapCallback {
         self.api_dep
     }
 
-    pub fn enable_annotation(&mut self) {
-        self.annotation = true;
+    pub fn enable_verify(&mut self) {
+        self.verify = true;
     }
 
-    pub fn is_annotation_enabled(&self) -> bool {
-        self.annotation
+    pub fn is_verify_enabled(&self) -> bool {
+        self.verify
+    }
+
+    pub fn enable_infer(&mut self) {
+        self.infer = true;
+    }
+
+    pub fn is_infer_enabled(&self) -> bool {
+        self.infer
     }
 
     pub fn enable_callgraph(&mut self) {
@@ -240,9 +250,14 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
         _ => {}
     }
 
-    if callback.is_annotation_enabled() {
+    if callback.is_verify_enabled() {
         let check_level = CheckLevel::High;
-        SenryxCheck::new(tcx, 2).start(check_level);
+        SenryxCheck::new(tcx, 2).start(check_level, true);
+    }
+
+    if callback.is_infer_enabled() {
+        let check_level = CheckLevel::High;
+        SenryxCheck::new(tcx, 2).start(check_level, false);
     }
 
     if callback.is_show_mir_enabled() {

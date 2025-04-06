@@ -7,7 +7,6 @@ use rustc_middle::ty::{self, Ty, TyCtxt, TyKind};
 use rustc_span::def_id::DefId;
 use rustc_target::abi::VariantIdx;
 
-use colorful::{Color, Colorful};
 use std::collections::{HashMap, HashSet};
 use std::env;
 
@@ -116,11 +115,7 @@ impl<'tcx, 'a> TypeAnalysis<'tcx, 'a> {
                 .map(Self::format_owner_unit)
                 .collect::<Vec<_>>()
                 .join(", ");
-            rap_info!(
-                "{} {}",
-                name.color(Color::Orange1),
-                owning.color(Color::Yellow3a)
-            );
+            rap_info!("{} {}", name, owning);
         }
     }
 }

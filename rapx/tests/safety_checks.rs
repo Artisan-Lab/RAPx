@@ -135,6 +135,15 @@ fn test_alias_switch() {
 }
 
 #[test]
+fn test_alias_copy_on_deref() {
+    let output = running_tests_with_arg("alias/alias_copy_for_deref", "-alias");
+    assert_eq!(
+        output.contains("Alias found in Some(\"::{impl#0}::new\"): {(0,1.0)}"),
+        true
+    );
+}
+
+#[test]
 fn test_leak_ctor() {
     let output = running_tests_with_arg("leak/leak_ctor", "-M");
     assert_eq!(
@@ -161,35 +170,19 @@ fn test_leak_proxy() {
     );
 }
 
-#[inline(always)]
-fn heap_result(name: &str, res: &str) -> String {
-    let s = String::from(name);
-    let color_isolation = if cfg!(target_os = "linux") {
-        "\u{1b}[0m \u{1b}[38;5;148m".to_string()
-    } else if cfg!(target_os = "macos") {
-        " ".to_string()
-    } else {
-        " ".to_string()
-    };
-    s + &color_isolation + res
-}
-
 #[test]
 fn test_heap_cell() {
     let output = running_tests_with_arg("heap/heap_cell", "-heap");
     assert_eq!(
-        output.contains(&heap_result("std::cell::Cell<T/#0>", "(0, [1])"))
-            && output.contains(&heap_result("std::cell::RefCell<T/#0>", "(0, [1])"))
-            && output.contains(&heap_result("std::cell::UnsafeCell<T/#0>", "(0, [1])"))
-            && output.contains(&heap_result(
-                "std::cell::LazyCell<T/#0, F/#1>",
-                "(0, [1,1])"
-            ))
-            && output.contains(&heap_result("std::rc::Rc<T/#0, A/#1>", "(1, [1,1])"))
-            && output.contains(&heap_result("std::sync::Arc<T/#0, A/#1>", "(1, [1,1])"))
-            && output.contains(&heap_result("std::rc::UniqueRc<T/#0, A/#1>", "(1, [1,1])"))
-            && output.contains(&heap_result("std::rc::Weak<T/#0, A/#1>", "(0, [1,1])"))
-            && output.contains(&heap_result("std::sync::Weak<T/#0, A/#1>", "(0, [1,1])")),
+        output.contains("std::cell::Cell<T/#0> (0, [1])")
+            && output.contains("std::cell::RefCell<T/#0> (0, [1])")
+            && output.contains("std::cell::UnsafeCell<T/#0> (0, [1])")
+            && output.contains("std::cell::LazyCell<T/#0, F/#1> (0, [1,1])")
+            && output.contains("std::rc::Rc<T/#0, A/#1> (1, [1,1])")
+            && output.contains("std::sync::Arc<T/#0, A/#1> (1, [1,1])")
+            && output.contains("std::rc::UniqueRc<T/#0, A/#1> (1, [1,1])")
+            && output.contains("std::rc::Weak<T/#0, A/#1> (0, [1,1])")
+            && output.contains("std::sync::Weak<T/#0, A/#1> (0, [1,1])"),
         true
     );
 }
@@ -198,50 +191,20 @@ fn test_heap_cell() {
 fn test_heap_collections() {
     let output = running_tests_with_arg("heap/heap_collections", "-heap");
     assert_eq!(
-        output.contains(&heap_result("std::ptr::Unique<T/#0>", "(1, [0])"))
-            && output.contains(&heap_result("std::boxed::Box<T/#0, A/#1>", "(1, [0,1])"))
-            && output.contains(&heap_result("std::vec::Vec<T/#0, A/#1>", "(1, [0,1])"))
-            && output.contains(&heap_result("std::string::String", "(1, [])"))
-            && output.contains(&heap_result(
-                "std::collections::VecDeque<T/#0, A/#1>",
-                "(1, [0,1])"
-            ))
-            && output.contains(&heap_result(
-                "std::collections::LinkedList<T/#0, A/#1>",
-                "(1, [1,1])"
-            ))
-            && output.contains(&heap_result(
-                "hashbrown::raw::RawTable<T/#0, A/#1>",
-                "(1, [0,1])"
-            ))
-            && output.contains(&heap_result(
-                "hashbrown::map::HashMap<K/#0, V/#1, S/#2, A/#3>",
-                "(1, [0,0,1,1])"
-            ))
-            && output.contains(&heap_result(
-                "std::collections::HashMap<K/#0, V/#1, S/#2>",
-                "(1, [0,0,1])"
-            ))
-            && output.contains(&heap_result(
-                "std::collections::BTreeMap<K/#0, V/#1, A/#2>",
-                "(1, [0,0,1])"
-            ))
-            && output.contains(&heap_result(
-                "hashbrown::set::HashSet<T/#0, S/#1, A/#2>",
-                "(1, [0,1,1])"
-            ))
-            && output.contains(&heap_result(
-                "std::collections::HashSet<T/#0, S/#1>",
-                "(1, [0,1])"
-            ))
-            && output.contains(&heap_result(
-                "std::collections::BTreeSet<T/#0, A/#1>",
-                "(1, [0,1])"
-            ))
-            && output.contains(&heap_result(
-                "std::collections::BinaryHeap<T/#0, A/#1>",
-                "(1, [0,1])"
-            )),
+        output.contains("std::ptr::Unique<T/#0> (1, [0])")
+            && output.contains("std::boxed::Box<T/#0, A/#1> (1, [0,1])")
+            && output.contains("std::vec::Vec<T/#0, A/#1> (1, [0,1])")
+            && output.contains("std::string::String (1, [])")
+            && output.contains("std::collections::VecDeque<T/#0, A/#1> (1, [0,1])")
+            && output.contains("std::collections::LinkedList<T/#0, A/#1> (1, [1,1])")
+            && output.contains("hashbrown::raw::RawTable<T/#0, A/#1> (1, [0,1])")
+            && output.contains("hashbrown::map::HashMap<K/#0, V/#1, S/#2, A/#3> (1, [0,0,1,1])")
+            && output.contains("std::collections::HashMap<K/#0, V/#1, S/#2> (1, [0,0,1])")
+            && output.contains("std::collections::BTreeMap<K/#0, V/#1, A/#2> (1, [0,0,1])")
+            && output.contains("hashbrown::set::HashSet<T/#0, S/#1, A/#2> (1, [0,1,1])")
+            && output.contains("std::collections::HashSet<T/#0, S/#1> (1, [0,1])")
+            && output.contains("std::collections::BTreeSet<T/#0, A/#1> (1, [0,1])")
+            && output.contains("std::collections::BinaryHeap<T/#0, A/#1> (1, [0,1])"),
         true
     );
 }
@@ -250,12 +213,9 @@ fn test_heap_collections() {
 fn test_heap_nested() {
     let output: String = running_tests_with_arg("heap/heap_nested", "-heap");
     assert_eq!(
-        output.contains(&heap_result("X<A/#0>", "(0, [1])"))
-            && output.contains(&heap_result("Y<B/#0>", "(0, [1])"))
-            && output.contains(&heap_result(
-                "Example<A/#0, B/#1, T/#2, S/#3>",
-                "(1, [1,1,0,1])"
-            )),
+        output.contains("X<A/#0> (0, [1])")
+            && output.contains("Y<B/#0> (0, [1])")
+            && output.contains("Example<A/#0, B/#1, T/#2, S/#3> (1, [1,1,0,1])"),
         true
     );
 }
@@ -264,11 +224,23 @@ fn test_heap_nested() {
 fn test_heap_proxy() {
     let output = running_tests_with_arg("heap/heap_proxy", "-heap");
     assert_eq!(
-        output.contains(&heap_result("Proxy1<T/#0>", "(0, [0])"))
-            && output.contains(&heap_result("Proxy2<T/#0>", "(1, [0])"))
-            && output.contains(&heap_result("Proxy3<'a/#0, T/#1>", "(0, [0,0])"))
-            && output.contains(&heap_result("Proxy4<T/#0>", "(0, [1])"))
-            && output.contains(&heap_result("Proxy5<T/#0>", "(1, [0])")),
+        output.contains("Proxy1<T/#0> (0, [0])")
+            && output.contains("Proxy2<T/#0> (1, [0])")
+            && output.contains("Proxy3<'a/#0, T/#1> (0, [0,0])")
+            && output.contains("Proxy4<T/#0> (0, [1])")
+            && output.contains("Proxy5<T/#0> (1, [0])"),
         true
     );
+}
+
+#[test]
+fn test_audit_case1() {
+    let output = running_tests_with_arg("safety_check/audit_case1", "-I");
+    assert_eq!(output.contains("Lack safety annotations"), true);
+}
+
+#[test]
+fn test_verify() {
+    let output = running_tests_with_arg("safety_check/slice_from_raw_parts", "-verify");
+    assert_eq!(output.contains("Aligned"), true);
 }
