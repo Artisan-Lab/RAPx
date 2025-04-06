@@ -39,6 +39,7 @@ fn main() {
             "-adg" => compiler.enable_api_dep(), // api dependency graph
             "-callgraph" => compiler.enable_callgraph(),
             "-dataflow" => compiler.enable_dataflow(1),
+            "-rangr" => compiler.enable_range(),
             "-dataflow=debug" => compiler.enable_dataflow(2),
             "-audit" => compiler.enable_unsafety_isolation(1),
             "-doc" => compiler.enable_unsafety_isolation(2),

@@ -211,6 +211,9 @@ impl RapCallback {
     pub fn is_heap_item_enabled(self) -> bool {
         self.heap_item
     }
+    pub fn enable_range(&mut self, ) {
+        self.range = true;
+    }
     pub fn is_range_analysis_enabled(self) -> bool {
         self.range
     }

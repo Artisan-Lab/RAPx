@@ -244,3 +244,8 @@ fn test_verify() {
     let output = running_tests_with_arg("safety_check/slice_from_raw_parts", "-verify");
     assert_eq!(output.contains("Aligned"), true);
 }
+#[test]
+fn test_ssa_transform() {
+    let output = running_tests_with_arg("range/ssa_transform", "-range");
+    assert_eq!(output.contains(""), true);
+}
