@@ -1,8 +1,8 @@
+use rustc_middle::mir::pretty::{write_mir_fn, PrettyPrintMirOptions};
 use std::collections::HashMap;
 #[allow(unused)]
 use std::collections::HashSet;
 use std::io::Cursor;
-use rustc_middle::mir::pretty::{write_mir_fn, PrettyPrintMirOptions};
 // use std::fs::File;
 // use std::io::{self, Write};
 // use rustc_index::bit_set::BitSet;
@@ -13,8 +13,8 @@ use rustc_middle::mir::pretty::{write_mir_fn, PrettyPrintMirOptions};
 // use rustc_middle::mir::visit::*;
 use rustc_middle::mir::*;
 // use rustc_middle::mir::{visit::MutVisitor, Body};
-use rustc_middle::ty::TyCtxt;
 use crate::{rap_info, rap_warn};
+use rustc_middle::ty::TyCtxt;
 
 // use crate::domain::ConstraintGraph::ConstraintGraph;
 use super::SSA::SSATransformer::SSATransformer;
@@ -46,7 +46,7 @@ impl<'tcx> PassRunner<'tcx> {
         // let mut buffer1 = Cursor::new(Vec::new());
         // write_mir_pretty(self.tcx, None, &mut buffer1).unwrap();
         // let origin_mir = String::from_utf8(buffer1.into_inner()).unwrap();
-    
+
         // after_rename_mir
         let mut buffer2 = Cursor::new(Vec::new());
         let options = PrettyPrintMirOptions::from_cli(self.tcx);
@@ -58,7 +58,7 @@ impl<'tcx> PassRunner<'tcx> {
         let re = regex::Regex::new(r"_(\d+)\s*=").unwrap();
         let mut counts = HashMap::new();
         let mut has_duplicate = false;
-    
+
         for cap in re.captures_iter(mir_string) {
             let var = cap[1].parse::<u32>().unwrap();
             let counter = counts.entry(var).or_insert(0);
@@ -67,14 +67,14 @@ impl<'tcx> PassRunner<'tcx> {
                 has_duplicate = true;
             }
         }
-    
+
         for (var, count) in counts {
             if count > 1 {
                 rap_warn!("Variable _{} is used {} times", var, count);
             }
         }
-    
-        !has_duplicate  
+
+        !has_duplicate
     }
     pub fn run_pass(&self, body: &mut Body<'tcx>) {
         let ssatransformer =
@@ -90,8 +90,9 @@ impl<'tcx> PassRunner<'tcx> {
         replacer.rename_variables(body);
         let essa_mir_string = self.get_final_ssa_as_string(body);
         rap_info!("final SSA {:?}\n", &essa_mir_string);
-        rap_info!("lvalue check  {:?}", PassRunner::lvalue_check(&essa_mir_string));
-
-
+        rap_info!(
+            "lvalue check  {:?}",
+            PassRunner::lvalue_check(&essa_mir_string)
+        );
     }
 }

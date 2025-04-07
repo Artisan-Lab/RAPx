@@ -2,11 +2,11 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
-use rustc_index:: IndexVec;
+use super::SSATransformer::SSATransformer;
+use rustc_index::IndexVec;
 use rustc_middle::mir::*;
 use rustc_middle::ty::TyCtxt;
 use std::collections::{HashMap, HashSet, VecDeque};
-use super::SSATransformer::SSATransformer;
 // use stable_mir::mir::FieldIdx;
 // use stable_mir::ty::ConstantKind;
 // // use rustc_middle::mir::visit::*;
