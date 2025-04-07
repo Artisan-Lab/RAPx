@@ -246,6 +246,6 @@ fn test_verify() {
 }
 #[test]
 fn test_ssa_transform() {
-    let output = running_tests_with_arg("range/ssa_transform", "-range");
-    assert_eq!(output.contains("lvalue check  true"), true);
+    let output = running_tests_with_arg("ssa/ssa_transform", "-ssa");
+    assert_eq!(output.contains("ssa lvalue check true"), true);
 }

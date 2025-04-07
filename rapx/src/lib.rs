@@ -22,7 +22,7 @@ use analysis::core::alias::mop::MopAlias;
 use analysis::core::api_dep::ApiDep;
 use analysis::core::call_graph::CallGraph;
 use analysis::core::dataflow::DataFlow;
-use analysis::core::range_analysis::RangeAnalyzer;
+use analysis::core::range_analysis::SSATrans;
 use analysis::opt::Opt;
 use analysis::rcanary::rCanary;
 use analysis::safedrop::SafeDrop;
@@ -58,7 +58,7 @@ pub struct RapCallback {
     dataflow: usize,
     opt: bool,
     heap_item: bool,
-    range: bool,
+    ssa: bool,
 }
 
 #[allow(clippy::derivable_impls)]
@@ -77,7 +77,7 @@ impl Default for RapCallback {
             dataflow: 0,
             opt: false,
             heap_item: false,
-            range: false,
+            ssa: false,
         }
     }
 }
@@ -209,11 +209,11 @@ impl RapCallback {
     pub fn is_heap_item_enabled(self) -> bool {
         self.heap_item
     }
-    pub fn enable_range(&mut self) {
-        self.range = true;
+    pub fn enable_ssa_transform(&mut self) {
+        self.ssa = true;
     }
-    pub fn is_range_analysis_enabled(self) -> bool {
-        self.range
+    pub fn is_ssa_transform_enabled(self) -> bool {
+        self.ssa
     }
 }
 
@@ -290,7 +290,7 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
     if callback.is_opt_enabled() {
         Opt::new(tcx).start();
     }
-    if callback.is_range_analysis_enabled() {
-        RangeAnalyzer::new(tcx, false).start();
+    if callback.is_ssa_transform_enabled() {
+        SSATrans::new(tcx, false).start();
     }
 }

@@ -46,7 +46,6 @@ impl<'tcx> PassRunner<'tcx> {
         // let mut buffer1 = Cursor::new(Vec::new());
         // write_mir_pretty(self.tcx, None, &mut buffer1).unwrap();
         // let origin_mir = String::from_utf8(buffer1.into_inner()).unwrap();
-
         // after_rename_mir
         let mut buffer2 = Cursor::new(Vec::new());
         let options = PrettyPrintMirOptions::from_cli(self.tcx);
@@ -91,7 +90,7 @@ impl<'tcx> PassRunner<'tcx> {
         let essa_mir_string = self.get_final_ssa_as_string(body);
         rap_info!("final SSA {:?}\n", &essa_mir_string);
         rap_info!(
-            "lvalue check  {:?}",
+            "ssa lvalue check true{:?}",
             PassRunner::lvalue_check(&essa_mir_string)
         );
     }
