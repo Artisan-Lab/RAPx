@@ -12,6 +12,14 @@ use data_collection::unreserved_hash::UnreservedHashCheck;
 use iterator::next_iterator::NextIteratorCheck;
 use memory_cloning::hash_key_cloning::HashKeyCloningCheck;
 
+use lazy_static::lazy_static;
+use rustc_span::symbol::Symbol;
+use std::sync::Mutex;
+
+lazy_static! {
+    pub static ref NO_STD: Mutex<bool> = Mutex::new(false);
+}
+
 pub struct Opt<'tcx> {
     pub tcx: TyCtxt<'tcx>,
 }
@@ -27,31 +35,52 @@ impl<'tcx> Opt<'tcx> {
         Self { tcx }
     }
 
+    fn has_crate(&self, name: &str) -> bool {
+        for num in self.tcx.crates(()) {
+            if self.tcx.crate_name(*num) == Symbol::intern(name) {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn start(&mut self) {
         let mut dataflow = DataFlow::new(self.tcx, false);
         dataflow.build_graphs();
+        {
+            let mut no_std = NO_STD.lock().unwrap();
+            *no_std = !self.has_crate("std");
+        }
+        if !self.has_crate("core") {
+            //core it self
+            return;
+        }
+
         dataflow.graphs.iter().for_each(|(_, graph)| {
             let mut bounds_check = BoundsCheck::new();
             bounds_check.check(graph, &self.tcx);
             bounds_check.report(graph);
 
-            let mut hash_key_cloning_check = HashKeyCloningCheck::new();
-            hash_key_cloning_check.check(graph, &self.tcx);
-            hash_key_cloning_check.report(graph);
+            let no_std = NO_STD.lock().unwrap();
+            if !*no_std {
+                let mut hash_key_cloning_check = HashKeyCloningCheck::new();
+                hash_key_cloning_check.check(graph, &self.tcx);
+                hash_key_cloning_check.report(graph);
 
-            let mut slice_contains_check = SliceContainsCheck::new();
-            slice_contains_check.check(graph, &self.tcx);
-            slice_contains_check.report(graph);
+                let mut slice_contains_check = SliceContainsCheck::new();
+                slice_contains_check.check(graph, &self.tcx);
+                slice_contains_check.report(graph);
 
-            let mut next_iterator_check = NextIteratorCheck::new();
-            next_iterator_check.check(graph, &self.tcx);
-            if next_iterator_check.valid {
-                next_iterator_check.report(graph);
+                let mut next_iterator_check = NextIteratorCheck::new();
+                next_iterator_check.check(graph, &self.tcx);
+                if next_iterator_check.valid {
+                    next_iterator_check.report(graph);
+                }
+
+                let mut unreserved_hash_check = UnreservedHashCheck::new();
+                unreserved_hash_check.check(graph, &self.tcx);
+                unreserved_hash_check.report(graph);
             }
-
-            let mut unreserved_hash_check = UnreservedHashCheck::new();
-            unreserved_hash_check.check(graph, &self.tcx);
-            unreserved_hash_check.report(graph);
         });
     }
 }
