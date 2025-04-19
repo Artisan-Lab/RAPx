@@ -7,6 +7,7 @@ use rustc_middle::ty::TyCtxt;
 
 use super::core::dataflow::{graph::Graph, DataFlow};
 use checking::bounds_checking::BoundsCheck;
+use checking::encoding_checking::EncodingCheck;
 use data_collection::slice_contains::SliceContainsCheck;
 use data_collection::unreserved_hash::UnreservedHashCheck;
 use iterator::next_iterator::NextIteratorCheck;
@@ -63,6 +64,10 @@ impl<'tcx> Opt<'tcx> {
 
             let no_std = NO_STD.lock().unwrap();
             if !*no_std {
+                let mut encoding_check = EncodingCheck::new();
+                encoding_check.check(graph, &self.tcx);
+                encoding_check.report(graph);
+
                 let mut hash_key_cloning_check = HashKeyCloningCheck::new();
                 hash_key_cloning_check.check(graph, &self.tcx);
                 hash_key_cloning_check.report(graph);

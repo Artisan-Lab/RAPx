@@ -8,7 +8,7 @@ use crate::analysis::core::dataflow::graph::Direction;
 use crate::analysis::opt::OptCheck;
 use rustc_hir::{intravisit, Expr, ExprKind};
 use rustc_middle::mir::Local;
-use rustc_middle::ty::{TyCtxt, TyKind, TypeckResults};
+use rustc_middle::ty::{TyCtxt, TypeckResults};
 use rustc_span::Span;
 use std::collections::HashSet;
 static DEFPATHS: OnceCell<DefPaths> = OnceCell::new();

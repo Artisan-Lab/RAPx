@@ -164,7 +164,7 @@ impl Graph {
                 }
                 PlaceElem::Index(idx) => {
                     graph.add_node_edge(src, dst, EdgeOp::Index);
-                    graph.add_node_edge(idx, dst, EdgeOp::Index); //Warning: no difference between src and idx in graph
+                    graph.add_node_edge(idx, dst, EdgeOp::Nop);
                 }
                 PlaceElem::ConstantIndex { .. } => {
                     graph.add_node_edge(src, dst, EdgeOp::ConstIndex);
