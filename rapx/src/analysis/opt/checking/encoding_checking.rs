@@ -199,7 +199,8 @@ fn report_encoding_bug(graph: &Graph, span: Span) {
         );
     let message = Level::Warning
         .title("Unnecessary encoding checkings detected")
-        .snippet(snippet);
+        .snippet(snippet)
+        .footer(Level::Help.title("Use unsafe APIs."));
     let renderer = Renderer::styled();
     println!("{}", renderer.render(message));
 }
