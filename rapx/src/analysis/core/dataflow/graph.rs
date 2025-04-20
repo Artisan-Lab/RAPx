@@ -15,7 +15,7 @@ pub enum NodeOp {
     //warning: the fields are related to the version of the backend rustc version
     Nop,
     Err,
-    Const(String),
+    Const(String, String),
     //Rvalue
     Use,
     Repeat,
@@ -123,10 +123,16 @@ impl Graph {
     }
 
     // add an edge into an existing node with const value as src
-    pub fn add_const_edge(&mut self, src: String, dst: Local, op: EdgeOp) -> EdgeIdx {
+    pub fn add_const_edge(
+        &mut self,
+        src_desc: String,
+        src_ty: String,
+        dst: Local,
+        op: EdgeOp,
+    ) -> EdgeIdx {
         let seq = self.nodes[dst].seq;
         let mut const_node = GraphNode::new();
-        const_node.ops[0] = NodeOp::Const(src);
+        const_node.ops[0] = NodeOp::Const(src_desc, src_ty);
         let src = self.nodes.push(const_node);
         let edge_idx = self.edges.push(GraphEdge { src, dst, op, seq });
         self.nodes[dst].in_edges.push(edge_idx);
@@ -144,7 +150,13 @@ impl Graph {
                 self.add_node_edge(src, dst, EdgeOp::Move);
             }
             Operand::Constant(boxed_const_op) => {
-                self.add_const_edge(boxed_const_op.const_.to_string(), dst, EdgeOp::Const);
+                let src_desc = boxed_const_op.const_.to_string();
+                let src_ty = match boxed_const_op.const_ {
+                    Const::Val(_, ty) => ty.to_string(),
+                    Const::Unevaluated(_, ty) => ty.to_string(),
+                    Const::Ty(ty, _) => ty.to_string(),
+                };
+                self.add_const_edge(src_desc, src_ty, dst, EdgeOp::Const);
             }
         }
     }
@@ -270,7 +282,7 @@ impl Graph {
                     self.nodes[dst].ops[seq] = NodeOp::UnaryOp;
                 }
                 Rvalue::NullaryOp(_, ty) => {
-                    self.add_const_edge(ty.to_string(), dst, EdgeOp::Nop);
+                    self.add_const_edge(ty.to_string(), ty.to_string(), dst, EdgeOp::Nop);
                     self.nodes[dst].ops[seq] = NodeOp::NullaryOp;
                 }
                 Rvalue::ThreadLocalRef(_) => {
@@ -410,6 +422,27 @@ impl Graph {
         set
     }
 
+    pub fn collect_ancestor_locals(&self, local: Local, self_included: bool) -> HashSet<Local> {
+        let mut ret = HashSet::new();
+        let mut node_operator = |_: &Graph, idx: Local| -> DFSStatus {
+            ret.insert(idx);
+            DFSStatus::Continue
+        };
+        let mut seen = HashSet::new();
+        self.dfs(
+            local,
+            Direction::Upside,
+            &mut node_operator,
+            &mut Graph::always_true_edge_validator,
+            true,
+            &mut seen,
+        );
+        if !self_included {
+            ret.remove(&local);
+        }
+        ret
+    }
+
     pub fn is_connected(&self, idx_1: Local, idx_2: Local) -> bool {
         let target = idx_2;
         let find = Cell::new(false);
@@ -439,7 +472,7 @@ impl Graph {
                 &mut node_operator,
                 &mut Self::always_true_edge_validator,
                 false,
-                &mut seen
+                &mut seen,
             );
         }
         find.get()
@@ -469,7 +502,7 @@ impl Graph {
         node_operator: &mut F,
         edge_validator: &mut G,
         traverse_all: bool,
-        seen: &mut HashSet<Local>
+        seen: &mut HashSet<Local>,
     ) -> DFSStatus
     where
         F: FnMut(&Graph, Local) -> DFSStatus,

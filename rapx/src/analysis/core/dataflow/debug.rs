@@ -45,10 +45,18 @@ impl GraphNode {
                 NodeOp::Nop => {
                     write!(attr, "label=\"{:?} ", local).unwrap();
                 }
-                NodeOp::Const(ref name) => {
-                    write!(attr, "label=\"<f0> {:?} {} ", local, escaped_string(name.clone())).unwrap();
+                NodeOp::Const(ref src_desc, ref src_ty) => {
+                    write!(
+                        attr,
+                        "label=\"<f0> {:?} {} {} ",
+                        local,
+                        escaped_string(src_desc.clone()),
+                        escaped_string(src_ty.clone()),
+                    )
+                    .unwrap();
                 }
-                NodeOp::Use => { // only exists for _a[_b] =(Use) value
+                NodeOp::Use => {
+                    // only exists for _a[_b] =(Use) value
                     write!(attr, "label=\"{:?} ", local).unwrap();
                 }
                 _ => {
