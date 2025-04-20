@@ -84,12 +84,14 @@ fn find_first_param_upside_clone(graph: &Graph, node: &GraphNode) -> Option<Loca
         }
         DFSStatus::Continue
     };
+    let mut seen = HashSet::new();
     graph.dfs(
         graph.edges[node.in_edges[1]].src, // the first param is self, so we use 1
         Direction::Upside,
         &mut node_operator,
         &mut Graph::equivalent_edge_validator,
         false,
+        &mut seen,
     );
     clone_node_idx
 }
@@ -114,12 +116,14 @@ fn find_hash_new_node(graph: &Graph, node: &GraphNode) -> Option<Local> {
         }
         DFSStatus::Continue
     };
+    let mut seen = HashSet::new();
     graph.dfs(
         graph.edges[node.in_edges[0]].src, // the first param is self
         Direction::Upside,
         &mut node_operator,
         &mut Graph::equivalent_edge_validator,
         false,
+        &mut seen,
     );
     new_node_idx
 }

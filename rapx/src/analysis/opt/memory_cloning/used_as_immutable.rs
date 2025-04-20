@@ -11,6 +11,7 @@ use rustc_middle::mir::Local;
 use rustc_middle::ty::{TyCtxt, TyKind};
 use rustc_span::Span;
 use std::cell::Cell;
+use std::collections::HashSet;
 static DEFPATHS: OnceCell<DefPaths> = OnceCell::new();
 
 use crate::analysis::core::dataflow::graph::Graph;
@@ -53,12 +54,14 @@ fn find_downside_use_as_param(graph: &Graph, clone_node_idx: Local) -> Option<(L
         edge_idx.set(idx);
         Graph::equivalent_edge_validator(graph, idx)
     };
+    let mut seen = HashSet::new();
     graph.dfs(
         clone_node_idx,
         Direction::Downside,
         &mut node_operator,
         &mut edge_operator,
         true,
+        &mut seen,
     );
     record
 }

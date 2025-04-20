@@ -389,19 +389,23 @@ impl Graph {
                 .unwrap()
         };
         // Algorithm: dfs along upside to find the root node, and then dfs along downside to collect equivalent locals
+        let mut seen = HashSet::new();
         self.dfs(
             local,
             Direction::Upside,
             &mut find_root_operator,
             &mut Self::equivalent_edge_validator,
             true,
+            &mut seen,
         );
+        seen.clear();
         self.dfs(
             root,
             Direction::Downside,
             &mut find_equivalent_operator,
             &mut Self::equivalent_edge_validator,
             true,
+            &mut seen,
         );
         set
     }
@@ -418,13 +422,16 @@ impl Graph {
                 DFSStatus::Continue
             }
         };
+        let mut seen = HashSet::new();
         self.dfs(
             idx_1,
             Direction::Downside,
             &mut node_operator,
             &mut Self::always_true_edge_validator,
             false,
+            &mut seen,
         );
+        seen.clear();
         if !find.get() {
             self.dfs(
                 idx_1,
@@ -432,6 +439,7 @@ impl Graph {
                 &mut node_operator,
                 &mut Self::always_true_edge_validator,
                 false,
+                &mut seen
             );
         }
         find.get()
@@ -461,11 +469,16 @@ impl Graph {
         node_operator: &mut F,
         edge_validator: &mut G,
         traverse_all: bool,
+        seen: &mut HashSet<Local>
     ) -> DFSStatus
     where
         F: FnMut(&Graph, Local) -> DFSStatus,
         G: FnMut(&Graph, EdgeIdx) -> DFSStatus,
     {
+        if seen.contains(&now) {
+            return DFSStatus::Stop;
+        }
+        seen.insert(now);
         macro_rules! traverse {
             ($edges: ident, $field: ident) => {
                 for edge_idx in self.nodes[now].$edges.iter() {
@@ -477,6 +490,7 @@ impl Graph {
                             node_operator,
                             edge_validator,
                             traverse_all,
+                            seen,
                         );
                         if matches!(result, DFSStatus::Stop) && !traverse_all {
                             return DFSStatus::Stop;

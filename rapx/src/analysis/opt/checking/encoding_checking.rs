@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use once_cell::sync::OnceCell;
 
 use rustc_middle::mir::Local;
@@ -16,6 +18,7 @@ use annotate_snippets::{Level, Renderer, Snippet};
 static DEFPATHS: OnceCell<DefPaths> = OnceCell::new();
 
 struct DefPaths {
+    str_from_utf8: DefPath,
     string_from_utf8: DefPath,
     string_from_utf8_lossy: DefPath,
     vec_new: DefPath,
@@ -26,6 +29,7 @@ impl DefPaths {
     // only supports push operation (can't support direct assignment)
     pub fn new(tcx: &TyCtxt<'_>) -> Self {
         Self {
+            str_from_utf8: DefPath::new("std::str::from_utf8", tcx),
             string_from_utf8: DefPath::new("std::string::String::from_utf8", tcx),
             string_from_utf8_lossy: DefPath::new("std::string::String::from_utf8_lossy", tcx),
             vec_new: DefPath::new("std::vec::Vec::new", tcx),
@@ -46,6 +50,7 @@ fn extract_vec_if_is_string_from(graph: &Graph, node: &GraphNode) -> Option<Loca
         if let NodeOp::Call(def_id) = op {
             if *def_id == def_paths.string_from_utf8.last_def_id()
                 || *def_id == def_paths.string_from_utf8_lossy.last_def_id()
+                || *def_id == def_paths.str_from_utf8.last_def_id()
             {
                 let in_edge = &graph.edges[node.in_edges[0]];
                 return Some(in_edge.src);
@@ -72,12 +77,14 @@ fn find_upside_vec_new_node(graph: &Graph, node_idx: Local) -> Option<Local> {
         }
         DFSStatus::Continue
     };
+    let mut seen = HashSet::new();
     graph.dfs(
         node_idx,
         Direction::Upside,
         &mut node_operator,
         &mut Graph::always_true_edge_validator,
         false,
+        &mut seen
     );
     vec_new_node_idx
 }
@@ -100,12 +107,14 @@ fn find_downside_push_node(graph: &Graph, node_idx: Local) -> Vec<Local> {
         }
         DFSStatus::Continue
     };
+    let mut seen = HashSet::new();
     graph.dfs(
         node_idx,
         Direction::Downside,
         &mut node_operator,
         &mut Graph::always_true_edge_validator,
         true,
+        &mut seen,
     );
     push_node_idxs
 }
@@ -145,12 +154,14 @@ fn value_pushed_is_from_const(graph: &Graph, vec_push_idx: Local) -> bool {
             _ => DFSStatus::Stop,
         }
     };
+    let mut seen = HashSet::new();
     graph.dfs(
         pushed_value_idx,
         Direction::Upside,
         &mut node_operator,
         &mut edge_validator,
         false,
+        &mut seen,
     );
     const_found
 }

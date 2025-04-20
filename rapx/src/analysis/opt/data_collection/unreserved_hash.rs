@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use once_cell::sync::OnceCell;
 
 use rustc_middle::mir::Local;
@@ -67,12 +69,14 @@ fn find_downside_hash_insert_node(graph: &Graph, node_idx: Local) -> Option<Loca
         }
         DFSStatus::Continue
     };
+    let mut seen = HashSet::new();
     graph.dfs(
         node_idx,
         Direction::Downside,
         &mut node_operator,
         &mut Graph::equivalent_edge_validator,
         false,
+        &mut seen,
     );
     hash_insert_node_idx
 }

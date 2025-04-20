@@ -43,13 +43,16 @@ impl GraphNode {
             assert!(self.ops.len() == 1);
             match self.ops[0] {
                 NodeOp::Nop => {
-                    write!(attr, "label=\" ").unwrap();
+                    write!(attr, "label=\"{:?} ", local).unwrap();
                 }
                 NodeOp::Const(ref name) => {
-                    write!(attr, "label=\"<f0> {} ", escaped_string(name.clone())).unwrap();
+                    write!(attr, "label=\"<f0> {:?} {} ", local, escaped_string(name.clone())).unwrap();
+                }
+                NodeOp::Use => { // only exists for _a[_b] =(Use) value
+                    write!(attr, "label=\"{:?} ", local).unwrap();
                 }
                 _ => {
-                    panic!("Wrong arm!");
+                    panic!("Wrong arm!  {:?} {:?}", local, self.ops[0]);
                 }
             }
         } else {

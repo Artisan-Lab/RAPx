@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use once_cell::sync::OnceCell;
 
 use rustc_middle::mir::Local;
@@ -117,12 +119,14 @@ fn find_upside_vec_len_node(graph: &Graph, node_idx: Local) -> Option<Local> {
         }
         DFSStatus::Continue
     };
+    let mut seen = HashSet::new();
     graph.dfs(
         node_idx,
         Direction::Upside,
         &mut node_operator,
         &mut Graph::equivalent_edge_validator,
         false,
+        &mut seen,
     );
     vec_len_node_idx
 }
@@ -145,12 +149,14 @@ fn find_downside_index_node(graph: &Graph, node_idx: Local) -> Vec<Local> {
         }
         DFSStatus::Continue
     };
+    let mut seen = HashSet::new();
     graph.dfs(
         node_idx,
         Direction::Downside,
         &mut node_operator,
         &mut Graph::always_true_edge_validator,
         true,
+        &mut seen,
     );
     index_node_idxs
 }
