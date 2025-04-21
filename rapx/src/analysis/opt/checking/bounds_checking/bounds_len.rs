@@ -2,8 +2,12 @@ use std::collections::HashSet;
 
 use once_cell::sync::OnceCell;
 
+use rustc_ast::BinOpKind;
+use rustc_hir::{intravisit, Expr, ExprKind};
 use rustc_middle::mir::Local;
 use rustc_middle::ty::TyCtxt;
+use rustc_middle::ty::TypeckResults;
+use rustc_span::Span;
 
 use crate::analysis::core::dataflow::graph::{
     AggKind, DFSStatus, Direction, Graph, GraphNode, NodeOp,
@@ -21,6 +25,7 @@ static DEFPATHS: OnceCell<DefPaths> = OnceCell::new();
 struct DefPaths {
     ops_range: DefPath,
     vec_len: DefPath,
+    slice_len: DefPath,
     ops_index: DefPath,
     ops_index_mut: DefPath,
 }
@@ -32,6 +37,7 @@ impl DefPaths {
             Self {
                 ops_range: DefPath::new("core::ops::Range", tcx),
                 vec_len: DefPath::new("alloc::vec::Vec::len", tcx),
+                slice_len: DefPath::new("core::slice::len", tcx),
                 ops_index: DefPath::new("core::ops::Index::index", tcx),
                 ops_index_mut: DefPath::new("core::ops::IndexMut::index_mut", tcx),
             }
@@ -39,6 +45,7 @@ impl DefPaths {
             Self {
                 ops_range: DefPath::new("std::ops::Range", tcx),
                 vec_len: DefPath::new("std::vec::Vec::len", tcx),
+                slice_len: DefPath::new("slice::len", tcx),
                 ops_index: DefPath::new("std::ops::Index::index", tcx),
                 ops_index_mut: DefPath::new("std::ops::IndexMut::index_mut", tcx),
             }
@@ -52,21 +59,72 @@ pub struct BoundsLenCheck {
     record: Vec<(Local, Vec<Local>)>,
 }
 
+struct IfFinder<'tcx> {
+    typeck_results: &'tcx TypeckResults<'tcx>,
+    record: Vec<(Span, Vec<Span>)>,
+}
+struct LtFinder {
+    record: Vec<Span>,
+}
+struct IndexFinder<'tcx> {
+    typeck_results: &'tcx TypeckResults<'tcx>,
+    record: Vec<Span>,
+}
+
+impl intravisit::Visitor<'_> for LtFinder {
+    fn visit_expr(&mut self, ex: &Expr) {
+        if let ExprKind::Binary(op, ..) = ex.kind {
+            if op.node == BinOpKind::Lt {
+                self.record.push(ex.span);
+            }
+        }
+        intravisit::walk_expr(self, ex);
+    }
+}
+
+impl<'tcx> intravisit::Visitor<'tcx> for IfFinder<'tcx> {
+    fn visit_expr(&mut self, ex: &'tcx Expr<'tcx>) {
+        if let ExprKind::If(cond, e1, _) = ex.kind {
+            let mut lt_finder = LtFinder { record: vec![] };
+            intravisit::walk_expr(&mut lt_finder, cond);
+            if !lt_finder.record.is_empty() {
+                let mut index_finder = IndexFinder {
+                    typeck_results: self.typeck_results,
+                    record: vec![],
+                };
+                intravisit::walk_expr(&mut index_finder, e1);
+                if !index_finder.record.is_empty() {
+                    self.record.push((lt_finder.record[0], index_finder.record));
+                }
+            }
+        }
+        intravisit::walk_expr(self, ex);
+    }
+}
+
+impl<'tcx> intravisit::Visitor<'tcx> for IndexFinder<'tcx> {
+    fn visit_expr(&mut self, ex: &'tcx Expr<'tcx>) {
+        if let ExprKind::Index(_, ex2, _) = ex.kind {
+            self.record.push(ex2.span);
+        }
+        intravisit::walk_expr(self, ex);
+    }
+}
+
 impl OptCheck for BoundsLenCheck {
     fn new() -> Self {
-        Self { record: Vec::new() }
+        Self { record: vec![] }
     }
 
     fn check(&mut self, graph: &Graph, tcx: &TyCtxt) {
         let _ = &DEFPATHS.get_or_init(|| DefPaths::new(tcx));
         for (node_idx, node) in graph.nodes.iter_enumerated() {
             if let Some(upperbound_node_idx) = extract_upperbound_node_if_ops_range(graph, node) {
-                if let Some(vec_len_node_idx) = find_upside_vec_len_node(graph, upperbound_node_idx)
-                {
+                if let Some(vec_len_node_idx) = find_upside_len_node(graph, upperbound_node_idx) {
                     let maybe_vec_node_idx = graph.get_upside_idx(vec_len_node_idx, 0).unwrap();
                     let maybe_vec_node_idxs =
                         graph.collect_equivalent_locals(maybe_vec_node_idx, true);
-                    let mut index_record = Vec::new();
+                    let mut index_record = vec![];
                     for index_node_idx in find_downside_index_node(graph, node_idx).into_iter() {
                         let maybe_vec_node_idx = graph.get_upside_idx(index_node_idx, 0).unwrap();
                         if maybe_vec_node_idxs.contains(&maybe_vec_node_idx) {
@@ -75,6 +133,46 @@ impl OptCheck for BoundsLenCheck {
                     }
                     if !index_record.is_empty() {
                         self.record.push((upperbound_node_idx, index_record));
+                    }
+                }
+            }
+        }
+        let def_id = graph.def_id;
+        let body = tcx.hir().body_owned_by(def_id.as_local().unwrap());
+        let typeck_results = tcx.typeck(def_id.as_local().unwrap());
+        let mut if_finder = IfFinder {
+            typeck_results,
+            record: vec![],
+        };
+        intravisit::walk_body(&mut if_finder, body);
+        for (cond, slice_index_record) in if_finder.record.iter() {
+            if let Some((node_idx, node)) = graph.query_node_by_span(*cond) {
+                let left_arm = graph.edges[node.in_edges[0]].src;
+                let right_arm = graph.edges[node.in_edges[1]].src;
+                if find_upside_len_node(graph, right_arm).is_some() {
+                    let trustable_set = graph.collect_ancestor_locals(left_arm, true);
+                    let mut slice_node_indice = vec![];
+                    let mut valid = true;
+                    for slice_index_idx in slice_index_record {
+                        if let Some((index_node_idx, _)) =
+                            graph.query_node_by_span(*slice_index_idx)
+                        {
+                            slice_node_indice.push(index_node_idx);
+                            let index_ancestors =
+                                graph.collect_ancestor_locals(index_node_idx, true);
+                            // Warning: We only checks index without checking the indexed value
+                            if index_ancestors
+                                .intersection(&trustable_set)
+                                .next()
+                                .is_none()
+                            {
+                                valid = false;
+                                break;
+                            }
+                        }
+                    }
+                    if valid {
+                        self.record.push((node_idx, slice_node_indice));
                     }
                 }
             }
@@ -102,17 +200,18 @@ fn extract_upperbound_node_if_ops_range(graph: &Graph, node: &GraphNode) -> Opti
     None
 }
 
-fn find_upside_vec_len_node(graph: &Graph, node_idx: Local) -> Option<Local> {
-    let mut vec_len_node_idx = None;
+fn find_upside_len_node(graph: &Graph, node_idx: Local) -> Option<Local> {
+    let mut len_node_idx = None;
     let def_paths = &DEFPATHS.get().unwrap();
-    let target_def_id = def_paths.vec_len.last_def_id();
     // Warning: may traverse all upside nodes and the new result will overwrite on the previous result
     let mut node_operator = |graph: &Graph, idx: Local| -> DFSStatus {
         let node = &graph.nodes[idx];
         for op in node.ops.iter() {
             if let NodeOp::Call(def_id) = op {
-                if *def_id == target_def_id {
-                    vec_len_node_idx = Some(idx);
+                if *def_id == def_paths.vec_len.last_def_id()
+                    || *def_id == def_paths.slice_len.last_def_id()
+                {
+                    len_node_idx = Some(idx);
                     return DFSStatus::Stop;
                 }
             }
@@ -128,11 +227,11 @@ fn find_upside_vec_len_node(graph: &Graph, node_idx: Local) -> Option<Local> {
         false,
         &mut seen,
     );
-    vec_len_node_idx
+    len_node_idx
 }
 
 fn find_downside_index_node(graph: &Graph, node_idx: Local) -> Vec<Local> {
-    let mut index_node_idxs: Vec<Local> = Vec::new();
+    let mut index_node_idxs: Vec<Local> = vec![];
     let def_paths = &DEFPATHS.get().unwrap();
     // Warning: traverse all downside nodes
     let mut node_operator = |graph: &Graph, idx: Local| -> DFSStatus {

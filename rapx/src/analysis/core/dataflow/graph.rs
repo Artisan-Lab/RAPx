@@ -567,6 +567,15 @@ impl Graph {
             None
         }
     }
+
+    pub fn query_node_by_span(&self, span: Span) -> Option<(Local, &GraphNode)> {
+        for (node_idx, node) in self.nodes.iter_enumerated() {
+            if node.span == span {
+                return Some((node_idx, node));
+            }
+        }
+        None
+    }
 }
 
 impl Graph {
