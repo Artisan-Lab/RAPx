@@ -1,4 +1,5 @@
 pub mod array_encoding;
+pub mod string_push;
 pub mod vec_encoding;
 
 use std::collections::HashSet;
@@ -12,16 +13,18 @@ use crate::utils::log::{
 };
 use annotate_snippets::{Level, Renderer, Snippet};
 
-use array_encoding::ArrayEncodingCheck;
 use rustc_middle::mir::Local;
 use rustc_middle::ty::TyCtxt;
 use rustc_span::Span;
 
+use array_encoding::ArrayEncodingCheck;
+use string_push::StringPushCheck;
 use vec_encoding::VecEncodingCheck;
 
 pub struct EncodingCheck {
     vec_encoding: VecEncodingCheck,
     array_encoding: ArrayEncodingCheck,
+    string_push: StringPushCheck,
 }
 
 impl OptCheck for EncodingCheck {
@@ -29,17 +32,20 @@ impl OptCheck for EncodingCheck {
         Self {
             vec_encoding: VecEncodingCheck::new(),
             array_encoding: ArrayEncodingCheck::new(),
+            string_push: StringPushCheck::new(),
         }
     }
 
     fn check(&mut self, graph: &Graph, tcx: &TyCtxt) {
         self.vec_encoding.check(graph, tcx);
         self.array_encoding.check(graph, tcx);
+        self.string_push.check(graph, tcx);
     }
 
     fn report(&self, graph: &Graph) {
         self.vec_encoding.report(graph);
         self.array_encoding.report(graph);
+        self.string_push.report(graph);
     }
 }
 
@@ -84,7 +90,12 @@ fn value_is_from_const(graph: &Graph, value_idx: Local) -> bool {
     let mut edge_validator = |graph: &Graph, idx: EdgeIdx| {
         let edge = &graph.edges[idx];
         let dst_node = &graph.nodes[edge.dst];
-        match dst_node.in_edges.len() {
+        let same_seq_edge_cnt = dst_node
+            .in_edges
+            .iter()
+            .filter(|edge_idx| graph.edges[**edge_idx].seq == edge.seq)
+            .count();
+        match same_seq_edge_cnt {
             1 => Graph::always_true_edge_validator(graph, idx),
             2 => {
                 if let EdgeOp::Index = edge.op {
