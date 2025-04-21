@@ -2,3 +2,4 @@
 .vscode/
 target/
 rapx.txt
+tests/**/Cargo.lock
