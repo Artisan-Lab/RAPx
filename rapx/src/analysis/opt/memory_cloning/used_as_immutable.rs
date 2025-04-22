@@ -94,16 +94,19 @@ impl OptCheck for UsedAsImmutableCheck {
                                 .collect();
                             let index = filtered_in_edges.binary_search(&&edge_idx).unwrap();
                             if let NodeOp::Call(callee_def_id) = use_node.ops[seq] {
-                                let fn_sig = tcx.normalize_erasing_late_bound_regions(
+                                let fn_sig = tcx.try_normalize_erasing_regions(
                                     rustc_middle::ty::ParamEnv::reveal_all(),
                                     tcx.fn_sig(callee_def_id).skip_binder(),
                                 );
-                                let ty = fn_sig.inputs().iter().nth(index).unwrap();
-                                if !matches!(ty.kind(), TyKind::Ref(..)) {
-                                    //not &T or &mut T
-                                    let clone_span = node.span;
-                                    let use_span = use_node.span;
-                                    self.record.push((clone_span, use_span));
+                                if fn_sig.is_ok() {
+                                    let fn_sig = fn_sig.unwrap().skip_binder();
+                                    let ty = fn_sig.inputs().iter().nth(index).unwrap();
+                                    if !matches!(ty.kind(), TyKind::Ref(..)) {
+                                        //not &T or &mut T
+                                        let clone_span = node.span;
+                                        let use_span = use_node.span;
+                                        self.record.push((clone_span, use_span));
+                                    }
                                 }
                             }
                         }

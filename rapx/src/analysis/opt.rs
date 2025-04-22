@@ -12,6 +12,7 @@ use data_collection::slice_contains::SliceContainsCheck;
 use data_collection::unreserved_hash::UnreservedHashCheck;
 use iterator::next_iterator::NextIteratorCheck;
 use memory_cloning::hash_key_cloning::HashKeyCloningCheck;
+use memory_cloning::used_as_immutable::UsedAsImmutableCheck;
 
 use lazy_static::lazy_static;
 use rustc_span::symbol::Symbol;
@@ -71,6 +72,10 @@ impl<'tcx> Opt<'tcx> {
                 let mut hash_key_cloning_check = HashKeyCloningCheck::new();
                 hash_key_cloning_check.check(graph, &self.tcx);
                 hash_key_cloning_check.report(graph);
+
+                let mut used_as_immutable_check = UsedAsImmutableCheck::new();
+                used_as_immutable_check.check(graph, &self.tcx);
+                used_as_immutable_check.report(graph);
 
                 let mut slice_contains_check = SliceContainsCheck::new();
                 slice_contains_check.check(graph, &self.tcx);
