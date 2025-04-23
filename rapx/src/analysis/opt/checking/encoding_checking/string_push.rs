@@ -6,7 +6,7 @@ use rustc_middle::mir::Local;
 use rustc_middle::ty::TyCtxt;
 use rustc_span::Span;
 
-use super::{report_encoding_bug, value_is_from_const};
+use super::value_is_from_const;
 use crate::analysis::core::dataflow::graph::{DFSStatus, Direction, Graph, GraphNode, NodeOp};
 use crate::analysis::utils::def_path::DefPath;
 use crate::utils::log::{

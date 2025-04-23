@@ -2,6 +2,7 @@ use annotate_snippets::Level;
 use annotate_snippets::Renderer;
 use annotate_snippets::Snippet;
 use once_cell::sync::OnceCell;
+use rustc_ast::Mutability;
 
 use crate::analysis::core::dataflow::graph::DFSStatus;
 use crate::analysis::core::dataflow::graph::Direction;
@@ -23,12 +24,18 @@ use crate::utils::log::{
 
 struct DefPaths {
     clone: DefPath,
+    to_string: DefPath,
+    to_owned: DefPath,
+    deref: DefPath,
 }
 
 impl DefPaths {
     pub fn new(tcx: &TyCtxt<'_>) -> Self {
         Self {
             clone: DefPath::new("std::clone::Clone::clone", tcx),
+            to_string: DefPath::new("std::string::ToString::to_string", tcx),
+            to_owned: DefPath::new("std::borrow::ToOwned::to_owned", tcx),
+            deref: DefPath::new("std::ops::Deref::deref", tcx),
         }
     }
 }
@@ -37,13 +44,18 @@ impl DefPaths {
 fn find_downside_use_as_param(graph: &Graph, clone_node_idx: Local) -> Option<(Local, EdgeIdx)> {
     let mut record = None;
     let edge_idx = Cell::new(0 as usize);
+    let deref_id = DEFPATHS.get().unwrap().deref.last_def_id();
     let mut node_operator = |graph: &Graph, idx: Local| {
         if idx == clone_node_idx {
             return DFSStatus::Continue; //the start point, clone, is a Call node as well
         }
         let node = &graph.nodes[idx];
         for op in node.ops.iter() {
-            if let NodeOp::Call(_) = op {
+            if let NodeOp::Call(def_id) = op {
+                if *def_id == deref_id {
+                    //we permit deref here
+                    return DFSStatus::Continue;
+                }
                 record = Some((idx, edge_idx.get())); //here, the edge_idx must be the upside edge of the node
                 return DFSStatus::Stop;
             }
@@ -52,7 +64,7 @@ fn find_downside_use_as_param(graph: &Graph, clone_node_idx: Local) -> Option<(L
     };
     let mut edge_operator = |graph: &Graph, idx: EdgeIdx| {
         edge_idx.set(idx);
-        Graph::equivalent_edge_validator(graph, idx)
+        Graph::equivalent_edge_validator(graph, idx) //can not support ref->deref->ref link
     };
     let mut seen = HashSet::new();
     graph.dfs(
@@ -78,11 +90,13 @@ impl OptCheck for UsedAsImmutableCheck {
     fn check(&mut self, graph: &Graph, tcx: &TyCtxt) {
         let _ = &DEFPATHS.get_or_init(|| DefPaths::new(tcx));
         let def_paths = &DEFPATHS.get().unwrap();
-        let target_def_id = def_paths.clone.last_def_id();
         for (idx, node) in graph.nodes.iter_enumerated() {
             for op in node.ops.iter() {
                 if let NodeOp::Call(def_id) = op {
-                    if *def_id == target_def_id {
+                    if *def_id == def_paths.clone.last_def_id()
+                        || *def_id == def_paths.to_string.last_def_id()
+                        || *def_id == def_paths.to_owned.last_def_id()
+                    {
                         if let Some((node_idx, edge_idx)) = find_downside_use_as_param(graph, idx) {
                             let use_node = &graph.nodes[node_idx];
 
@@ -101,12 +115,15 @@ impl OptCheck for UsedAsImmutableCheck {
                                 if fn_sig.is_ok() {
                                     let fn_sig = fn_sig.unwrap().skip_binder();
                                     let ty = fn_sig.inputs().iter().nth(index).unwrap();
-                                    if !matches!(ty.kind(), TyKind::Ref(..)) {
-                                        //not &T or &mut T
-                                        let clone_span = node.span;
-                                        let use_span = use_node.span;
-                                        self.record.push((clone_span, use_span));
+                                    if let TyKind::Ref(_, _, mutability) = ty.kind() {
+                                        if *mutability == Mutability::Mut {
+                                            break;
+                                        }
                                     }
+                                    //not &T and &mut T
+                                    let clone_span = node.span;
+                                    let use_span = use_node.span;
+                                    self.record.push((clone_span, use_span));
                                 }
                             }
                         }

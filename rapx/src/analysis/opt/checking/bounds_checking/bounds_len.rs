@@ -6,7 +6,6 @@ use rustc_ast::BinOpKind;
 use rustc_hir::{intravisit, Expr, ExprKind};
 use rustc_middle::mir::Local;
 use rustc_middle::ty::TyCtxt;
-use rustc_middle::ty::TypeckResults;
 use rustc_span::Span;
 
 use crate::analysis::core::dataflow::graph::{
@@ -59,15 +58,13 @@ pub struct BoundsLenCheck {
     record: Vec<(Local, Vec<Local>)>,
 }
 
-struct IfFinder<'tcx> {
-    typeck_results: &'tcx TypeckResults<'tcx>,
+struct IfFinder {
     record: Vec<(Span, Vec<Span>)>,
 }
 struct LtFinder {
     record: Vec<Span>,
 }
-struct IndexFinder<'tcx> {
-    typeck_results: &'tcx TypeckResults<'tcx>,
+struct IndexFinder {
     record: Vec<Span>,
 }
 
@@ -82,16 +79,13 @@ impl intravisit::Visitor<'_> for LtFinder {
     }
 }
 
-impl<'tcx> intravisit::Visitor<'tcx> for IfFinder<'tcx> {
+impl<'tcx> intravisit::Visitor<'tcx> for IfFinder {
     fn visit_expr(&mut self, ex: &'tcx Expr<'tcx>) {
         if let ExprKind::If(cond, e1, _) = ex.kind {
             let mut lt_finder = LtFinder { record: vec![] };
             intravisit::walk_expr(&mut lt_finder, cond);
             if !lt_finder.record.is_empty() {
-                let mut index_finder = IndexFinder {
-                    typeck_results: self.typeck_results,
-                    record: vec![],
-                };
+                let mut index_finder = IndexFinder { record: vec![] };
                 intravisit::walk_expr(&mut index_finder, e1);
                 if !index_finder.record.is_empty() {
                     self.record.push((lt_finder.record[0], index_finder.record));
@@ -102,7 +96,7 @@ impl<'tcx> intravisit::Visitor<'tcx> for IfFinder<'tcx> {
     }
 }
 
-impl<'tcx> intravisit::Visitor<'tcx> for IndexFinder<'tcx> {
+impl<'tcx> intravisit::Visitor<'tcx> for IndexFinder {
     fn visit_expr(&mut self, ex: &'tcx Expr<'tcx>) {
         if let ExprKind::Index(_, ex2, _) = ex.kind {
             self.record.push(ex2.span);
@@ -139,11 +133,7 @@ impl OptCheck for BoundsLenCheck {
         }
         let def_id = graph.def_id;
         let body = tcx.hir().body_owned_by(def_id.as_local().unwrap());
-        let typeck_results = tcx.typeck(def_id.as_local().unwrap());
-        let mut if_finder = IfFinder {
-            typeck_results,
-            record: vec![],
-        };
+        let mut if_finder = IfFinder { record: vec![] };
         intravisit::walk_body(&mut if_finder, body);
         for (cond, slice_index_record) in if_finder.record.iter() {
             if let Some((node_idx, node)) = graph.query_node_by_span(*cond) {

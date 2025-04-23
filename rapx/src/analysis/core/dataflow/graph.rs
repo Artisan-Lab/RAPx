@@ -581,10 +581,11 @@ impl Graph {
 impl Graph {
     pub fn equivalent_edge_validator(graph: &Graph, idx: EdgeIdx) -> DFSStatus {
         match graph.edges[idx].op {
-            EdgeOp::Copy | EdgeOp::Move | EdgeOp::Mut | EdgeOp::Immut => DFSStatus::Continue,
+            EdgeOp::Copy | EdgeOp::Move | EdgeOp::Mut | EdgeOp::Immut | EdgeOp::Deref => {
+                DFSStatus::Continue
+            }
             EdgeOp::Nop
             | EdgeOp::Const
-            | EdgeOp::Deref
             | EdgeOp::Downcast(_)
             | EdgeOp::Field(_)
             | EdgeOp::Index
