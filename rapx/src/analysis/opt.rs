@@ -11,6 +11,7 @@ use checking::encoding_checking::EncodingCheck;
 use data_collection::participant::ParticipantCheck;
 use data_collection::slice_contains::SliceContainsCheck;
 use data_collection::unreserved_hash::UnreservedHashCheck;
+use data_collection::vec_remove::VecRemoveCheck;
 use iterator::next_iterator::NextIteratorCheck;
 use memory_cloning::hash_key_cloning::HashKeyCloningCheck;
 use memory_cloning::used_as_immutable::UsedAsImmutableCheck;
@@ -78,6 +79,10 @@ impl<'tcx> Opt<'tcx> {
                 let mut used_as_immutable_check = UsedAsImmutableCheck::new();
                 used_as_immutable_check.check(graph, &self.tcx);
                 used_as_immutable_check.report(graph);
+
+                let mut vec_remove_check = VecRemoveCheck::new();
+                vec_remove_check.check(graph, &self.tcx);
+                vec_remove_check.report(graph);
 
                 let mut slice_contains_check = SliceContainsCheck::new();
                 slice_contains_check.check(graph, &self.tcx);
