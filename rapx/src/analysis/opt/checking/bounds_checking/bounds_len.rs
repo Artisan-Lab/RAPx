@@ -162,6 +162,7 @@ impl OptCheck for BoundsLenCheck {
                         }
                     }
                     if valid {
+                        // Warning: Maybe recording during checking is a better manner
                         self.record.push((node_idx, slice_node_indice));
                     }
                 }

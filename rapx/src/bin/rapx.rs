@@ -33,7 +33,8 @@ fn main() {
             "-M" | "-mleak" => compiler.enable_rcanary(),
             "-I" | "-infer" => compiler.enable_infer(),
             "-V" | "-verify" => compiler.enable_verify(),
-            "-O" | "-opt" => compiler.enable_opt(),
+            "-O" | "-opt" => compiler.enable_opt(1),
+            "-opt=all" => compiler.enable_opt(2),
             "-alias" => compiler.enable_mop(),
             "-heap" => compiler.enable_heap_item(),
             "-adg" => compiler.enable_api_dep(), // api dependency graph

@@ -8,6 +8,7 @@ use rustc_middle::ty::TyCtxt;
 use super::core::dataflow::{graph::Graph, DataFlow};
 use checking::bounds_checking::BoundsCheck;
 use checking::encoding_checking::EncodingCheck;
+use data_collection::participant::ParticipantCheck;
 use data_collection::slice_contains::SliceContainsCheck;
 use data_collection::unreserved_hash::UnreservedHashCheck;
 use iterator::next_iterator::NextIteratorCheck;
@@ -24,6 +25,7 @@ lazy_static! {
 
 pub struct Opt<'tcx> {
     pub tcx: TyCtxt<'tcx>,
+    pub level: usize,
 }
 
 pub trait OptCheck {
@@ -33,8 +35,8 @@ pub trait OptCheck {
 }
 
 impl<'tcx> Opt<'tcx> {
-    pub fn new(tcx: TyCtxt<'tcx>) -> Self {
-        Self { tcx }
+    pub fn new(tcx: TyCtxt<'tcx>, level: usize) -> Self {
+        Self { tcx, level }
     }
 
     fn has_crate(&self, name: &str) -> bool {
@@ -90,6 +92,12 @@ impl<'tcx> Opt<'tcx> {
                 let mut unreserved_hash_check = UnreservedHashCheck::new();
                 unreserved_hash_check.check(graph, &self.tcx);
                 unreserved_hash_check.report(graph);
+
+                if self.level > 1 {
+                    let mut participant_check = ParticipantCheck::new();
+                    participant_check.check(graph, &self.tcx);
+                    participant_check.report(graph);
+                }
             }
         });
     }
