@@ -56,7 +56,10 @@ impl GraphNode {
                     .unwrap();
                 }
                 NodeOp::Use => {
-                    // only exists for _a[_b] =(Use) value
+                    // only exists for _a[_b] = (Use) value
+                    write!(attr, "label=\"{:?} ", local).unwrap();
+                }
+                NodeOp::Aggregate(_) => {
                     write!(attr, "label=\"{:?} ", local).unwrap();
                 }
                 _ => {

@@ -17,7 +17,9 @@ use crate::utils::log::{
 static DEFPATHS: OnceCell<DefPaths> = OnceCell::new();
 struct DefPaths {
     hashset_new: DefPath,
+    hashset_with_capacity: DefPath,
     hashmap_new: DefPath,
+    hashmap_with_capacity: DefPath,
     btreeset_new: DefPath,
     btreemap_new: DefPath,
 }
@@ -26,7 +28,9 @@ impl DefPaths {
     pub fn new(tcx: &TyCtxt<'_>) -> Self {
         Self {
             hashset_new: DefPath::new("std::collections::HashSet::new", tcx),
+            hashset_with_capacity: DefPath::new("std::collections::HashSet::with_capacity", tcx),
             hashmap_new: DefPath::new("std::collections::HashMap::new", tcx),
+            hashmap_with_capacity: DefPath::new("std::collections::HashMap::with_capacity", tcx),
             btreeset_new: DefPath::new("std::collections::BTreeSet::new", tcx),
             btreemap_new: DefPath::new("std::collections::BTreeMap::new", tcx),
         }
@@ -37,6 +41,8 @@ impl DefPaths {
             || id == self.hashmap_new.last_def_id()
             || id == self.btreemap_new.last_def_id()
             || id == self.btreeset_new.last_def_id()
+            || id == self.hashmap_with_capacity.last_def_id()
+            || id == self.hashset_with_capacity.last_def_id()
     }
 }
 
@@ -82,9 +88,9 @@ fn report_participant(graph: &Graph, span: Span) {
                 .label("Data collection created here"),
         );
     let message = Level::Warning
-        .title("Improper data collection detected")
+        .title("Suboptimal data collection detected")
         .snippet(snippet)
-        .footer(Level::Help.title("Alternative data collections available."));
+        .footer(Level::Help.title("Use faster data collection or hash operators instead. Static container is also a choice"));
     let renderer = Renderer::styled();
     println!("{}", renderer.render(message));
 }
