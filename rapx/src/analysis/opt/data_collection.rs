@@ -1,4 +1,2 @@
-pub mod participant;
-pub mod slice_contains;
+pub mod suboptimal;
 pub mod unreserved_hash;
-pub mod vec_remove;

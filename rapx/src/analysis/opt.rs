@@ -8,10 +8,7 @@ use rustc_middle::ty::TyCtxt;
 use super::core::dataflow::{graph::Graph, DataFlow};
 use checking::bounds_checking::BoundsCheck;
 use checking::encoding_checking::EncodingCheck;
-use data_collection::participant::ParticipantCheck;
-use data_collection::slice_contains::SliceContainsCheck;
-use data_collection::unreserved_hash::UnreservedHashCheck;
-use data_collection::vec_remove::VecRemoveCheck;
+use data_collection::suboptimal::SuboptimalCheck;
 use iterator::next_iterator::NextIteratorCheck;
 use memory_cloning::hash_key_cloning::HashKeyCloningCheck;
 use memory_cloning::used_as_immutable::UsedAsImmutableCheck;
@@ -22,6 +19,7 @@ use std::sync::Mutex;
 
 lazy_static! {
     pub static ref NO_STD: Mutex<bool> = Mutex::new(false);
+    pub static ref LEVEL: Mutex<usize> = Mutex::new(0);
 }
 
 pub struct Opt<'tcx> {
@@ -55,6 +53,8 @@ impl<'tcx> Opt<'tcx> {
         {
             let mut no_std = NO_STD.lock().unwrap();
             *no_std = !self.has_crate("std");
+            let mut level = LEVEL.lock().unwrap();
+            *level = self.level;
         }
         if !self.has_crate("core") {
             //core it self
@@ -72,6 +72,10 @@ impl<'tcx> Opt<'tcx> {
                 encoding_check.check(graph, &self.tcx);
                 encoding_check.report(graph);
 
+                let mut suboptimal_check = SuboptimalCheck::new();
+                suboptimal_check.check(graph, &self.tcx);
+                suboptimal_check.report(graph);
+
                 let mut hash_key_cloning_check = HashKeyCloningCheck::new();
                 hash_key_cloning_check.check(graph, &self.tcx);
                 hash_key_cloning_check.report(graph);
@@ -80,28 +84,10 @@ impl<'tcx> Opt<'tcx> {
                 used_as_immutable_check.check(graph, &self.tcx);
                 used_as_immutable_check.report(graph);
 
-                let mut vec_remove_check = VecRemoveCheck::new();
-                vec_remove_check.check(graph, &self.tcx);
-                vec_remove_check.report(graph);
-
-                let mut slice_contains_check = SliceContainsCheck::new();
-                slice_contains_check.check(graph, &self.tcx);
-                slice_contains_check.report(graph);
-
                 let mut next_iterator_check = NextIteratorCheck::new();
                 next_iterator_check.check(graph, &self.tcx);
                 if next_iterator_check.valid {
                     next_iterator_check.report(graph);
-                }
-
-                let mut unreserved_hash_check = UnreservedHashCheck::new();
-                unreserved_hash_check.check(graph, &self.tcx);
-                unreserved_hash_check.report(graph);
-
-                if self.level > 1 {
-                    let mut participant_check = ParticipantCheck::new();
-                    participant_check.check(graph, &self.tcx);
-                    participant_check.report(graph);
                 }
             }
         });
