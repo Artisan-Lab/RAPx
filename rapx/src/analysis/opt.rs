@@ -9,6 +9,7 @@ use super::core::dataflow::{graph::Graph, DataFlow};
 use checking::bounds_checking::BoundsCheck;
 use checking::encoding_checking::EncodingCheck;
 use data_collection::initialization::InitializationCheck;
+use data_collection::reservation::ReservationCheck;
 use data_collection::suboptimal::SuboptimalCheck;
 use iterator::next_iterator::NextIteratorCheck;
 use memory_cloning::hash_key_cloning::HashKeyCloningCheck;
@@ -80,6 +81,10 @@ impl<'tcx> Opt<'tcx> {
                 let mut initialization_check = InitializationCheck::new();
                 initialization_check.check(graph, &self.tcx);
                 initialization_check.report(graph);
+
+                let mut reservation_check = ReservationCheck::new();
+                reservation_check.check(graph, &self.tcx);
+                reservation_check.report(graph);
 
                 let mut hash_key_cloning_check = HashKeyCloningCheck::new();
                 hash_key_cloning_check.check(graph, &self.tcx);
