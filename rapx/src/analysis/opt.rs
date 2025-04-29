@@ -9,7 +9,7 @@ use super::core::dataflow::{graph::Graph, DataFlow};
 use checking::bounds_checking::BoundsCheck;
 use checking::encoding_checking::EncodingCheck;
 use data_collection::initialization::InitializationCheck;
-use data_collection::reservation::ReservationCheck;
+use data_collection::reallocation::ReservationCheck;
 use data_collection::suboptimal::SuboptimalCheck;
 use iterator::next_iterator::NextIteratorCheck;
 use memory_cloning::hash_key_cloning::HashKeyCloningCheck;
