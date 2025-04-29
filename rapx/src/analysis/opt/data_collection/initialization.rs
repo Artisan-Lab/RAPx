@@ -1,0 +1,37 @@
+pub mod local_set;
+pub mod vec_init;
+
+use local_set::LocalSetCheck;
+use vec_init::VecInitCheck;
+
+use crate::analysis::core::dataflow::graph::Graph;
+use crate::analysis::opt::OptCheck;
+
+use super::super::LEVEL;
+use rustc_middle::ty::TyCtxt;
+pub struct InitializationCheck {
+    local_set: LocalSetCheck,
+    vec_init: VecInitCheck,
+}
+
+impl OptCheck for InitializationCheck {
+    fn new() -> Self {
+        Self {
+            local_set: LocalSetCheck::new(),
+            vec_init: VecInitCheck::new(),
+        }
+    }
+
+    fn check(&mut self, graph: &Graph, tcx: &TyCtxt) {
+        self.local_set.check(graph, tcx);
+        let level = LEVEL.lock().unwrap();
+        if *level == 2 {
+            self.vec_init.check(graph, tcx);
+        }
+    }
+
+    fn report(&self, graph: &Graph) {
+        self.local_set.report(graph);
+        self.vec_init.report(graph);
+    }
+}
