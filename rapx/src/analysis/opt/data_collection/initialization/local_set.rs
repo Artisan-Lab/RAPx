@@ -77,6 +77,10 @@ impl OptCheck for LocalSetCheck {
             report_local_set(graph, *span);
         }
     }
+
+    fn cnt(&self) -> usize {
+        self.record.len()
+    }
 }
 
 fn report_local_set(graph: &Graph, span: Span) {

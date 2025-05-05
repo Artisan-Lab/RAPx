@@ -53,6 +53,13 @@ impl OptCheck for EncodingCheck {
         self.string_push.report(graph);
         self.string_lowercase.report(graph);
     }
+
+    fn cnt(&self) -> usize {
+        self.vec_encoding.cnt()
+            + self.array_encoding.cnt()
+            + self.string_lowercase.cnt()
+            + self.string_push.cnt()
+    }
 }
 
 fn report_encoding_bug(graph: &Graph, span: Span) {

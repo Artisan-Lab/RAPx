@@ -144,4 +144,8 @@ impl OptCheck for VecEncodingCheck {
             report_encoding_bug(graph, *span);
         }
     }
+
+    fn cnt(&self) -> usize {
+        self.record.len()
+    }
 }

@@ -138,6 +138,10 @@ impl OptCheck for UsedAsImmutableCheck {
             report_used_as_immutable(graph, *clone_span, *use_span);
         }
     }
+
+    fn cnt(&self) -> usize {
+        self.record.len()
+    }
 }
 
 fn report_used_as_immutable(graph: &Graph, clone_span: Span, use_span: Span) {

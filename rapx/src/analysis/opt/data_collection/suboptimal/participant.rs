@@ -73,6 +73,10 @@ impl OptCheck for ParticipantCheck {
             report_participant(graph, *span);
         }
     }
+
+    fn cnt(&self) -> usize {
+        self.record.len()
+    }
 }
 
 fn report_participant(graph: &Graph, span: Span) {

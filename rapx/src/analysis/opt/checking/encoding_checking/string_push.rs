@@ -101,6 +101,10 @@ impl OptCheck for StringPushCheck {
             report_string_push_bug(graph, &self.record);
         }
     }
+
+    fn cnt(&self) -> usize {
+        self.record.len()
+    }
 }
 
 fn report_string_push_bug(graph: &Graph, spans: &Vec<Span>) {

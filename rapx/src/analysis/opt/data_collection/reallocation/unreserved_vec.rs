@@ -117,6 +117,10 @@ impl OptCheck for UnreservedVecCheck {
             report_unreserved_vec_bug(graph, *span);
         }
     }
+
+    fn cnt(&self) -> usize {
+        self.record.len()
+    }
 }
 
 fn report_unreserved_vec_bug(graph: &Graph, span: Span) {

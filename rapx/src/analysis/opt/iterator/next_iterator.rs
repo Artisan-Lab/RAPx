@@ -93,6 +93,10 @@ impl OptCheck for NextIteratorCheck {
     fn report(&self, graph: &Graph) {
         report_next_iterator_bug(&self.next_record, &self.chain_record, graph.span);
     }
+
+    fn cnt(&self) -> usize {
+        self.next_record.len()
+    }
 }
 
 fn report_next_iterator_bug(next_record: &Vec<Span>, chain_record: &Vec<Span>, graph_span: Span) {

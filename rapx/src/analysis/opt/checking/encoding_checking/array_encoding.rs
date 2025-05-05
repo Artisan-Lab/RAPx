@@ -105,4 +105,8 @@ impl OptCheck for ArrayEncodingCheck {
             report_encoding_bug(graph, *span);
         }
     }
+
+    fn cnt(&self) -> usize {
+        self.record.len()
+    }
 }

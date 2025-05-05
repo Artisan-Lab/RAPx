@@ -37,4 +37,8 @@ impl OptCheck for BoundsCheck {
         self.bounds_loop_push.report(graph);
         self.bounds_extend.report(graph);
     }
+
+    fn cnt(&self) -> usize {
+        self.bounds_extend.cnt() + self.bounds_len.cnt() + self.bounds_loop_push.cnt()
+    }
 }

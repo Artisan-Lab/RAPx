@@ -103,6 +103,10 @@ impl OptCheck for UnreservedHashCheck {
             report_unreserved_hash_bug(graph, *hash_span, *insert_span);
         }
     }
+
+    fn cnt(&self) -> usize {
+        self.record.len()
+    }
 }
 
 fn report_unreserved_hash_bug(graph: &Graph, hash_span: Span, insert_span: Span) {

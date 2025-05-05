@@ -77,6 +77,10 @@ impl OptCheck for StringLowercaseCheck {
             report_string_ascii_bug(graph, *contains_span);
         }
     }
+
+    fn cnt(&self) -> usize {
+        self.record.len()
+    }
 }
 
 fn report_string_ascii_bug(graph: &Graph, contains_span: Span) {

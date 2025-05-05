@@ -59,6 +59,10 @@ impl OptCheck for VecInitCheck {
             report_vec_init(graph, *span);
         }
     }
+
+    fn cnt(&self) -> usize {
+        self.record.len()
+    }
 }
 
 fn report_vec_init(graph: &Graph, span: Span) {

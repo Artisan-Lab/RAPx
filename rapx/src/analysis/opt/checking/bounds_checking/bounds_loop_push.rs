@@ -84,7 +84,7 @@ impl<'tcx> intravisit::Visitor<'tcx> for LoopFinder<'tcx> {
 use crate::analysis::opt::OptCheck;
 
 pub struct BoundsLoopPushCheck {
-    record: Vec<(Span, Vec<Span>)>,
+    pub record: Vec<(Span, Vec<Span>)>,
 }
 
 impl OptCheck for BoundsLoopPushCheck {
@@ -109,6 +109,10 @@ impl OptCheck for BoundsLoopPushCheck {
         for (loop_span, push_record) in self.record.iter() {
             report_loop_push_bug(*loop_span, push_record);
         }
+    }
+
+    fn cnt(&self) -> usize {
+        self.record.len()
     }
 }
 

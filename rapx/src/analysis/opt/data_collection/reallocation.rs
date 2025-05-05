@@ -37,4 +37,8 @@ impl OptCheck for ReservationCheck {
         self.unreserved_vec.report(graph);
         self.flatten_collect.report(graph);
     }
+
+    fn cnt(&self) -> usize {
+        self.unreserved_hash.cnt() + self.unreserved_vec.cnt() + self.flatten_collect.cnt()
+    }
 }

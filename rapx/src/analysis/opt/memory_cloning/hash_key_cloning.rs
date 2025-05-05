@@ -191,4 +191,8 @@ impl OptCheck for HashKeyCloningCheck {
             report_hash_key_cloning(graph, *clone_span, *insert_span);
         }
     }
+
+    fn cnt(&self) -> usize {
+        self.record.len()
+    }
 }

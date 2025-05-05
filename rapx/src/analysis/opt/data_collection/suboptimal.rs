@@ -42,4 +42,8 @@ impl OptCheck for SuboptimalCheck {
         self.slice_contains.report(graph);
         self.vec_remove.report(graph);
     }
+
+    fn cnt(&self) -> usize {
+        self.participant.cnt() + self.slice_contains.cnt() + self.vec_remove.cnt()
+    }
 }

@@ -55,7 +55,7 @@ impl DefPaths {
 use crate::analysis::opt::OptCheck;
 
 pub struct BoundsLenCheck {
-    record: Vec<(Local, Vec<Local>)>,
+    pub record: Vec<(Local, Vec<Local>)>,
 }
 
 struct IfFinder {
@@ -174,6 +174,10 @@ impl OptCheck for BoundsLenCheck {
         for (upperbound_node_idx, index_record) in self.record.iter() {
             report_upperbound_bug(graph, *upperbound_node_idx, index_record);
         }
+    }
+
+    fn cnt(&self) -> usize {
+        self.record.len()
     }
 }
 

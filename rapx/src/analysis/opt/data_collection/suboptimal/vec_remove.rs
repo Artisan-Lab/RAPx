@@ -82,6 +82,10 @@ impl OptCheck for VecRemoveCheck {
             report_vec_remove_bug(graph, *span);
         }
     }
+
+    fn cnt(&self) -> usize {
+        self.record.len()
+    }
 }
 
 fn report_vec_remove_bug(graph: &Graph, span: Span) {

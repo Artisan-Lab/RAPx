@@ -77,6 +77,10 @@ impl OptCheck for SliceContainsCheck {
             report_slice_contains_bug(graph, *contains_span);
         }
     }
+
+    fn cnt(&self) -> usize {
+        self.record.len()
+    }
 }
 
 fn report_slice_contains_bug(graph: &Graph, contains_span: Span) {

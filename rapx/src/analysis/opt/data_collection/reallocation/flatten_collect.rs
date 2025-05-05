@@ -84,6 +84,10 @@ impl OptCheck for FlattenCollectCheck {
             report_flatten_collect(graph, *span);
         }
     }
+
+    fn cnt(&self) -> usize {
+        self.record.len()
+    }
 }
 
 fn report_flatten_collect(graph: &Graph, span: Span) {

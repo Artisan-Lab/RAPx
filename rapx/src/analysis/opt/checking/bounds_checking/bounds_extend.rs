@@ -35,7 +35,7 @@ impl DefPaths {
 use crate::analysis::opt::OptCheck;
 
 pub struct BoundsExtendCheck {
-    record: Vec<Span>,
+    pub record: Vec<Span>,
 }
 
 fn is_extend_from_slice(node: &GraphNode) -> bool {
@@ -68,6 +68,10 @@ impl OptCheck for BoundsExtendCheck {
         for span in self.record.iter() {
             report_extend_bug(graph, *span);
         }
+    }
+
+    fn cnt(&self) -> usize {
+        self.record.len()
     }
 }
 

@@ -34,4 +34,8 @@ impl OptCheck for InitializationCheck {
         self.local_set.report(graph);
         self.vec_init.report(graph);
     }
+
+    fn cnt(&self) -> usize {
+        self.local_set.cnt() + self.vec_init.cnt()
+    }
 }
