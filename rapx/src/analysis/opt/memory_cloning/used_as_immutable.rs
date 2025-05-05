@@ -24,7 +24,7 @@ use crate::utils::log::{
 
 struct DefPaths {
     clone: DefPath,
-    to_string: DefPath,
+    //to_string: DefPath,
     to_owned: DefPath,
     deref: DefPath,
 }
@@ -33,7 +33,7 @@ impl DefPaths {
     pub fn new(tcx: &TyCtxt<'_>) -> Self {
         Self {
             clone: DefPath::new("std::clone::Clone::clone", tcx),
-            to_string: DefPath::new("std::string::ToString::to_string", tcx),
+            //to_string: DefPath::new("std::string::ToString::to_string", tcx),
             to_owned: DefPath::new("std::borrow::ToOwned::to_owned", tcx),
             deref: DefPath::new("std::ops::Deref::deref", tcx),
         }
@@ -94,7 +94,7 @@ impl OptCheck for UsedAsImmutableCheck {
             for op in node.ops.iter() {
                 if let NodeOp::Call(def_id) = op {
                     if *def_id == def_paths.clone.last_def_id()
-                        || *def_id == def_paths.to_string.last_def_id()
+                        // || *def_id == def_paths.to_string.last_def_id()
                         || *def_id == def_paths.to_owned.last_def_id()
                     {
                         if let Some((node_idx, edge_idx)) = find_downside_use_as_param(graph, idx) {
