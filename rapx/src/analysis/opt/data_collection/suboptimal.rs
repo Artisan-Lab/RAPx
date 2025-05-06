@@ -30,10 +30,10 @@ impl OptCheck for SuboptimalCheck {
 
     fn check(&mut self, graph: &Graph, tcx: &TyCtxt) {
         self.vec_remove.check(graph, tcx);
-        self.slice_contains.check(graph, tcx);
         let level = LEVEL.lock().unwrap();
         if *level == 2 {
             self.participant.check(graph, tcx);
+            self.slice_contains.check(graph, tcx);
         }
     }
 

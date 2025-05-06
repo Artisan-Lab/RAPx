@@ -13,6 +13,7 @@ use crate::utils::log::{
 };
 use annotate_snippets::{Level, Renderer, Snippet};
 
+use super::super::super::LEVEL;
 use super::super::super::NO_STD;
 static DEFPATHS: OnceCell<DefPaths> = OnceCell::new();
 
@@ -35,12 +36,12 @@ impl DefPaths {
     }
 }
 
-struct LoopFinder<'tcx> {
-    typeck_results: &'tcx TypeckResults<'tcx>,
-    record: Vec<(Span, Vec<Span>)>,
+pub struct LoopFinder<'tcx> {
+    pub typeck_results: &'tcx TypeckResults<'tcx>,
+    pub record: Vec<(Span, Vec<Span>)>,
 }
 
-struct PushFinder<'tcx> {
+pub struct PushFinder<'tcx> {
     typeck_results: &'tcx TypeckResults<'tcx>,
     record: Vec<Span>,
 }
@@ -94,15 +95,18 @@ impl OptCheck for BoundsLoopPushCheck {
 
     fn check(&mut self, graph: &Graph, tcx: &TyCtxt) {
         let _ = &DEFPATHS.get_or_init(|| DefPaths::new(tcx));
-        let def_id = graph.def_id;
-        let body = tcx.hir().body_owned_by(def_id.as_local().unwrap());
-        let typeck_results = tcx.typeck(def_id.as_local().unwrap());
-        let mut loop_finder = LoopFinder {
-            typeck_results,
-            record: Vec::new(),
-        };
-        intravisit::walk_body(&mut loop_finder, body);
-        self.record = loop_finder.record;
+        let level = LEVEL.lock().unwrap();
+        if *level == 2 {
+            let def_id = graph.def_id;
+            let body = tcx.hir().body_owned_by(def_id.as_local().unwrap());
+            let typeck_results = tcx.typeck(def_id.as_local().unwrap());
+            let mut loop_finder = LoopFinder {
+                typeck_results,
+                record: Vec::new(),
+            };
+            intravisit::walk_body(&mut loop_finder, body);
+            self.record = loop_finder.record;
+        }
     }
 
     fn report(&self, _: &Graph) {
@@ -112,7 +116,7 @@ impl OptCheck for BoundsLoopPushCheck {
     }
 
     fn cnt(&self) -> usize {
-        self.record.len()
+        self.record.iter().map(|(_, spans)| spans.len()).sum()
     }
 }
 

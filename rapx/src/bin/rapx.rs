@@ -34,6 +34,7 @@ fn main() {
             "-V" | "-verify" => compiler.enable_verify(),
             "-O" | "-opt" => compiler.enable_opt(1),
             "-opt=all" => compiler.enable_opt(2),
+            "-opt=report" => compiler.enable_opt(0),
             "-alias" => compiler.enable_mop(),
             "-heap" => compiler.enable_heap_item(),
             "-adg" => compiler.enable_api_dep(), // api dependency graph

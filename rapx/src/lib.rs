@@ -76,7 +76,7 @@ impl Default for RapCallback {
             api_dep: false,
             show_mir: false,
             dataflow: 0,
-            opt: 0,
+            opt: usize::MAX,
             heap_item: false,
             ssa: false,
         }
@@ -282,6 +282,7 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
     }
 
     match callback.is_opt_enabled() {
+        0 => Opt::new(tcx, 0).start(),
         1 => Opt::new(tcx, 1).start(),
         2 => Opt::new(tcx, 2).start(),
         _ => {}

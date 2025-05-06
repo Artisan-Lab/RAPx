@@ -10,7 +10,9 @@ use crate::utils::log::{
 };
 use annotate_snippets::{Level, Renderer, Snippet};
 
+use super::super::super::LEVEL;
 use super::super::super::NO_STD;
+use crate::analysis::opt::OptCheck;
 static DEFPATHS: OnceCell<DefPaths> = OnceCell::new();
 
 struct DefPaths {
@@ -31,8 +33,6 @@ impl DefPaths {
         }
     }
 }
-
-use crate::analysis::opt::OptCheck;
 
 pub struct BoundsExtendCheck {
     pub record: Vec<Span>,
@@ -56,6 +56,10 @@ impl OptCheck for BoundsExtendCheck {
     }
 
     fn check(&mut self, graph: &Graph, tcx: &TyCtxt) {
+        let level = LEVEL.lock().unwrap();
+        if *level <= 1 {
+            return;
+        }
         let _ = &DEFPATHS.get_or_init(|| DefPaths::new(tcx));
         for node in graph.nodes.iter() {
             if is_extend_from_slice(node) {

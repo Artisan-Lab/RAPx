@@ -23,9 +23,9 @@ impl OptCheck for InitializationCheck {
     }
 
     fn check(&mut self, graph: &Graph, tcx: &TyCtxt) {
-        self.local_set.check(graph, tcx);
         let level = LEVEL.lock().unwrap();
         if *level == 2 {
+            self.local_set.check(graph, tcx);
             self.vec_init.check(graph, tcx);
         }
     }

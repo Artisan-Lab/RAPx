@@ -10,6 +10,8 @@ use rustc_middle::mir::{
 use rustc_middle::ty::TyKind;
 use rustc_span::{Span, DUMMY_SP};
 
+use crate::utils::log::relative_pos_range;
+
 #[derive(Clone, Debug)]
 pub enum NodeOp {
     //warning: the fields are related to the version of the backend rustc version
@@ -568,13 +570,26 @@ impl Graph {
         }
     }
 
-    pub fn query_node_by_span(&self, span: Span) -> Option<(Local, &GraphNode)> {
+    // if strict is set to false, we return the first node that wraps the target span and at least one end overlaps
+    pub fn query_node_by_span(&self, span: Span, strict: bool) -> Option<(Local, &GraphNode)> {
         for (node_idx, node) in self.nodes.iter_enumerated() {
-            if node.span == span {
-                return Some((node_idx, node));
+            if strict {
+                if node.span == span {
+                    return Some((node_idx, node));
+                }
+            } else {
+                if !relative_pos_range(node.span, span).eq(0..0)
+                    && (node.span.lo() == span.lo() || node.span.hi() == span.hi())
+                {
+                    return Some((node_idx, node));
+                }
             }
         }
         None
+    }
+
+    pub fn is_marker(&self, idx: Local) -> bool {
+        idx >= Local::from_usize(self.n_locals)
     }
 }
 

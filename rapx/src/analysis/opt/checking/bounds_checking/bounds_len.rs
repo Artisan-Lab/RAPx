@@ -9,7 +9,7 @@ use rustc_middle::ty::TyCtxt;
 use rustc_span::Span;
 
 use crate::analysis::core::dataflow::graph::{
-    AggKind, DFSStatus, Direction, Graph, GraphNode, NodeOp,
+    AggKind, DFSStatus, Direction, EdgeOp, Graph, GraphNode, NodeOp,
 };
 use crate::analysis::utils::def_path::DefPath;
 use crate::utils::log::{
@@ -136,35 +136,34 @@ impl OptCheck for BoundsLenCheck {
         let mut if_finder = IfFinder { record: vec![] };
         intravisit::walk_body(&mut if_finder, body);
         for (cond, slice_index_record) in if_finder.record.iter() {
-            if let Some((node_idx, node)) = graph.query_node_by_span(*cond) {
+            if let Some((node_idx, node)) = graph.query_node_by_span(*cond, true) {
                 let left_arm = graph.edges[node.in_edges[0]].src;
                 let right_arm = graph.edges[node.in_edges[1]].src;
                 if find_upside_len_node(graph, right_arm).is_some() {
-                    let trustable_set = graph.collect_ancestor_locals(left_arm, true);
+                    let index_set = graph.collect_ancestor_locals(left_arm, true);
+                    let len_set = graph.collect_ancestor_locals(right_arm, true);
                     let mut slice_node_indice = vec![];
-                    let mut valid = true;
                     for slice_index_idx in slice_index_record {
                         if let Some((index_node_idx, _)) =
-                            graph.query_node_by_span(*slice_index_idx)
+                            graph.query_node_by_span(*slice_index_idx, true)
                         {
-                            slice_node_indice.push(index_node_idx);
                             let index_ancestors =
                                 graph.collect_ancestor_locals(index_node_idx, true);
-                            // Warning: We only checks index without checking the indexed value
-                            if index_ancestors
-                                .intersection(&trustable_set)
-                                .next()
-                                .is_none()
-                            {
-                                valid = false;
-                                break;
+                            let indexed_node_idx =
+                                find_indexed_node_from_index(graph, index_node_idx);
+                            if let Some(indexed_node_idx) = indexed_node_idx {
+                                let indexed_ancestors =
+                                    graph.collect_ancestor_locals(indexed_node_idx, true);
+                                // Warning: We only checks index without checking the indexed value
+                                if index_ancestors.intersection(&index_set).next().is_some()
+                                    && indexed_ancestors.intersection(&len_set).next().is_some()
+                                {
+                                    slice_node_indice.push(index_node_idx);
+                                }
                             }
                         }
                     }
-                    if valid {
-                        // Warning: Maybe recording during checking is a better manner
-                        self.record.push((node_idx, slice_node_indice));
-                    }
+                    self.record.push((node_idx, slice_node_indice));
                 }
             }
         }
@@ -177,8 +176,38 @@ impl OptCheck for BoundsLenCheck {
     }
 
     fn cnt(&self) -> usize {
-        self.record.len()
+        self.record.iter().map(|(_, spans)| spans.len()).sum()
     }
+}
+
+fn find_indexed_node_from_index(graph: &Graph, index_node_idx: Local) -> Option<Local> {
+    let def_paths = &DEFPATHS.get().unwrap();
+    let index_node = &graph.nodes[index_node_idx];
+    for edge_idx in index_node.out_edges.iter() {
+        let dst_node_idx = graph.edges[*edge_idx].dst;
+        let dst_node = &graph.nodes[dst_node_idx];
+        for op in dst_node.ops.iter() {
+            if let NodeOp::Call(def_id) = op {
+                if *def_id == def_paths.ops_index.last_def_id()
+                    || *def_id == def_paths.ops_index_mut.last_def_id()
+                {
+                    let index_operator_node =
+                        &graph.nodes[graph.edges[index_node.out_edges[0]].dst];
+
+                    return Some(graph.edges[index_operator_node.in_edges[0]].src);
+                }
+            }
+            if graph.is_marker(dst_node_idx) {
+                for edge_idx_ in dst_node.in_edges.iter() {
+                    let edge = &graph.edges[*edge_idx_];
+                    if let EdgeOp::Index = edge.op {
+                        return Some(edge.src);
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 fn extract_upperbound_node_if_ops_range(graph: &Graph, node: &GraphNode) -> Option<Local> {
@@ -278,7 +307,8 @@ fn report_upperbound_bug(graph: &Graph, upperbound_node_idx: Local, index_record
     }
     let message = Level::Warning
         .title("Unnecessary bounds checkings detected")
-        .snippet(snippet);
+        .snippet(snippet)
+        .footer(Level::Help.title("Use unsafe APIs instead."));
     let renderer = Renderer::styled();
     println!("{}", renderer.render(message));
 }

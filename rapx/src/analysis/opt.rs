@@ -5,6 +5,8 @@ pub mod memory_cloning;
 
 use rustc_middle::ty::TyCtxt;
 
+use crate::utils::log::span_to_source_code;
+
 use super::core::dataflow::{graph::Graph, DataFlow};
 use checking::bounds_checking::BoundsCheck;
 use checking::encoding_checking::EncodingCheck;
@@ -67,44 +69,55 @@ impl<'tcx> Opt<'tcx> {
         dataflow.graphs.iter().for_each(|(_, graph)| {
             let mut bounds_check = BoundsCheck::new();
             bounds_check.check(graph, &self.tcx);
-            bounds_check.report(graph);
             statistics[0] += bounds_check.cnt();
+
+            if self.level > 0 {
+                bounds_check.report(graph);
+            }
 
             let no_std = NO_STD.lock().unwrap();
             if !*no_std {
                 let mut encoding_check = EncodingCheck::new();
                 encoding_check.check(graph, &self.tcx);
-                encoding_check.report(graph);
                 statistics[1] += encoding_check.cnt();
 
                 let mut suboptimal_check = SuboptimalCheck::new();
                 suboptimal_check.check(graph, &self.tcx);
-                suboptimal_check.report(graph);
                 statistics[2] += suboptimal_check.cnt();
 
                 let mut initialization_check = InitializationCheck::new();
                 initialization_check.check(graph, &self.tcx);
-                initialization_check.report(graph);
                 statistics[3] += initialization_check.cnt();
 
                 let mut reservation_check = ReservationCheck::new();
                 reservation_check.check(graph, &self.tcx);
-                reservation_check.report(graph);
                 statistics[4] += reservation_check.cnt();
 
                 let mut used_as_immutable_check = UsedAsImmutableCheck::new();
                 used_as_immutable_check.check(graph, &self.tcx);
-                used_as_immutable_check.report(graph);
                 statistics[5] += used_as_immutable_check.cnt();
+
+                if self.level > 0 {
+                    encoding_check.report(graph);
+                    suboptimal_check.report(graph);
+                    initialization_check.report(graph);
+                    reservation_check.report(graph);
+                    used_as_immutable_check.report(graph);
+                }
             }
         });
 
-        let sum: usize = statistics.iter().sum();
-        if sum > 0 {
+        let bug_cnt: usize = statistics.iter().sum();
+        let func_cnt: usize = dataflow.graphs.iter().count();
+        let line_cnt: usize = dataflow
+            .graphs
+            .iter()
+            .map(|(_, graph)| span_to_source_code(graph.span).lines().count())
+            .sum();
+        if bug_cnt > 0 {
             println!(
-                "RAPx detects {} code inefficiencies from {} functions",
-                sum,
-                dataflow.graphs.iter().count()
+                "RAPx detects {} code inefficiencies from {} functions ({} lines)",
+                bug_cnt, func_cnt, line_cnt,
             );
             println!("  Bounds Checking: {}", statistics[0]);
             println!("  Encoding Checking: {}", statistics[1]);

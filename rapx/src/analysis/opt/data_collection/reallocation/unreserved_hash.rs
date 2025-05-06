@@ -21,6 +21,7 @@ struct DefPaths {
     hashset_insert: DefPath,
     hashmap_new: DefPath,
     hashmap_insert: DefPath,
+    entry: DefPath,
 }
 
 impl DefPaths {
@@ -30,6 +31,7 @@ impl DefPaths {
             hashmap_insert: DefPath::new("std::collections::HashMap::insert", tcx),
             hashset_new: DefPath::new("std::collections::HashSet::new", tcx),
             hashmap_new: DefPath::new("std::collections::HashMap::new", tcx),
+            entry: DefPath::new("std::collections::HashMap::entry", tcx),
         }
     }
 }
@@ -61,6 +63,7 @@ fn find_downside_hash_insert_node(graph: &Graph, node_idx: Local) -> Option<Loca
             if let NodeOp::Call(def_id) = op {
                 if *def_id == def_paths.hashmap_insert.last_def_id()
                     || *def_id == def_paths.hashset_insert.last_def_id()
+                    || *def_id == def_paths.entry.last_def_id()
                 {
                     hash_insert_node_idx = Some(idx);
                     return DFSStatus::Stop;

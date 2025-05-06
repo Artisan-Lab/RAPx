@@ -22,6 +22,8 @@ use crate::utils::log::{
     relative_pos_range, span_to_filename, span_to_line_number, span_to_source_code,
 };
 
+use super::super::LEVEL;
+
 struct DefPaths {
     clone: DefPath,
     //to_string: DefPath,
@@ -90,42 +92,52 @@ impl OptCheck for UsedAsImmutableCheck {
     fn check(&mut self, graph: &Graph, tcx: &TyCtxt) {
         let _ = &DEFPATHS.get_or_init(|| DefPaths::new(tcx));
         let def_paths = &DEFPATHS.get().unwrap();
+        let level = LEVEL.lock().unwrap();
         for (idx, node) in graph.nodes.iter_enumerated() {
-            for op in node.ops.iter() {
-                if let NodeOp::Call(def_id) = op {
-                    if *def_id == def_paths.clone.last_def_id()
-                        // || *def_id == def_paths.to_string.last_def_id()
-                        || *def_id == def_paths.to_owned.last_def_id()
-                    {
-                        if let Some((node_idx, edge_idx)) = find_downside_use_as_param(graph, idx) {
-                            let use_node = &graph.nodes[node_idx];
+            if node.ops.len() > 1 {
+                //filter mutable variables
+                continue;
+            }
+            if let NodeOp::Call(def_id) = node.ops[0] {
+                if def_id == def_paths.clone.last_def_id()
+                    // || *def_id == def_paths.to_string.last_def_id()
+                    || def_id == def_paths.to_owned.last_def_id()
+                {
+                    if let Some((node_idx, edge_idx)) = find_downside_use_as_param(graph, idx) {
+                        let use_node = &graph.nodes[node_idx];
 
-                            let seq = graph.edges[edge_idx].seq;
-                            let filtered_in_edges: Vec<&usize> = use_node
-                                .in_edges
-                                .iter()
-                                .filter(|idx| graph.edges[**idx].seq == seq)
-                                .collect();
-                            let index = filtered_in_edges.binary_search(&&edge_idx).unwrap();
-                            if let NodeOp::Call(callee_def_id) = use_node.ops[seq] {
-                                let fn_sig = tcx.try_normalize_erasing_regions(
-                                    //rustc_middle::ty::ParamEnv::reveal_all(),
-                                    rustc_middle::ty::TypingEnv::post_analysis(*tcx, def_id),
-                                    tcx.fn_sig(callee_def_id).skip_binder(),
-                                );
-                                if fn_sig.is_ok() {
-                                    let fn_sig = fn_sig.unwrap().skip_binder();
-                                    let ty = fn_sig.inputs().iter().nth(index).unwrap();
-                                    if let TyKind::Ref(_, _, mutability) = ty.kind() {
-                                        if *mutability == Mutability::Mut {
-                                            break;
-                                        }
+                        let seq = graph.edges[edge_idx].seq;
+                        let filtered_in_edges: Vec<&usize> = use_node
+                            .in_edges
+                            .iter()
+                            .filter(|idx| graph.edges[**idx].seq == seq)
+                            .collect();
+                        let index = filtered_in_edges.binary_search(&&edge_idx).unwrap();
+                        if let NodeOp::Call(callee_def_id) = use_node.ops[seq] {
+                            let fn_sig = tcx.try_normalize_erasing_regions(
+                                rustc_middle::ty::TypingEnv::post_analysis(*tcx, def_id),
+                                tcx.fn_sig(callee_def_id).skip_binder(),
+                            );
+                            if fn_sig.is_ok() {
+                                let fn_sig = fn_sig.unwrap().skip_binder();
+                                let ty = fn_sig.inputs().iter().nth(index).unwrap();
+                                if let TyKind::Ref(_, _, mutability) = ty.kind() {
+                                    //not &mut T
+                                    if *mutability == Mutability::Mut {
+                                        break;
                                     }
-                                    //not &T and &mut T
-                                    let clone_span = node.span;
-                                    let use_span = use_node.span;
-                                    self.record.push((clone_span, use_span));
                                 }
+                                let callee_func_name = format!("{:?}", callee_def_id);
+                                if *level != 2
+                                    && (callee_func_name.contains("into")
+                                        || callee_func_name.contains("new"))
+                                {
+                                    //we filter out funcs that may cause false positive
+                                    break;
+                                }
+                                let clone_span = node.span;
+                                let use_span = use_node.span;
+                                self.record.push((clone_span, use_span));
                             }
                         }
                     }
