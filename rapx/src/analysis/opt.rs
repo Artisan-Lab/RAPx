@@ -5,6 +5,7 @@ pub mod memory_cloning;
 
 use rustc_middle::ty::TyCtxt;
 
+use crate::rap_warn;
 use crate::utils::log::span_to_source_code;
 
 use super::core::dataflow::{graph::Graph, DataFlow};
@@ -115,6 +116,7 @@ impl<'tcx> Opt<'tcx> {
             .map(|(_, graph)| span_to_source_code(graph.span).lines().count())
             .sum();
         if bug_cnt > 0 {
+            rap_warn!("Potential optimizations detected.");
             println!(
                 "RAPx detects {} code inefficiencies from {} functions ({} lines)",
                 bug_cnt, func_cnt, line_cnt,

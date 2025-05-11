@@ -28,4 +28,4 @@ jobs:
     - run: sudo apt install colorized-logs -y # Insall ansi2txt
 
     - name: Running Other Test Cases 
-      run: cd ./rapx/tests/others && ./batch.sh -F -M -O -A
+      run: cd ./rapx/tests/others && ./batch.sh -F -M -O

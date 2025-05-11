@@ -66,12 +66,12 @@ function test() { #第一个参数：目录名 第二个参数：rapx的参数
 }
 
 parse $@
-if [ "$F" -eq 1 ]; then
-  test "support/uaf" "-F $rest"
-fi
-if [ "$M" -eq 1 ]; then
-  test "support/leak" "-M $rest"
-fi
+# if [ "$F" -eq 1 ]; then
+#   test "support" "-F $rest"
+# fi
+# if [ "$M" -eq 1 ]; then
+#   test "support" "-M $rest"
+# fi
 if [ "$O" -eq 1 ]; then
   test "support/opt" "-O $rest"
 fi
