@@ -187,7 +187,6 @@ pub fn get_type(tcx: TyCtxt<'_>, def_id: DefId) -> usize {
                     if let Some(impl_id) = assoc_item.impl_container(tcx) {
                         let ty = tcx.type_of(impl_id).skip_binder();
                         if *ref_ty == ty {
-                            println!("find ref:{:?}", output);
                             node_type = 0;
                         }
                     }
@@ -230,7 +229,6 @@ pub fn get_cons(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<NodeType> {
                         if (tcx.def_kind(item) == DefKind::Fn
                             || tcx.def_kind(item) == DefKind::AssocFn)
                             && get_type(tcx, *item) == 0
-                            && check_visibility(tcx, *item)
                         {
                             cons.push(generate_node_ty(tcx, *item));
                         }
@@ -252,7 +250,7 @@ pub fn get_callees(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<DefId> {
                     if let Operand::Constant(func_constant) = func {
                         if let ty::FnDef(ref callee_def_id, _) = func_constant.const_.ty().kind() {
                             if check_safety(tcx, *callee_def_id)
-                                && check_visibility(tcx, *callee_def_id)
+                            // && check_visibility(tcx, *callee_def_id)
                             {
                                 let sp_set = get_sp(tcx, *callee_def_id);
                                 if sp_set.len() != 0 {
@@ -337,7 +335,9 @@ pub fn get_all_mutable_methods(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<DefId>
         for item in associated_items.in_definition_order() {
             if let ty::AssocKind::Fn = item.kind {
                 let item_def_id = item.def_id;
-                if has_mut_self_param(tcx, item_def_id) && check_visibility(tcx, item_def_id) {
+                if has_mut_self_param(tcx, item_def_id)
+                // && check_visibility(tcx, item_def_id)
+                {
                     results.insert(item_def_id);
                 }
             }

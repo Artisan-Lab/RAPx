@@ -40,6 +40,26 @@ impl FnRetAlias {
     pub fn len(&self) -> usize {
         self.alias_set.len()
     }
+
+    pub fn sort_alias_index(&mut self) {
+        let alias_set = std::mem::take(&mut self.alias_set);
+        let mut new_alias_set = HashSet::with_capacity(alias_set.len());
+
+        for mut ra in alias_set.into_iter() {
+            if ra.left_index >= ra.right_index {
+                Self::swap_ret_alias_fields(&mut ra);
+            }
+            new_alias_set.insert(ra);
+        }
+        self.alias_set = new_alias_set;
+    }
+
+    pub fn swap_ret_alias_fields(ra: &mut RetAlias) {
+        std::mem::swap(&mut ra.left_index, &mut ra.right_index);
+        std::mem::swap(&mut ra.left_field_seq, &mut ra.right_field_seq);
+        std::mem::swap(&mut ra.left_may_drop, &mut ra.right_may_drop);
+        std::mem::swap(&mut ra.left_need_drop, &mut ra.right_need_drop);
+    }
 }
 
 impl fmt::Display for FnRetAlias {

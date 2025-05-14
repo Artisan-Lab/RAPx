@@ -178,10 +178,10 @@ impl<'tcx> BodyVisitor<'tcx> {
                     }
                 }
             }
-            if self.visit_time == 0 {
-                // rap_warn!("In path {index}");
-                // display_hashmap(&self.chains.variables, 1);
-            }
+            // if self.visit_time == 0 {
+            //     rap_warn!("In path {index}");
+            //     display_hashmap(&self.chains.variables, 1);
+            // }
         }
     }
 
@@ -266,10 +266,10 @@ impl<'tcx> BodyVisitor<'tcx> {
                 let drop_local = self.handle_proj(false, *place);
                 if !self.chains.set_drop(drop_local) {
                     // display_hashmap(&self.chains.variables, 1);
-                    rap_warn!(
-                        "In path {:?}, double drop {drop_local} in block {bb_index}",
-                        self.paths[path_index]
-                    );
+                    // rap_warn!(
+                    //     "In path {:?}, double drop {drop_local} in block {bb_index}",
+                    //     self.paths[path_index]
+                    // );
                 }
             }
             _ => {}
@@ -388,7 +388,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         let mut pre_analysis_state = HashMap::new();
         for (idx, arg) in args.iter().enumerate() {
             let arg_place = get_arg_place(&arg.node);
-            let ab_state_item = self.get_abstate_by_place_in_path(arg_place, path_index);
+            let ab_state_item = self.get_abstate_by_place_in_path(arg_place.1, path_index);
             pre_analysis_state.insert(idx, ab_state_item);
         }
 
@@ -443,25 +443,36 @@ impl<'tcx> BodyVisitor<'tcx> {
                     alias_set.left_field_seq.clone(),
                     alias_set.right_field_seq.clone(),
                 );
-                let mut fst_var;
-                let mut snd_var;
-                if l == 0 && r != 0 {
-                    fst_var = self.chains.find_var_id_with_fields_seq(d_local, l_fields);
-                    let r_place = get_arg_place(&args[r - 1].node);
-                    snd_var = self.chains.find_var_id_with_fields_seq(r_place, r_fields);
-                } else if l != 0 && r == 0 {
-                    let l_place = get_arg_place(&args[l - 1].node);
-                    fst_var = self.chains.find_var_id_with_fields_seq(l_place, l_fields);
-                    snd_var = self.chains.find_var_id_with_fields_seq(d_local, r_fields);
-                } else if l != 0 && r != 0 {
-                    let l_place = get_arg_place(&args[l - 1].node);
-                    fst_var = self.chains.find_var_id_with_fields_seq(l_place, l_fields);
-                    let r_place = get_arg_place(&args[r - 1].node);
-                    snd_var = self.chains.find_var_id_with_fields_seq(r_place, r_fields);
-                } else {
-                    fst_var = self.chains.find_var_id_with_fields_seq(d_local, l_fields);
-                    snd_var = self.chains.find_var_id_with_fields_seq(d_local, r_fields);
+                let (l_place, r_place) = (
+                    if l != 0 {
+                        get_arg_place(&args[l - 1].node)
+                    } else {
+                        (false, d_local)
+                    },
+                    if r != 0 {
+                        get_arg_place(&args[r - 1].node)
+                    } else {
+                        (false, d_local)
+                    },
+                );
+                // if left value is a constant, then update right variable's value
+                if l_place.0 {
+                    let snd_var = self.chains.find_var_id_with_fields_seq(r_place.1, r_fields);
+                    self.chains
+                        .update_value(self.chains.get_point_to_id(snd_var), l_place.1);
+                    return;
                 }
+                // if right value is a constant, then update left variable's value
+                if r_place.0 {
+                    let fst_var = self.chains.find_var_id_with_fields_seq(l_place.1, l_fields);
+                    self.chains
+                        .update_value(self.chains.get_point_to_id(fst_var), r_place.1);
+                    return;
+                }
+                let (fst_var, snd_var) = (
+                    self.chains.find_var_id_with_fields_seq(l_place.1, l_fields),
+                    self.chains.find_var_id_with_fields_seq(r_place.1, r_fields),
+                );
                 // If this var is ptr or ref, then get the next level node.
                 let fst_to = self.chains.get_point_to_id(fst_var);
                 let snd_to = self.chains.get_point_to_id(snd_var);
@@ -497,7 +508,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         for (idx, arg) in args.iter().enumerate() {
             let arg_place = get_arg_place(&arg.node);
             if let Some(state_item) = post_state.get(&idx) {
-                self.insert_path_abstate(path_index, arg_place, state_item.clone());
+                self.insert_path_abstate(path_index, arg_place.1, state_item.clone());
             }
         }
     }
@@ -774,6 +785,9 @@ impl<'tcx> BodyVisitor<'tcx> {
             match proj {
                 ProjectionElem::Deref => {
                     proj_id = self.chains.get_point_to_id(place.local.as_usize());
+                    if proj_id == place.local.as_usize() {
+                        proj_id = self.chains.check_ptr(proj_id);
+                    }
                 }
                 ProjectionElem::Field(field, ty) => {
                     proj_id = self

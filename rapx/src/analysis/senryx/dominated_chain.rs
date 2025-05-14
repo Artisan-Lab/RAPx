@@ -11,6 +11,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 pub struct States {
     pub nonnull: bool,
     pub allocator_consistency: bool,
+    pub init: bool,
+    pub align: bool,
 }
 
 impl States {
@@ -18,6 +20,8 @@ impl States {
         Self {
             nonnull: true,
             allocator_consistency: true,
+            init: true,
+            align: true,
         }
     }
 
@@ -25,6 +29,8 @@ impl States {
         Self {
             nonnull: false,
             allocator_consistency: false,
+            init: false,
+            align: false,
         }
     }
 }
@@ -39,6 +45,7 @@ pub struct VariableNode<'tcx> {
     pub ty: Option<Ty<'tcx>>,
     pub is_dropped: bool,
     pub states: States,
+    pub const_value: usize,
 }
 
 impl<'tcx> VariableNode<'tcx> {
@@ -58,6 +65,7 @@ impl<'tcx> VariableNode<'tcx> {
             ty,
             is_dropped: false,
             states,
+            const_value: 0,
         }
     }
 
@@ -71,6 +79,7 @@ impl<'tcx> VariableNode<'tcx> {
             ty,
             is_dropped: false,
             states: States::new(),
+            const_value: 0,
         }
     }
 
@@ -84,6 +93,7 @@ impl<'tcx> VariableNode<'tcx> {
             ty,
             is_dropped: false,
             states,
+            const_value: 0,
         }
     }
 }
@@ -107,7 +117,9 @@ impl<'tcx> DominatedGraph<'tcx> {
         let mut obj_cnt = 0;
         for (idx, local) in locals.iter().enumerate() {
             let local_ty = local.ty;
-            var_map.insert(idx, VariableNode::new_default(idx, Some(local_ty)));
+            let mut node = VariableNode::new_default(idx, Some(local_ty));
+
+            var_map.insert(idx, node);
         }
         Self {
             tcx,
@@ -128,7 +140,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         }
     }
 
-    pub fn generate_ptr_with_obj_node(&mut self, local_ty: Ty<'tcx>, idx: usize) {
+    pub fn generate_ptr_with_obj_node(&mut self, local_ty: Ty<'tcx>, idx: usize) -> usize {
         let new_id = self.generate_node_id();
         if is_ptr(local_ty) {
             // modify ptr node pointed
@@ -153,6 +165,16 @@ impl<'tcx> DominatedGraph<'tcx> {
                 States::new(),
             );
         }
+        new_id
+    }
+
+    // if current node is ptr or ref, then return the new node pointed by it.
+    pub fn check_ptr(&mut self, arg: usize) -> usize {
+        let node_ty = self.get_var_node_mut(arg).unwrap().ty.unwrap();
+        if is_ptr(node_ty) || is_ref(node_ty) {
+            return self.generate_ptr_with_obj_node(node_ty, arg);
+        }
+        return arg;
     }
 
     pub fn get_local_ty_by_place(&self, arg: usize) -> Option<Ty<'tcx>> {
@@ -303,10 +325,12 @@ impl<'tcx> DominatedGraph<'tcx> {
     pub fn copy_node(&mut self, lv: usize, rv: usize) {
         let rv_node = self.get_var_node_mut(rv).unwrap().clone();
         let lv_node = self.get_var_node_mut(lv).unwrap();
+        let lv_ty = lv_node.ty.unwrap();
         lv_node.states = rv_node.states;
         lv_node.is_dropped = rv_node.is_dropped;
-        if let Some(to) = &rv_node.points_to {
-            self.point(lv, *to);
+        if is_ptr(rv_node.ty.unwrap()) && is_ptr(lv_ty) {
+            // println!("++++{lv}--{rv}");
+            self.merge(lv, rv);
         }
     }
 
@@ -353,6 +377,13 @@ impl<'tcx> DominatedGraph<'tcx> {
             ori_node.is_dropped = true;
         }
         return true;
+    }
+
+    pub fn update_value(&mut self, arg: usize, value: usize) {
+        let node = self.get_var_node_mut(arg).unwrap();
+
+        node.const_value = value;
+        node.states.init = true;
     }
 
     pub fn print_graph(&self) {

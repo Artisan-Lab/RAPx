@@ -194,16 +194,15 @@ impl<'tcx> SenryxCheck<'tcx> {
         for check_result in &check_results {
             cond_print!(
                 check_result.failed_contracts.len() > 0,
-                "  Unsafe api {:?}: {} passed, {} failed!",
-                check_result.func_name,
-                check_result.passed_contracts.len(),
-                check_result.failed_contracts.len()
+                "  Use unsafe api {:?}.",
+                check_result.func_name
             );
             for failed_contract in &check_result.failed_contracts {
                 cond_print!(
                     check_result.failed_contracts.len() > 0,
-                    "      Contract failed: {:?}",
-                    failed_contract
+                    "      Argument {}'s failed Sps: {:?}",
+                    failed_contract.0,
+                    failed_contract.1
                 );
             }
         }

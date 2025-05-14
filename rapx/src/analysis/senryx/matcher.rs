@@ -1,9 +1,9 @@
+use crate::{analysis::utils::fn_info::get_sp_json, rap_warn};
+use rustc_middle::mir::Const;
 use rustc_middle::mir::Operand;
 use rustc_span::source_map::Spanned;
 use rustc_span::Span;
 use std::collections::{HashMap, HashSet};
-
-use crate::analysis::utils::fn_info::get_sp_json;
 
 use super::{
     contracts::{
@@ -104,10 +104,10 @@ fn process_checker<'tcx>(
     for (idx, contracts_vec) in checker.variable_contracts().iter() {
         for contract in contracts_vec {
             let arg_place = get_arg_place(&args[*idx].node);
-            if arg_place == 0 {
+            if arg_place.1 == 0 {
                 continue;
             }
-            if let Some(abstate_item) = abstate.state_map.get(&arg_place) {
+            if let Some(abstate_item) = abstate.state_map.get(&arg_place.1) {
                 if !check_contract(contract, &abstate_item.clone()) {
                     // check_result.failed_contracts.push((*idx, contract.clone()));
                 } else {
@@ -119,10 +119,24 @@ fn process_checker<'tcx>(
     check_result
 }
 
-pub fn get_arg_place(arg: &Operand) -> usize {
+// (is const, value)
+pub fn get_arg_place(arg: &Operand) -> (bool, usize) {
     match arg {
-        Operand::Move(place) => place.local.as_usize(),
-        Operand::Copy(place) => place.local.as_usize(),
-        _ => 0,
+        Operand::Move(place) | Operand::Copy(place) => return (false, place.local.as_usize()),
+        Operand::Constant(constant) => {
+            let mut val = 0;
+            match constant.const_ {
+                Const::Ty(_ty, _const_value) => {
+                    rap_warn!("const ty found!");
+                }
+                Const::Unevaluated(_unevaluated, _ty) => {}
+                Const::Val(const_value, _ty) => {
+                    if let Some(scalar) = const_value.try_to_scalar_int() {
+                        val = scalar.to_uint(scalar.size()) as usize;
+                    }
+                }
+            }
+            return (true, val);
+        }
     }
 }

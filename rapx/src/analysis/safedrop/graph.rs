@@ -611,11 +611,9 @@ impl<'tcx> SafeDropGraph<'tcx> {
     }
 
     pub fn get_paths(&self) -> Vec<Vec<usize>> {
-        // rap_debug!("dfs here");
         let mut paths: Vec<Vec<usize>> = Vec::new();
         let mut stack: Vec<usize> = vec![0];
         self.dfs_on_spanning_tree(0, &mut stack, &mut paths);
-
         paths
     }
 

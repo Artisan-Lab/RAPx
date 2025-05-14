@@ -1,92 +1,92 @@
 {
     "core::alloc::global::GlobalAlloc::alloc": {
       "0": [
-        "ValidInt",
+        "ValidNum",
         "Init"
       ]
     },
     "core::alloc::global::GlobalAlloc::realloc": {
       "0": [
         "Allocated",
-        "LayoutConsistency",
-        "ValidInt"
+        "Layout",
+        "ValidNum"
       ]
     },
     "core::alloc::global::GlobalAlloc::dealloc": {
       "0": [
         "Allocated",
-        "LayoutConsistency"
+        "Layout"
       ]
     },
     "core::alloc::global::GlobalAlloc::alloc_zeroed": {
       "0": [
-        "ValidInt"
+        "ValidNum"
       ]
     },
     "core::alloc::layout::from_size_align_unchecked": {
       "0": [
-        "ValidInt"
+        "ValidNum"
       ]
     },
     "core::alloc::layout::for_value_raw": {
         "0": [
-          "Sized",
-          "!Sized && ValidSlice",
-          "!Sized && ValidTraitObj"
+          "Size",
+          "ValidSlice",
+          "ValidTraitObj"
         ]
       },
     "core::alloc::Allocator::grow": {
       "0": [
         "Allocated",
-        "LayoutConsistency",
-        "ValidInt"
+        "Layout",
+        "ValidNum"
       ]
     },
     "core::alloc::Allocator::grow_zeroed": {
       "0": [
         "Allocated",
-        "LayoutConsistency",
-        "ValidInt"
+        "Layout",
+        "ValidNum"
       ]
     },
     "core::alloc::Allocator::shrink": {
         "0": [
             "Allocated",
-            "LayoutConsistency",
-            "ValidInt"
+            "Layout",
+            "ValidNum"
         ]
     },
     "core::alloc::Allocator::deallocate": {
         "0": [
             "Allocated",
-            "LayoutConsistency"
+            "Layout"
         ]
     },
     "core::alloc::deallocate": {
         "0": [
             "Allocated",
-            "LayoutConsistency"
+            "Layout"
         ]
     },
     "core::alloc::grow": {
         "0": [
             "Allocated",
-            "LayoutConsistency",
-            "ValidInt"
+            "Layout",
+            "ValidNum"
         ]
     },
     "core::alloc::grow_zeroed": {
         "0": [
             "Allocated",
-            "LayoutConsistency",
-            "ValidInt"
+            "Layout",
+            "ValidNum"
         ]
     },
     "core::alloc::shrink": {
         "0": [
             "Allocated",
-            "LayoutConsistency",
-            "ValidInt"
+            "Layout",
+            "ValidNum"
         ]
     },
     "core::any::downcast_ref_unchecked": {
@@ -101,23 +101,23 @@
     },
     "core::array::iter::new_unchecked": {
         "0": [
-            "ValidInt",
+            "ValidNum",
             "Init"
         ]
     },
     "core::array::ascii::as_ascii_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ascii::ascii_char::digit_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ascii::ascii_char::from_u8_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::cell::try_borrow_unguarded": {
@@ -142,41 +142,41 @@
     },
     "core::f128::to_int_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::f64::to_int_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::f32::to_int_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::f16::to_int_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::convert::num::FloatToInt::to_int_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::convert::num::to_int_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ffi::c_str::from_ptr": {
         "0": [
             "ValidCStr",
             "ValidPtr",
-            "NonNull",
+            "!Null",
             "Alias",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ffi::c_str::from_bytes_with_nul_unchecked": {
@@ -188,28 +188,28 @@
         "0": [
             "ValidPtr",
             "Aligned",
-            "NonNull",
-            "Dangling"
+            "!Null",
+            "Allocated"
         ]
     },
     "core::iter::range::forward_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::iter::range::backward_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::iter::range::Step::forward_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::iter::range::Step::backward_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::mem::manually_drop::take": {
@@ -219,7 +219,7 @@
     },
     "core::mem::manually_drop::drop": {
         "0": [
-            "Dangling"
+            "Allocated"
         ]
     },
     "core::mem::maybe_uninit::assume_init": {
@@ -236,7 +236,7 @@
     "core::mem::maybe_uninit::assume_init_drop": {
         "0": [
             "Init",
-            "Dangling"
+            "Allocated"
         ]
     },
     "core::mem::maybe_uninit::assume_init_ref": {
@@ -266,16 +266,16 @@
     },
     "core::mem::size_of_val_raw": {
         "0": [
-            "Sized",
-            "!Sized && ValidSlice",
-            "!Sized && ValidTraitObj"
+            "Size",
+            "ValidSlice",
+            "ValidTraitObj"
         ]
     },
     "core::mem::align_of_val_raw": {
         "0": [
-            "Sized",
-            "!Sized && ValidSlice",
-            "!Sized && ValidTraitObj"
+            "Size",
+            "ValidSlice",
+            "ValidTraitObj"
         ]
     },
     "core::mem::zeroed": {
@@ -285,7 +285,7 @@
     },
     "core::mem::uninitialized": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::mem::transmute_copy": {
@@ -302,62 +302,62 @@
     },
     "core::num::nonzero::unchecked_add": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::num::nonzero::unchecked_mul": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::num::nonzero::new_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::num::nonzero::from_mut_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::num::unchecked_sub": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::num::unchecked_mul": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::num::unchecked_neg": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::num::unchecked_shl": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::num::unchecked_shr": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::num::unchecked_add": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::hint::unreachable_unchecked": {
         "0": [
-            "ValidInt"
+            "Unreachable"
         ]
     },
     "core::hint::assert_unchecked": {
         "0": [
-            "Unreachable"
+            "ValidNum"
         ]
     },
     "core::pin::map_unchecked": {
@@ -390,12 +390,12 @@
             "ValidPtr",
             "Aligned",
             "Alias",
-            "Lifetime"
+            "Alive"
         ]
     },
     "core::intrinsics::float_to_int_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::intrinsics::typed_swap": {
@@ -408,7 +408,7 @@
         "0": [
             "ValidPtr",
             "Aligned",
-            "NonVolatile",
+            "!Volatile",
             "Alias",
             "CopyTrait"
         ]
@@ -417,14 +417,14 @@
         "0": [
             "ValidPtr",
             "Aligned",
-            "NonVolatile",
+            "!Volatile",
             "Alias",
             "CopyTrait"
         ],
         "1": [
             "ValidPtr",
             "Aligned",
-            "NonVolatile",
+            "!Volatile",
             "Alias",
             "CopyTrait"
         ]
@@ -434,7 +434,7 @@
             "ValidPtr",
             "Aligned",
             "NonOverlap",
-            "NonVolatile",
+            "!Volatile",
             "Alias",
             "CopyTrait"
         ],
@@ -442,7 +442,7 @@
             "ValidPtr",
             "Aligned",
             "NonOverlap",
-            "NonVolatile",
+            "!Volatile",
             "Alias",
             "CopyTrait"
         ]
@@ -457,24 +457,24 @@
     "core::intrinsics::ptr_offset_from": {
         "0": [
             "InBounded",
-            "ValidInt",
-            "!ZST"
+            "ValidNum",
+            "!Size"
         ]
     },
     "core::ptr::alignment::new_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::non_null::as_uninit_ref": {
         "0": [
-            "!NonNull | ",
+            "!Null | ",
             "ValidPtr2Ref"
         ]
     },
     "core::ptr::non_null::as_uninit_mut": {
         "0": [
-            "!NonNull | ",
+            "!Null | ",
             "ValidPtr2Ref"
         ]
     },
@@ -485,7 +485,7 @@
     },
     "core::ptr::non_null::as_ref": {
         "0": [
-            "!NonNull | ",
+            "!Null | ",
             "ValidPtr2Ref"
         ]
     },
@@ -497,58 +497,58 @@
     "core::ptr::non_null::offset": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::non_null::add": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::non_null::byte_offset": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::non_null::byte_add": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::non_null::byte_sub": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::non_null::offset_from": {
         "0": [
             "InBounded",
-            "ValidInt",
-            "!ZST"
+            "ValidNum",
+            "!Size"
         ]
     },
     "core::ptr::non_null::byte_offset_from": {
         "0": [
             "InBounded",
-            "ValidInt",
-            "!ZST"
+            "ValidNum",
+            "!Size"
         ]
     },
     "core::ptr::non_null::sub_ptr": {
         "0": [
             "InBounded",
-            "ValidInt",
-            "!ZST"
+            "ValidNum",
+            "!Size"
         ]
     },
     "core::ptr::non_null::sub": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::non_null::read": {
@@ -578,7 +578,7 @@
         "0": [
             "ValidPtr",
             "Aligned",
-            "NonVolatile",
+            "!Volatile",
             "Alias",
             "CopyTrait"
         ]
@@ -588,7 +588,7 @@
             "ValidPtr",
             "Aligned",
             "NonOverlap",
-            "NonVolatile",
+            "!Volatile",
             "CopyTrait",
             "Alias"
         ]
@@ -597,7 +597,7 @@
         "0": [
             "ValidPtr",
             "Aligned",
-            "NonVolatile",
+            "!Volatile",
             "CopyTrait",
             "Alias"
         ]
@@ -607,7 +607,7 @@
             "ValidPtr",
             "Aligned",
             "NonOverlap",
-            "NonVolatile",
+            "!Volatile",
             "CopyTrait",
             "Alias"
         ]
@@ -615,8 +615,7 @@
     "core::ptr::non_null::drop_in_place": {
         "0": [
             "ValidPtr",
-            "Aligned",
-            "NonNull"
+            "Aligned"
         ]
     },
     "core::ptr::non_null::write": {
@@ -658,38 +657,36 @@
     },
     "core::ptr::non_null::as_uninit_slice": {
         "0": [
-            "!NonNull ||",
-            "NonNull",
+            "!Null",
             "ValidPtr",
             "Init",
-            "Lifetime",
+            "Alive",
             "Alias",
-            "ValidInt",
+            "ValidNum",
             "Aligned"
         ]
     },
     "core::ptr::non_null::as_uninit_slice_mut": {
         "0": [
-            "!NonNull ||",
-            "NonNull",
+            "!Null",
             "ValidPtr",
             "Init",
-            "Lifetime",
+            "Alive",
             "Alias",
-            "ValidInt",
+            "ValidNum",
             "Aligned"
         ]
     },
     "core::ptr::non_null::get_unchecked_mut": {
         "0": [
-            "ValidInt",
-            "Dangling"
+            "ValidNum",
+            "Allocated"
         ]
     },
 
     "core::ptr::const_ptr::as_ref": {
         "0": [
-            "!NonNull | ",
+            "!Null | ",
             "ValidPtr2Ref"
         ]
     },
@@ -700,72 +697,72 @@
     },
     "core::ptr::const_ptr::as_uninit_ref": {
         "0": [
-            "!NonNull | ",
+            "!Null | ",
             "ValidPtr2Ref"
         ]
     },
     "core::ptr::const_ptr::offset": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::const_ptr::add": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::const_ptr::sub": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::const_ptr::byte_offset": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::const_ptr::offset_from": {
         "0": [
             "InBounded",
-            "ValidInt",
-            "!ZST"
+            "ValidNum",
+            "!Size"
         ]
     },
     "core::ptr::const_ptr::byte_offset_from": {
         "0": [
             "InBounded",
-            "ValidInt",
-            "!ZST"
+            "ValidNum",
+            "!Size"
         ]
     },
     "core::ptr::const_ptr::non_null::sub_ptr": {
         "0": [
             "InBounded",
-            "ValidInt",
-            "!ZST"
+            "ValidNum",
+            "!Size"
         ]
     },
     "core::ptr::const_ptr::sub_ptr": {
         "0": [
             "InBounded",
-            "ValidInt",
-            "!ZST"
+            "ValidNum",
+            "!Size"
         ]
     },
     "core::ptr::const_ptr::byte_add": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::const_ptr::byte_sub": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::const_ptr::read": {
@@ -795,7 +792,7 @@
         "0": [
             "ValidPtr",
             "Aligned",
-            "NonVolatile",
+            "!Volatile",
             "Alias",
             "CopyTrait"
         ]
@@ -805,27 +802,26 @@
             "ValidPtr",
             "Aligned",
             "NonOverlap",
-            "NonVolatile",
+            "!Volatile",
             "CopyTrait",
             "Alias"
         ]
     },
     "core::ptr::const_ptr::as_uninit_slice": {
         "0": [
-            "!NonNull ||",
-            "NonNull",
+            "!Null",
             "ValidPtr",
             "Init",
-            "Lifetime",
+            "Alive",
             "Alias",
-            "ValidInt",
+            "ValidNum",
             "Aligned"
         ]
     },
     "core::ptr::const_ptr::get_unchecked": {
         "0": [
-            "ValidInt",
-            "Dangling"
+            "ValidNum",
+            "Allocated"
         ]
     },
 
@@ -833,7 +829,7 @@
 
     "core::ptr::mut_ptr::as_ref": {
         "0": [
-            "!NonNull | ",
+            "!Null | ",
             "ValidPtr2Ref"
         ]
     },
@@ -844,14 +840,14 @@
     },
     "core::ptr::mut_ptr::as_uninit_ref": {
         "0": [
-            "!NonNull | ",
+            "!Null | ",
             "ValidPtr2Ref"
         ]
     },
     "core::ptr::mut_ptr::offset": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::mut_ptr::as_mut": {
@@ -866,59 +862,59 @@
     },
     "core::ptr::mut_ptr::as_uninit_mut": {
         "0": [
-            "!NonNull | ",
+            "!Null | ",
             "ValidPtr2Ref"
         ]
     },
     "core::ptr::mut_ptr::add": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::mut_ptr::sub": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::mut_ptr::byte_offset": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::mut_ptr::offset_from": {
         "0": [
             "InBounded",
-            "ValidInt",
-            "!ZST"
+            "ValidNum",
+            "!Size"
         ]
     },
     "core::ptr::mut_ptr::byte_offset_from": {
         "0": [
             "InBounded",
-            "ValidInt",
-            "!ZST"
+            "ValidNum",
+            "!Size"
         ]
     },
     "core::ptr::mut_ptr::sub_ptr": {
         "0": [
             "InBounded",
-            "ValidInt",
-            "!ZST"
+            "ValidNum",
+            "!Size"
         ]
     },
     "core::ptr::mut_ptr::byte_add": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::mut_ptr::byte_sub": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::ptr::mut_ptr::read": {
@@ -948,7 +944,7 @@
         "0": [
             "ValidPtr",
             "Aligned",
-            "NonVolatile",
+            "!Volatile",
             "Alias",
             "CopyTrait"
         ]
@@ -958,7 +954,7 @@
             "ValidPtr",
             "Aligned",
             "NonOverlap",
-            "NonVolatile",
+            "!Volatile",
             "CopyTrait",
             "Alias"
         ]
@@ -967,7 +963,7 @@
         "0": [
             "ValidPtr",
             "Aligned",
-            "NonVolatile",
+            "!Volatile",
             "CopyTrait",
             "Alias"
         ]
@@ -977,7 +973,7 @@
             "ValidPtr",
             "Aligned",
             "NonOverlap",
-            "NonVolatile",
+            "!Volatile",
             "CopyTrait",
             "Alias"
         ]
@@ -986,7 +982,7 @@
         "0": [
             "ValidPtr",
             "Aligned",
-            "NonNull"
+            "!Null"
         ]
     },
     "core::ptr::mut_ptr::write": {
@@ -1028,44 +1024,43 @@
     },
     "core::ptr::mut_ptr::split_at_mut": {
         "0": [
-            "ValidInt",
-            "Dangling"
+            "ValidNum",
+            "Allocated"
         ]
     },
     "core::ptr::mut_ptr::split_at_mut_unchecked": {
         "0": [
-            "ValidInt",
-            "Dangling"
+            "ValidNum",
+            "Allocated"
         ]
     },
     "core::ptr::mut_ptr::as_uninit_slice": {
         "0": [
-            "!NonNull ||",
-            "NonNull",
+            "!Null",
             "ValidPtr",
             "Init",
-            "Lifetime",
+            "Alive",
             "Alias",
-            "ValidInt",
+            "ValidNum",
             "Aligned"
         ]
     },
     "core::ptr::mut_ptr::as_uninit_slice_mut": {
         "0": [
-            "!NonNull ||",
-            "NonNull",
+
+            "!Null",
             "ValidPtr",
             "Init",
-            "Lifetime",
+            "Alive",
             "Alias",
-            "ValidInt",
+            "ValidNum",
             "Aligned"
         ]
     },
     "core::ptr::mut_ptr::get_unchecked_mut": {
         "0": [
-            "ValidInt",
-            "Dangling"
+            "ValidNum",
+            "Allocated"
         ]
     },
 
@@ -1073,7 +1068,7 @@
         "0": [
             "ValidPtr",
             "Aligned",
-            "NonNull"
+            "!Null"
         ]
     },
     "core::ptr::replace": {
@@ -1139,7 +1134,7 @@
     "core::ptr::offset": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::clone::clone_to_uninit": {
@@ -1173,13 +1168,13 @@
     "core::slice::index::SliceIndex::get_unchecked": {
         "0": [
             "InBounded",
-            "Dangling"
+            "Allocated"
         ]
     },
     "core::slice::index::SliceIndex::get_unchecked_mut": {
         "0": [
             "InBounded",
-            "Dangling"
+            "Allocated"
         ]
     },
     "core::slice::get_unchecked_mut": {
@@ -1194,14 +1189,12 @@
     },
     "core::slice::as_chunks_unchecked": {
         "0": [
-            "ValidInt",
-            "?"
+            "ValidNum"
         ]
     },
     "core::slice::as_chunks_unchecked_mut": {
         "0": [
-            "ValidInt",
-            "?"
+            "ValidNum"
         ]
     },
     "core::slice::split_at_unchecked": {
@@ -1229,68 +1222,64 @@
     },
     "core::slice::ascii::as_ascii_unchecked": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::slice::raw::from_raw_parts": {
         "0":[
-            "NonNull",
+            "!Null",
             "ValidPtr",
             "Init",
-            "Lifetime",
+            "Alive",
             "Alias",
-            "Aligned"
-        ],
-        "1": [
-            "ValidInt"
+            "Aligned",
+            "ValidNum"
         ]
     },
     "core::slice::raw::from_raw_parts_mut": {
         "0":[
-            "NonNull",
+            "!Null",
             "ValidPtr",
             "Init",
-            "Lifetime",
+            "Alive",
             "Alias",
-            "Aligned"
-        ],
-        "1": [
-            "ValidInt"
+            "Aligned",
+            "ValidNum"
         ]
     },
     "core::slice::index::get_unchecked": {
         "0": [
-            "Dangling",
+            "Allocated",
             "InBounded"
         ]
     },
     "core::slice::index::get_unchecked_mut": {
         "0": [
-            "Dangling",
+            "Allocated",
             "InBounded"
         ]
     },
     "core::slice::raw::from_ptr_range": {
         "0": [
-            "NonNull",
+            "!Null",
             "ValidPtr",
             "Init",
-            "Lifetime",
+            "Alive",
             "Alias",
-            "ValidInt",
+            "ValidNum",
             "Aligned",
             "InBounded",
-            "!ZST"
+            "!Size"
         ]
     },
     "core::slice::raw::from_mut_ptr_range": {
         "0": [
-            "NonNull",
+            "!Null",
             "ValidPtr",
             "Init",
-            "Lifetime",
+            "Alive",
             "Alias",
-            "ValidInt",
+            "ValidNum",
             "Aligned"
         ]
     },
@@ -1335,23 +1324,23 @@
     },
     "core::str::converts::from_raw_parts": {
         "0": [
-            "NonNull",
+            "!Null",
             "ValidPtr",
             "Init",
-            "Lifetime",
+            "Alive",
             "Alias",
-            "ValidInt",
+            "ValidNum",
             "Aligned"
         ]
     },
     "core::str::converts::from_raw_parts_mut": {
         "0": [
-            "NonNull",
+            "!Null",
             "ValidPtr",
             "Init",
-            "Lifetime",
+            "Alive",
             "Alias",
-            "ValidInt",
+            "ValidNum",
             "Aligned"
         ]
     },
@@ -1385,7 +1374,7 @@
     "core::task::wake::from_raw": {
         "0": [
             "Allocated",
-            "Dangling"
+            "Allocated"
         ]
     },
 
@@ -1394,8 +1383,8 @@
             "Allocated",
             "Aligned",
             "InBounded",
-            "ValidInt",
-            "LayoutConsistency"
+            "ValidNum",
+            "Layout"
         ]
     },
     "alloc::vec::from_parts": {
@@ -1403,8 +1392,8 @@
             "Allocated",
             "Aligned",
             "InBounded",
-            "ValidInt",
-            "LayoutConsistency"
+            "ValidNum",
+            "Layout"
         ]
     },
     "alloc::vec::from_raw_parts_in": {
@@ -1412,8 +1401,8 @@
             "Allocated",
             "Aligned",
             "InBounded",
-            "ValidInt",
-            "LayoutConsistency"
+            "ValidNum",
+            "Layout"
         ]
     },
     "alloc::vec::from_parts_in": {
@@ -1421,65 +1410,65 @@
             "Allocated",
             "Aligned",
             "InBounded",
-            "ValidInt",
-            "LayoutConsistency"
+            "ValidNum",
+            "Layout"
         ]
     },
     "alloc::vec::set_len": {
         "0": [
             "InBounded",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "alloc::alloc::alloc": {
         "0": [
-            "ValidInt",
+            "ValidNum",
             "Init"
         ]
     },
     "alloc::alloc::dealloc": {
         "0": [
             "Allocated",
-            "LayoutConsistency"
+            "Layout"
         ]
     },
     "alloc::alloc::realloc": {
         "0": [
             "Allocated",
-            "LayoutConsistency",
-            "ValidInt"
+            "Layout",
+            "ValidNum"
         ]
     },
     "alloc::alloc::alloc_zeroed": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "alloc::alloc::deallocate": {
         "0": [
             "Allocated",
-            "LayoutConsistency"
+            "Layout"
         ]
     },
     "alloc::alloc::grow": {
         "0": [
             "Allocated",
-            "LayoutConsistency",
-            "ValidInt"
+            "Layout",
+            "ValidNum"
         ]
     },
     "alloc::alloc::grow_zeroed": {
         "0": [
             "Allocated",
-            "LayoutConsistency",
-            "ValidInt"
+            "Layout",
+            "ValidNum"
         ]
     },
     "alloc::alloc::shrink": {
         "0": [
             "Allocated",
-            "LayoutConsistency",
-            "ValidInt"
+            "Layout",
+            "ValidNum"
         ]
     },
     "alloc::boxed::assume_init": {
@@ -1518,26 +1507,22 @@
     },
     "alloc::collections::btree::map::insert_after_unchecked": {
         "0": [
-            "",
-            ""
+            "Function_sp"
         ]
     },
     "alloc::collections::btree::map::insert_before_unchecked": {
         "0": [
-            "",
-            ""
+            "Function_sp"
         ]
     },
     "alloc::collections::btree::set::insert_after_unchecked": {
         "0": [
-            "",
-            ""
+            "Function_sp"
         ]
     },
     "alloc::collections::btree::set::insert_before_unchecked": {
         "0": [
-            "",
-            ""
+            "Function_sp"
         ]
     },
     "alloc::ffi::c_str::from_vec_unchecked": {
@@ -1571,13 +1556,13 @@
     "alloc::rc::increment_strong_count": {
         "0": [
             "Allocated",
-            "Dangling"
+            "Allocated"
         ]
     },
     "alloc::rc::decrement_strong_count": {
         "0": [
             "Allocated",
-            "Dangling"
+            "Allocated"
         ]
     },
     "alloc::rc::from_raw_in": {
@@ -1590,13 +1575,13 @@
     "alloc::rc::increment_strong_count_in": {
         "0": [
             "Allocated",
-            "Dangling"
+            "Allocated"
         ]
     },
     "alloc::rc::decrement_strong_count_in": {
         "0": [
             "Allocated",
-            "Dangling"
+            "Allocated"
         ]
     },
     "alloc::rc::downcast_unchecked": {
@@ -1612,14 +1597,12 @@
     },
     "alloc::collections::btree::map::with_mutable_key": {
         "0": [
-            "",
-            ""
+            "Function_sp"
         ]
     },
     "alloc::collections::btree::set::upper_bound_mut": {
         "0": [
-            "",
-            ""
+            "Function_sp"
         ]
     },
     "alloc::str::from_boxed_utf8_unchecked": {
@@ -1631,7 +1614,7 @@
         "0": [
             "Allocated",
             "Aligned",
-            "ValidInt",
+            "ValidNum",
             "ValidString"
         ]
     },
@@ -1660,13 +1643,13 @@
     "alloc::sync::increment_strong_count": {
         "0": [
             "Allocated",
-            "Dangling"
+            "Allocated"
         ]
     },
     "alloc::sync::decrement_strong_count": {
         "0": [
             "Allocated",
-            "Dangling"
+            "Allocated"
         ]
     },
     "alloc::sync::from_raw_in": {
@@ -1679,13 +1662,13 @@
     "alloc::sync::increment_strong_count_in": {
         "0": [
             "Allocated",
-            "Dangling"
+            "Allocated"
         ]
     },
     "alloc::sync::decrement_strong_count_in": {
         "0": [
             "Allocated",
-            "Dangling"
+            "Allocated"
         ]
     },
     "alloc::sync::downcast_unchecked": {
@@ -1706,12 +1689,12 @@
     },
     "std::env::set_var": {
         "0": [
-            ""
+            "System_sp"
         ]
     },
     "std::env::remove_var": {
         "0": [
-            ""
+            "System_sp"
         ]
     },
     "std::ffi::os_str::from_encoded_bytes_unchecked": {
@@ -1742,12 +1725,12 @@
     },
     "std::os::unix::process::CommandExt::before_exec": {
         "0": [
-            ""
+            "System_sp"
         ]
     },
     "std::os::unix::process::pre_exec": {
         "0": [
-            ""
+            "System_sp"
         ]
     },
     "std::os::unix::process::from_raw_fd": {
@@ -1768,7 +1751,7 @@
     "std::os::fd::owned::borrow_raw": {
         "0": [
             "Opened",
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "std::os::fd::owned::from_raw_fd": {
@@ -1819,7 +1802,7 @@
     },
     "std::sys::pal::unix::process::process_common::pre_exec": {
         "0": [
-            ""
+            "System_sp"
         ]
     },
     "std::sys::anonymous_pipe::unix::from_raw_fd": {
@@ -1833,107 +1816,81 @@
             "Aligned"
         ]
     },
-    "std::alloc::System::deallocate": {
-        "0": [
-            "Allocated",
-            "LayoutConsistency"
-        ]
-    },
-    "std::alloc::System::grow": {
-        "0": [
-            "Allocated",
-            "LayoutConsistency",
-            "ValidInt"
-        ]
-    },
-    "std::alloc::System::grow_zeroed": {
-        "0": [
-            "Allocated",
-            "LayoutConsistency",
-            "ValidInt"
-        ]
-    },
-    "std::alloc::System::shrink": {
-        "0": [
-            "Allocated",
-            "LayoutConsistency",
-            "ValidInt"
-        ]
-    },
     "std::alloc::deallocate": {
         "0": [
             "Allocated",
-            "LayoutConsistency"
+            "Layout"
         ]
     },
     "std::alloc::grow": {
         "0": [
             "Allocated",
-            "LayoutConsistency",
-            "ValidInt"
+            "Layout",
+            "ValidNum"
         ]
     },
     "std::alloc::grow_zeroed": {
         "0": [
             "Allocated",
-            "LayoutConsistency",
-            "ValidInt"
+            "Layout",
+            "ValidNum"
         ]
     },
     "std::alloc::shrink": {
         "0": [
             "Allocated",
-            "LayoutConsistency",
-            "ValidInt"
+            "Layout",
+            "ValidNum"
         ]
     },
     "std::raw_attribute": {
         "0": [
-            "Lifetime",
-            "ValidInt"
+            "Alive",
+            "ValidNum"
         ]
     },
     "std::from_raw_handle": {
         "0": [
-            "Opened",
-            "ValidFreed"
+            "Opened"
         ]
     },
     "std::thread::spawn_unchecked": {
         "0": [
-            "Lifetime",
+            "Alive",
             "Init",
-            ""
+            "Function_sp"
         ]
     },
     "core::intrinsics::const_allocate": {
         "0": [
-            "ValidInt"
+            "ValidNum"
         ]
     },
     "core::intrinsics::assume": {
         "0": [
-            ""
+            "ValidNum"
         ]
     },
     "core::intrinsics::drop_in_place": {
         "0": [
-            ""
+            "ValidPtr",
+            "Aligned",
+            "!Null"
         ]
     },
     "core::intrinsics::const_deallocate": {
         "0": [
-            ""
+            "ValidNum"
         ]
     },
     "core::intrinsics::vtable_size": {
         "0": [
-            ""
+            "ValidPtr"
         ]
     },
     "core::intrinsics::vtable_align": {
         "0": [
-            ""
+            "ValidPtr"
         ]
     },
     "core::intrinsics::pref_align_of": {
@@ -1943,12 +1900,16 @@
     },
     "core::intrinsics::size_of_val": {
         "0": [
-            ""
+            "Size",
+            "ValidSlice",
+            "ValidTraitObj"
         ]
     },
     "core::intrinsics::min_align_of_val": {
         "0": [
-            ""
+            "Size",
+            "ValidSlice",
+            "ValidTraitObj"
         ]
     },
     "core::ffi::va_list::arg": {
@@ -1963,12 +1924,12 @@
     },
     "core::task::wake::new": {
         "0": [
-            ""
+            "System_sp"
         ]
     },
     "alloc::collections::btree::set::with_mutable_key": {
         "0": [
-            ""
+            "Function_sp"
         ]
     },
     "alloc::sync::assume_init": {
@@ -1978,7 +1939,7 @@
     },
     "std::sys::os_str::bytes::from_encoded_bytes_unchecked": {
         "0": [
-            ""
+            "ValidString"
         ]
     }
 }  

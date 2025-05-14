@@ -28,10 +28,11 @@ impl<'tcx> BodyVisitor<'tcx> {
             if args.len() == 0 {
                 break;
             }
-            let arg_place = get_arg_place(&args[idx].node);
-            if arg_place == 0 {
+            let arg_tuple = get_arg_place(&args[idx].node);
+            if arg_tuple.0 == true {
                 continue;
             }
+            let arg_place = arg_tuple.1;
             let _self_func_name = get_cleaned_def_path_name(self.tcx, self.def_id);
             let func_name = get_cleaned_def_path_name(self.tcx, *def_id);
             for sp in sp_set {
@@ -190,12 +191,12 @@ impl<'tcx> BodyVisitor<'tcx> {
                         }
                     }
                     "ValidInt" => {
-                        if !self.check_valid_int(arg_place) {
+                        if !self.check_valid_num(arg_place) {
                             self.insert_failed_check_result(
                                 func_name.clone(),
                                 fn_span,
                                 idx + 1,
-                                "ValidInt",
+                                "ValidNum",
                             );
                         } else {
                             self.insert_successful_check_result(
@@ -335,6 +336,8 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
+    // ----------------------Sp checking functions--------------------------
+
     pub fn check_align(&self, arg: usize) -> bool {
         let obj_ty = self.chains.get_obj_ty_through_chain(arg);
         let var_ty = self.chains.get_var_node(arg);
@@ -346,7 +349,9 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
         let ori_ty = self.visit_ty_and_get_layout(obj_ty.unwrap());
         let cur_ty = self.visit_ty_and_get_layout(var_ty.unwrap().ty.unwrap());
-        return AlignState::Cast(ori_ty, cur_ty).check();
+        let point_to_id = self.chains.get_point_to_id(arg);
+        let var_ty = self.chains.get_var_node(point_to_id);
+        return AlignState::Cast(ori_ty, cur_ty).check() && var_ty.unwrap().states.align;
     }
 
     pub fn check_non_zst(&self, arg: usize) -> bool {
@@ -413,11 +418,23 @@ impl<'tcx> BodyVisitor<'tcx> {
         return true;
     }
 
-    pub fn check_valid_int(&self, _arg: usize) -> bool {
+    pub fn check_valid_num(&self, _arg: usize) -> bool {
         return true;
     }
 
-    pub fn check_init(&self, _arg: usize) -> bool {
+    pub fn check_init(&self, arg: usize) -> bool {
+        let point_to_id = self.chains.get_point_to_id(arg);
+        let var_ty = self.chains.get_var_node(point_to_id);
+        if var_ty.is_none() {
+            rap_warn!(
+                "In func {:?}, visitor checker error! Can't get {arg} in chain!",
+                get_cleaned_def_path_name(self.tcx, self.def_id)
+            );
+        }
+        return var_ty.unwrap().states.init;
+    }
+
+    pub fn check_alias(&self, _arg: usize) -> bool {
         return true;
     }
 
@@ -431,9 +448,9 @@ impl<'tcx> BodyVisitor<'tcx> {
     }
 
     pub fn check_ref_to_ptr(&self, arg: usize) -> bool {
-        return self.check_allocated(arg)
-            && self.check_inbounded(arg)
+        return self.check_deref(arg)
             && self.check_init(arg)
-            && self.check_align(arg);
+            && self.check_align(arg)
+            && self.check_alias(arg);
     }
 }
