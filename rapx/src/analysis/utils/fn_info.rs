@@ -267,6 +267,7 @@ pub fn get_callees(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<DefId> {
     return callees;
 }
 
+// return all the impls def id of corresponding struct
 pub fn get_impls_for_struct(tcx: TyCtxt<'_>, struct_def_id: DefId) -> Vec<DefId> {
     let mut impls = Vec::new();
     for item_id in tcx.hir().items() {
@@ -284,6 +285,19 @@ pub fn get_impls_for_struct(tcx: TyCtxt<'_>, struct_def_id: DefId) -> Vec<DefId>
         }
     }
     impls
+}
+
+pub fn get_adt_def_id_by_adt_method(tcx: TyCtxt<'_>, def_id: DefId) -> Option<DefId> {
+    if let Some(assoc_item) = tcx.opt_associated_item(def_id) {
+        if let Some(impl_id) = assoc_item.impl_container(tcx) {
+            // get struct ty
+            let ty = tcx.type_of(impl_id).skip_binder();
+            if let Some(adt_def) = ty.ty_adt_def() {
+                return Some(adt_def.did());
+            }
+        }
+    }
+    None
 }
 
 // get the pointee or wrapped type
@@ -326,19 +340,22 @@ pub fn has_mut_self_param(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
     false
 }
 
-// input : adt def id
-pub fn get_all_mutable_methods(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<DefId> {
-    let mut results = HashSet::new();
-    let impl_vec = get_impls_for_struct(tcx, def_id);
+// Input the adt def id
+// Return set of (mutable method def_id, fields can be modified)
+pub fn get_all_mutable_methods(tcx: TyCtxt<'_>, def_id: DefId) -> HashMap<DefId, HashSet<usize>> {
+    let mut results = HashMap::new();
+    let adt_def = get_adt_def_id_by_adt_method(tcx, def_id);
+    let public_fields = adt_def.map_or_else(HashSet::new, |def| get_public_fields(tcx, def));
+    let impl_vec = adt_def.map_or_else(Vec::new, |def| get_impls_for_struct(tcx, def));
     for impl_id in impl_vec {
         let associated_items = tcx.associated_items(impl_id);
         for item in associated_items.in_definition_order() {
             if let ty::AssocKind::Fn = item.kind {
                 let item_def_id = item.def_id;
-                if has_mut_self_param(tcx, item_def_id)
-                // && check_visibility(tcx, item_def_id)
-                {
-                    results.insert(item_def_id);
+                if has_mut_self_param(tcx, item_def_id) {
+                    // TODO: using dataflow to detect field modificaiton, combined with public fields
+                    let modified_fields = public_fields.clone();
+                    results.insert(item_def_id, modified_fields);
                 }
             }
         }
@@ -346,6 +363,17 @@ pub fn get_all_mutable_methods(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<DefId>
     results
 }
 
+// Check each field's visibility, return the public fields vec
+pub fn get_public_fields(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<usize> {
+    let adt_def = tcx.adt_def(def_id);
+    adt_def
+        .all_fields()
+        .enumerate()
+        .filter_map(|(index, field_def)| tcx.visibility(field_def.did).is_public().then_some(index))
+        .collect()
+}
+
+// general function for displaying hashmap
 pub fn display_hashmap<K, V>(map: &HashMap<K, V>, level: usize)
 where
     K: Ord + Debug + Hash,

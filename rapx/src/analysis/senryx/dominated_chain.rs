@@ -13,6 +13,8 @@ pub struct States {
     pub allocator_consistency: bool,
     pub init: bool,
     pub align: bool,
+    pub valid_string: bool,
+    pub valid_cstr: bool,
 }
 
 impl States {
@@ -22,6 +24,8 @@ impl States {
             allocator_consistency: true,
             init: true,
             align: true,
+            valid_string: true,
+            valid_cstr: true,
         }
     }
 
@@ -31,6 +35,8 @@ impl States {
             allocator_consistency: false,
             init: false,
             align: false,
+            valid_string: false,
+            valid_cstr: false,
         }
     }
 }

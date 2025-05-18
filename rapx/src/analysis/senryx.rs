@@ -65,21 +65,19 @@ impl<'tcx> SenryxCheck<'tcx> {
                 if !Self::filter_by_check_level(tcx, &check_level, def_id) {
                     continue;
                 }
-                if block_unsafe && is_verify {
-                    // if get_all_std_unsafe_callees(self.tcx, def_id).len() > 0 {
-                    //     let results = get_all_std_unsafe_callees(self.tcx, def_id);
-                    //     rap_warn!(
-                    //         "In func {:?} contains:",
-                    //         get_cleaned_def_path_name(self.tcx, def_id)
-                    //     );
-                    //     for re in results {
-                    //         rap_warn!(" - {:?}", re);
-                    //     }
-                    // }
+                if block_unsafe
+                    && is_verify
+                    && get_all_std_unsafe_callees(self.tcx, def_id).len() > 0
+                {
                     self.check_soundness(def_id, &fn_map);
                 }
-                if function_unsafe && !is_verify {
+                if function_unsafe
+                    && !is_verify
+                    && get_all_std_unsafe_callees(self.tcx, def_id).len() > 0
+                {
                     self.annotate_safety(def_id);
+                    // let mutable_methods = get_all_mutable_methods(self.tcx, def_id);
+                    // println!("mutable_methods: {:?}", mutable_methods);
                 }
             }
         }
@@ -114,20 +112,21 @@ impl<'tcx> SenryxCheck<'tcx> {
 
     pub fn body_visit_and_check(&mut self, def_id: DefId, fn_map: &FnMap) -> Vec<CheckResult> {
         let mut body_visitor = BodyVisitor::new(self.tcx, def_id, self.global_recorder.clone(), 0);
-        let func_type = get_type(self.tcx, def_id);
-        if func_type == 1 {
+        if get_type(self.tcx, def_id) == 1 {
             let func_cons = get_cons(self.tcx, def_id);
             for func_con in func_cons {
                 let mut cons_body_visitor =
                     BodyVisitor::new(self.tcx, func_con.0, self.global_recorder.clone(), 0);
                 cons_body_visitor.path_forward_check(fn_map);
-                // TODO: cache fields' states
-
-                // TODO: update method body's states
-
-                // analyze body's states
-                body_visitor.path_forward_check(fn_map);
+                // TODO: cache and merge fields' states
             }
+            // TODO: update method body's states by constructors' states
+
+            // get mutable methods and TODO:update target method's states
+            let _mutable_methods = get_all_mutable_methods(self.tcx, def_id);
+
+            // analyze body's states
+            body_visitor.path_forward_check(fn_map);
         } else {
             body_visitor.path_forward_check(fn_map);
         }

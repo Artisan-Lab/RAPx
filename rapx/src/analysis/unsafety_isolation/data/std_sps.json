@@ -556,7 +556,7 @@
             "ValidPtr",
             "Aligned",
             "CopyTrait",
-            "Init"
+            "Typed"
         ]
     },
     "core::ptr::non_null::read_volatile": {
@@ -564,14 +564,14 @@
             "ValidPtr",
             "Aligned",
             "CopyTrait",
-            "Init"
+            "Typed"
         ]
     },
     "core::ptr::non_null::read_unaligned": {
         "0": [
             "ValidPtr",
             "CopyTrait",
-            "Init"
+            "Typed"
         ]
     },
     "core::ptr::non_null::copy_to": {
@@ -769,7 +769,7 @@
         "0": [
             "ValidPtr",
             "Aligned",
-            "Init",
+            "Typed",
             "CopyTrait"
         ]
     },
@@ -777,14 +777,14 @@
         "0": [
             "ValidPtr",
             "Aligned",
-            "Init",
+            "Typed",
             "CopyTrait"
         ]
     },
     "core::ptr::const_ptr::read_unaligned": {
         "0": [
             "ValidPtr",
-            "Init",
+            "Typed",
             "CopyTrait"
         ]
     },
@@ -922,7 +922,7 @@
             "ValidPtr",
             "Aligned",
             "CopyTrait",
-            "Init"
+            "Typed"
         ]
     },
     "core::ptr::mut_ptr::read_volatile": {
@@ -930,14 +930,14 @@
             "ValidPtr",
             "Aligned",
             "CopyTrait",
-            "Init"
+            "Typed"
         ]
     },
     "core::ptr::mut_ptr::read_unaligned": {
         "0": [
             "ValidPtr",
             "CopyTrait",
-            "Init"
+            "Typed"
         ]
     },
     "core::ptr::mut_ptr::copy_to": {
@@ -1082,7 +1082,7 @@
         "0": [
             "ValidPtr",
             "Aligned",
-            "Init",
+            "Typed",
             "CopyTrait"
         ]
     },
@@ -1108,7 +1108,7 @@
     "core::ptr::read_unaligned": {
         "0": [
             "ValidPtr",
-            "Init",
+            "Typed",
             "CopyTrait"
         ]
     },
@@ -1120,7 +1120,7 @@
     "core::ptr::read_volatile": {
         "0": [
             "ValidPtr",
-            "Init",
+            "Typed",
             "Aligned",
             "CopyTrait"
         ]

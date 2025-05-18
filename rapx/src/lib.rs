@@ -293,12 +293,12 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
     }
 
     if callback.is_verify_enabled() {
-        let check_level = CheckLevel::High;
+        let check_level = CheckLevel::Medium;
         SenryxCheck::new(tcx, 2).start(check_level, true);
     }
 
     if callback.is_infer_enabled() {
-        let check_level = CheckLevel::High;
+        let check_level = CheckLevel::Medium;
         SenryxCheck::new(tcx, 2).start(check_level, false);
     }
 

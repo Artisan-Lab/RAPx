@@ -25,7 +25,7 @@ use super::dominated_chain::DominatedGraph;
 use super::generic_check::GenericChecker;
 use super::inter_record::InterAnalysisRecord;
 use super::matcher::UnsafeApi;
-use super::matcher::{get_arg_place, match_unsafe_api_and_check_contracts, parse_unsafe_api};
+use super::matcher::{get_arg_place, parse_unsafe_api};
 use crate::analysis::core::heap_item::AdtOwner;
 use rustc_hir::def_id::DefId;
 use rustc_middle::ty::TyCtxt;
@@ -142,6 +142,8 @@ impl<'tcx> BodyVisitor<'tcx> {
             // rap_warn!("{:?}",self.chains.variables);
         }
         let body = self.tcx.optimized_mir(self.def_id);
+
+        // initialize local vars' types
         let locals = body.local_decls.clone();
         for (idx, local) in locals.iter().enumerate() {
             let local_ty = local.ty;
@@ -149,7 +151,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             self.local_ty.insert(idx, layout);
         }
 
-        // display_mir(self.def_id,&body);
+        // Iterate all the paths. Paths have been handled by tarjan.
         for (index, path_info) in paths.iter().enumerate() {
             self.chains = DominatedGraph::new(self.tcx, self.def_id);
             self.chains.init_arg();
@@ -198,6 +200,29 @@ impl<'tcx> BodyVisitor<'tcx> {
         self.path_analyze_terminator(&block.terminator(), path_index, bb_index, fn_map);
     }
 
+    pub fn path_analyze_statement(&mut self, statement: &Statement<'tcx>, _path_index: usize) {
+        match statement.kind {
+            StatementKind::Assign(box (ref lplace, ref rvalue)) => {
+                self.path_analyze_assign(lplace, rvalue, _path_index);
+            }
+            StatementKind::Intrinsic(box ref intrinsic) => match intrinsic {
+                mir::NonDivergingIntrinsic::CopyNonOverlapping(cno) => {
+                    if cno.src.place().is_some() && cno.dst.place().is_some() {
+                        let _src_pjc_local =
+                            self.handle_proj(true, cno.src.place().unwrap().clone());
+                        let _dst_pjc_local =
+                            self.handle_proj(true, cno.dst.place().unwrap().clone());
+                    }
+                }
+                _ => {}
+            },
+            StatementKind::StorageDead(local) => {
+                // self.chains.delete_node(local.as_usize());
+            }
+            _ => {}
+        }
+    }
+
     pub fn path_analyze_terminator(
         &mut self,
         terminator: &Terminator<'tcx>,
@@ -218,34 +243,6 @@ impl<'tcx> BodyVisitor<'tcx> {
                 if let Operand::Constant(func_constant) = func {
                     if let ty::FnDef(ref callee_def_id, raw_list) = func_constant.const_.ty().kind()
                     {
-                        let func_name = get_cleaned_def_path_name(self.tcx, *callee_def_id);
-                        if self.visit_time == 0 {
-                            for generic_arg in raw_list.iter() {
-                                match generic_arg.unpack() {
-                                    GenericArgKind::Type(ty) => {
-                                        if let Some(new_check_result) =
-                                            match_unsafe_api_and_check_contracts(
-                                                func_name.as_str(),
-                                                args,
-                                                &self.abstract_states.get(&path_index).unwrap(),
-                                                *fn_span,
-                                                ty,
-                                            )
-                                        {
-                                            if let Some(_existing) =
-                                                self.check_results.iter_mut().find(|result| {
-                                                    result.func_name == new_check_result.func_name
-                                                })
-                                            {
-                                            } else {
-                                                self.check_results.push(new_check_result);
-                                            }
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
                         self.handle_call(
                             dst_place,
                             callee_def_id,
@@ -265,35 +262,11 @@ impl<'tcx> BodyVisitor<'tcx> {
             } => {
                 let drop_local = self.handle_proj(false, *place);
                 if !self.chains.set_drop(drop_local) {
-                    // display_hashmap(&self.chains.variables, 1);
                     // rap_warn!(
                     //     "In path {:?}, double drop {drop_local} in block {bb_index}",
                     //     self.paths[path_index]
                     // );
                 }
-            }
-            _ => {}
-        }
-    }
-
-    pub fn path_analyze_statement(&mut self, statement: &Statement<'tcx>, _path_index: usize) {
-        match statement.kind {
-            StatementKind::Assign(box (ref lplace, ref rvalue)) => {
-                self.path_analyze_assign(lplace, rvalue, _path_index);
-            }
-            StatementKind::Intrinsic(box ref intrinsic) => match intrinsic {
-                mir::NonDivergingIntrinsic::CopyNonOverlapping(cno) => {
-                    if cno.src.place().is_some() && cno.dst.place().is_some() {
-                        let _src_pjc_local =
-                            self.handle_proj(true, cno.src.place().unwrap().clone());
-                        let _dst_pjc_local =
-                            self.handle_proj(true, cno.dst.place().unwrap().clone());
-                    }
-                }
-                _ => {}
-            },
-            StatementKind::StorageDead(local) => {
-                // self.chains.delete_node(local.as_usize());
             }
             _ => {}
         }
@@ -382,8 +355,10 @@ impl<'tcx> BodyVisitor<'tcx> {
             );
         }
 
+        // merge alias results
         self.handle_ret_alias(dst_place, def_id, fn_map, args);
 
+        // to be deleted!
         // get pre analysis state
         let mut pre_analysis_state = HashMap::new();
         for (idx, arg) in args.iter().enumerate() {
@@ -562,27 +537,6 @@ impl<'tcx> BodyVisitor<'tcx> {
         result_state
     }
 
-    pub fn abstate_debug(&self) {
-        if self.visit_time != 0 {
-            return;
-        }
-        // Self::display_hashmap(&self.local_ty, 1);
-        display_mir(self.def_id, self.tcx.optimized_mir(self.def_id));
-        println!("---------------");
-        println!("--def_id: {:?}", self.def_id);
-
-        let mut sorted_states: Vec<_> = self.abstract_states.iter().collect();
-        sorted_states.sort_by(|a, b| a.0.cmp(b.0));
-        for (path, abstract_state) in &sorted_states {
-            println!("--Path-{:?}:", path);
-            let mut sorted_state_map: Vec<_> = abstract_state.state_map.iter().collect();
-            sorted_state_map.sort_by_key(|&(place, _)| place);
-            for (place, ab_item) in sorted_state_map {
-                println!("Place-{:?} has abstract states:{:?}", place, ab_item);
-            }
-        }
-    }
-
     pub fn update_callee_report_level(&mut self, unsafe_callee: String, report_level: usize) {
         self.unsafe_callee_report
             .entry(unsafe_callee)
@@ -747,36 +701,11 @@ impl<'tcx> BodyVisitor<'tcx> {
     ) {
         match bin_op {
             BinOp::Offset => {
-                let first_place = self.handle_operand(first_op);
-                let _second_place = self.handle_operand(second_op);
-                let _abitem = self.get_abstate_by_place_in_path(first_place, path_index);
+                let _first_place = get_arg_place(first_op);
+                let _second_place = get_arg_place(second_op);
             }
             _ => {}
         }
-    }
-
-    pub fn handle_operand(&self, op: &Operand) -> usize {
-        match op {
-            Operand::Move(place) => place.local.as_usize(),
-            Operand::Copy(place) => place.local.as_usize(),
-            _ => 0,
-        }
-    }
-
-    pub fn get_proj_ty(&self, place: usize) -> Option<Ty<'tcx>> {
-        let graph_node = &self.safedrop_graph.values[place];
-        let local_place = Place::from(Local::from_usize(graph_node.local));
-        for proj in local_place.projection {
-            match proj {
-                ProjectionElem::Field(field, ty) => {
-                    if field.as_usize() == graph_node.field_id {
-                        return Some(ty);
-                    }
-                }
-                _ => {}
-            }
-        }
-        return None;
     }
 
     pub fn handle_proj(&mut self, is_right: bool, place: Place<'tcx>) -> usize {

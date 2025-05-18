@@ -2,7 +2,7 @@
 
 use std::slice;
 struct St1 { ptr: *mut u8, len: usize }
-struct St2 { ptr: *mut u8, len: usize }
+struct St2 { pub ptr: *mut u8, pub len: usize }
 impl St1 {
     pub fn from(p: *mut u8, l: usize) -> St1 {
         St1 { ptr: p, len: l }
@@ -10,6 +10,10 @@ impl St1 {
     
     pub unsafe fn get(&self) -> &[u8] {
         slice::from_raw_parts(self.ptr, self.len)
+    }
+
+    pub unsafe fn modify(&mut self) {
+        self.len = 1;
     }
 }
 impl St2 {
@@ -23,7 +27,11 @@ impl St2 {
             0
         }
     }
+    pub unsafe fn modify(&mut self) {
+        self.len = 1;
+    }
 }
+
 unsafe fn f1(p: *mut u8, l: usize) {
     let s1 = St1::from(p, l); 
     f2(&s1); 

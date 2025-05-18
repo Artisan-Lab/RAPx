@@ -29,6 +29,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                 break;
             }
             let arg_tuple = get_arg_place(&args[idx].node);
+            // if this arg is a constant
             if arg_tuple.0 == true {
                 continue;
             }
@@ -72,7 +73,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                         }
                     }
                     "AllocatorConsistency" => {
-                        if !self.check_allocator_consistency(arg_place) {
+                        if !self.check_allocator_consistency(func_name.clone(), arg_place) {
                             self.insert_failed_check_result(
                                 func_name.clone(),
                                 fn_span,
@@ -338,6 +339,7 @@ impl<'tcx> BodyVisitor<'tcx> {
 
     // ----------------------Sp checking functions--------------------------
 
+    // TODO: Currently can not support unaligned offset checking
     pub fn check_align(&self, arg: usize) -> bool {
         let obj_ty = self.chains.get_obj_ty_through_chain(arg);
         let var_ty = self.chains.get_var_node(arg);
@@ -382,8 +384,21 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
-    pub fn check_typed(&self, _arg: usize) -> bool {
-        return true;
+    // checking the value ptr points to is valid for its type
+    pub fn check_typed(&self, arg: usize) -> bool {
+        let obj_ty = self.chains.get_obj_ty_through_chain(arg);
+        let var_ty = self.chains.get_var_node(arg);
+        if obj_ty.is_none() || var_ty.is_none() {
+            rap_warn!(
+                "In func {:?}, visitor checker error! Can't get {arg} in chain!",
+                get_cleaned_def_path_name(self.tcx, self.def_id)
+            );
+        }
+        let _ori_ty = self.visit_ty_and_get_layout(obj_ty.unwrap());
+        let _cur_ty = self.visit_ty_and_get_layout(var_ty.unwrap().ty.unwrap());
+        let point_to_id = self.chains.get_point_to_id(arg);
+        let _var_ty = self.chains.get_var_node(point_to_id);
+        return self.check_init(arg);
     }
 
     pub fn check_non_null(&self, arg: usize) -> bool {
@@ -398,7 +413,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         return var_ty.unwrap().states.nonnull;
     }
 
-    pub fn check_allocator_consistency(&self, _arg: usize) -> bool {
+    pub fn check_allocator_consistency(&self, _func_name: String, _arg: usize) -> bool {
         return true;
     }
 
