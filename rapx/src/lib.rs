@@ -37,6 +37,7 @@ use rustc_interface::Config;
 use rustc_middle::ty::TyCtxt;
 use rustc_middle::util::Providers;
 use rustc_session::search_paths::PathKind;
+use std::env;
 use std::path::PathBuf;
 
 // Insert rustc arguments at the beginning of the argument list that RAP wants to be
@@ -116,16 +117,54 @@ impl RapCallback {
         self.rcanary
     }
 
-    pub fn enable_mop(&mut self) {
+    pub fn enable_mop(&mut self, arg: String) {
         self.mop = true;
+        match arg.as_str() {
+            "-alias" => {
+                env::set_var("MOP", "1");
+            }
+            "-alias0" => {
+                env::set_var("MOP", "0");
+            }
+            "-alias1" => {
+                env::set_var("MOP", "1");
+            }
+            "-alias2" => {
+                env::set_var("MOP", "2");
+            }
+            _ => {}
+        }
     }
 
     pub fn is_mop_enabled(&self) -> bool {
         self.mop
     }
 
-    pub fn enable_safedrop(&mut self) {
+    pub fn enable_safedrop(&mut self, arg: String) {
         self.safedrop = true;
+        match arg.as_str() {
+            "-F" => {
+                env::set_var("SAFEDROP", "1");
+                env::set_var("MOP", "1");
+            }
+            "-F0" => {
+                env::set_var("SAFEDROP", "0");
+                env::set_var("MOP", "0");
+            }
+            "-F1" => {
+                env::set_var("SAFEDROP", "1");
+                env::set_var("MOP", "1");
+            }
+            "-F2" => {
+                env::set_var("SAFEDROP", "2");
+                env::set_var("MOP", "2");
+            }
+            "-uaf" => {
+                env::set_var("SAFEDROP", "1");
+                env::set_var("MOP", "1");
+            }
+            _ => {}
+        }
     }
 
     pub fn is_safedrop_enabled(&self) -> bool {

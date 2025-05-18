@@ -15,7 +15,7 @@ use rustc_middle::ty::TyCtxt;
 use rustc_span::def_id::DefId;
 use std::collections::HashSet;
 
-pub const VISIT_LIMIT: usize = 100;
+pub const VISIT_LIMIT: usize = 1000;
 
 pub struct MopAlias<'tcx> {
     pub tcx: TyCtxt<'tcx>,
@@ -32,11 +32,9 @@ impl<'tcx> MopAlias<'tcx> {
 
     pub fn start(&mut self) -> &FnMap {
         rap_debug!("Start alias analysis via MoP.");
-        for local_def_id in self.tcx.iter_local_def_id() {
-            let hir_map = self.tcx.hir();
-            if hir_map.maybe_body_owned_by(local_def_id).is_some() {
-                self.query_mop(local_def_id.to_def_id());
-            }
+        let mir_keys = self.tcx.mir_keys(());
+        for local_def_id in mir_keys {
+            self.query_mop(local_def_id.to_def_id());
         }
         // Meaning of output: 0 for ret value; 1,2,3,... for corresponding args.
         for (fn_id, fn_alias) in &mut self.fn_map {

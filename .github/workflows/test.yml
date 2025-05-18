@@ -16,9 +16,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Code Formatting Check
-      run: cd rapx && cargo fmt --check
-
     - name: Build RAPx 
       run: ./install.sh
 

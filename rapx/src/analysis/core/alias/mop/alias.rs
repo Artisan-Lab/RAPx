@@ -2,7 +2,7 @@ use super::graph::*;
 use super::types::*;
 use crate::analysis::core::alias::{FnMap, RetAlias};
 use crate::analysis::utils::intrinsic_id::*;
-use crate::{rap_debug, rap_error};
+use crate::rap_debug;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{Operand, Place, ProjectionElem, TerminatorKind};
 use rustc_middle::ty;
@@ -30,7 +30,7 @@ impl<'tcx> MopGraph<'tcx> {
                 _ => {} // Copy or Move
             }
             if self.values[lv_aliaset_idx].local != self.values[rv_aliaset_idx].local {
-                self.merge_alias(lv_aliaset_idx, rv_aliaset_idx);
+                self.merge_alias(lv_aliaset_idx, rv_aliaset_idx, 0);
             }
         }
     }
@@ -129,7 +129,7 @@ impl<'tcx> MopGraph<'tcx> {
                                 }
                             }
                             if right_set.len() == 1 {
-                                self.merge_alias(lv, right_set[0]);
+                                self.merge_alias(lv, right_set[0], 0);
                             }
                         }
                     }
@@ -185,7 +185,7 @@ impl<'tcx> MopGraph<'tcx> {
     }
 
     //assign alias for a variable.
-    pub fn merge_alias(&mut self, lv: usize, rv: usize) {
+    pub fn merge_alias(&mut self, lv: usize, rv: usize, depth: usize) {
         rap_debug!("alias set now: {:?}", self.alias_set);
         // println!("A:{:?} V:{:?}", self.alias_set, self.values.len());
         self.union_merge(lv, rv);
@@ -196,6 +196,18 @@ impl<'tcx> MopGraph<'tcx> {
             rv,
             self.alias_set
         );
+
+        let max_field_depth = match std::env::var_os("MOP") {
+            Some(val) if val == "0" => 10,
+            Some(val) if val == "1" => 20,
+            Some(val) if val == "2" => 30,
+            Some(val) if val == "3" => 50,
+            _ => 15,
+        };
+
+        if depth > max_field_depth {
+            return;
+        }
 
         for field in self.values[rv].fields.clone().into_iter() {
             if !self.values[lv].fields.contains_key(&field.0) {
@@ -212,7 +224,7 @@ impl<'tcx> MopGraph<'tcx> {
                 self.values.push(node);
             }
             let lv_field = *(self.values[lv].fields.get(&field.0).unwrap());
-            self.merge_alias(lv_field, field.1);
+            self.merge_alias(lv_field, field.1, depth + 1);
         }
     }
 
@@ -220,7 +232,7 @@ impl<'tcx> MopGraph<'tcx> {
     pub fn merge(&mut self, ret_alias: &RetAlias, arg_vec: &[usize]) {
         rap_debug!("{:?}", ret_alias);
         if ret_alias.left_index >= arg_vec.len() || ret_alias.right_index >= arg_vec.len() {
-            rap_error!("Vector error!");
+            rap_debug!("Vector error!");
             return;
         }
         let left_init = arg_vec[ret_alias.left_index];
@@ -256,7 +268,7 @@ impl<'tcx> MopGraph<'tcx> {
             }
             rv = *self.values[rv].fields.get(index).unwrap();
         }
-        self.merge_alias(lv, rv);
+        self.merge_alias(lv, rv, 0);
     }
 
     //merge the result of current path to the final result.

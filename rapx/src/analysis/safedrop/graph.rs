@@ -15,8 +15,6 @@ use std::cell::RefCell;
 use std::cmp::min;
 use std::vec::Vec;
 
-use crate::rap_info;
-
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum AssignType {
     Copy,
@@ -397,7 +395,6 @@ impl<'tcx> SafeDropGraph<'tcx> {
                 } => {
                     if let Operand::Constant(c) = func {
                         if let ty::FnDef(id, ..) = c.ty().kind() {
-                            rap_info!("The ID of {:?} is {:?}", c, id);
                             if id.index.as_usize() == DROP
                                 || id.index.as_usize() == DROP_IN_PLACE
                                 || id.index.as_usize() == MANUALLYDROP

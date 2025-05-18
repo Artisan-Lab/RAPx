@@ -26,11 +26,11 @@ fn phase_cargo_rap() {
         return;
     };
     match arg {
-        "-V" | "-version" => {
+        "-version" => {
             rap_info!("{}", help::RAPX_VERSION);
             return;
         }
-        "-H" | "-help" | "--help" => {
+        "-help" => {
             rap_info!("{}", help::RAPX_HELP);
             return;
         }
