@@ -199,8 +199,8 @@ impl<'tcx> MopGraph<'tcx> {
 
         /* Handle cases if the current block is a merged scc block with sub block */
         if !cur_block.scc_sub_blocks.is_empty() {
-            match env::var_os("FAST_ALIAS") {
-                Some(_) => {
+            match env::var_os("MOP") {
+                Some(val) if val == "0" => {
                     order.push(cur_block.scc_sub_blocks.clone());
                 }
                 _ => {

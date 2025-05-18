@@ -50,6 +50,9 @@ impl<'tcx, 'a> FlowAnalysis<'tcx, 'a> {
             if graph::is_cyclic(&body.basic_blocks) {
                 continue;
             }
+            if format!("{:?}", def_id).contains("syscall_dispatch") {
+                continue;
+            }
 
             let mut cfg = z3::Config::new();
             cfg.set_model_generation(true);

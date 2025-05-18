@@ -47,7 +47,7 @@ impl BugRecords {
             let mut snippet = Snippet::source(&code_source)
                 .line_start(span_to_line_number(span))
                 .origin(&filename)
-                .fold(true);
+                .fold(false);
             for i in self.df_bugs.iter() {
                 //todo: remove this condition
                 if are_spans_in_same_file(span, *i.1) {
@@ -101,7 +101,7 @@ impl BugRecords {
             let mut snippet = Snippet::source(&code_source)
                 .line_start(span_to_line_number(span))
                 .origin(&filename)
-                .fold(true);
+                .fold(false);
             for i in self.dp_bugs.iter() {
                 //todo: remove this condition
                 if are_spans_in_same_file(span, *i) {
@@ -126,7 +126,7 @@ impl BugRecords {
             let mut snippet = Snippet::source(&code_source)
                 .line_start(span_to_line_number(span))
                 .origin(&filename)
-                .fold(true);
+                .fold(false);
             for i in self.dp_bugs_unwind.iter() {
                 //todo: remove this condition
                 if are_spans_in_same_file(span, *i) {

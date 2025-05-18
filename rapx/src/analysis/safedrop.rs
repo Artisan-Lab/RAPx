@@ -33,16 +33,14 @@ impl<'tcx> SafeDrop<'tcx> {
         let rcx = Box::leak(rcx_boxed);
         TypeAnalysis::new(rcx).start();
 
-        for local_def_id in self.tcx.iter_local_def_id() {
-            let hir_map = self.tcx.hir();
-            if hir_map.maybe_body_owned_by(local_def_id).is_some() {
-                query_safedrop(
-                    self.tcx,
-                    fn_map,
-                    local_def_id.to_def_id(),
-                    rcx.adt_owner().clone(),
-                );
-            }
+        let mir_keys = self.tcx.mir_keys(());
+        for local_def_id in mir_keys {
+            query_safedrop(
+                self.tcx,
+                fn_map,
+                local_def_id.to_def_id(),
+                rcx.adt_owner().clone(),
+            );
         }
     }
 }
