@@ -4,6 +4,7 @@ use crate::{
 };
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::Local;
+use rustc_middle::ty::TyKind;
 use rustc_middle::ty::{Ty, TyCtxt};
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -38,6 +39,15 @@ impl States {
             valid_string: false,
             valid_cstr: false,
         }
+    }
+
+    pub fn merge_states(&mut self, other: &States) {
+        self.nonnull &= other.nonnull;
+        self.allocator_consistency &= other.allocator_consistency;
+        self.init &= other.init;
+        self.align &= other.align;
+        self.valid_string &= other.valid_string;
+        self.valid_cstr &= other.valid_cstr;
     }
 }
 
@@ -124,7 +134,9 @@ impl<'tcx> DominatedGraph<'tcx> {
         for (idx, local) in locals.iter().enumerate() {
             let local_ty = local.ty;
             let mut node = VariableNode::new_default(idx, Some(local_ty));
-
+            if local_ty.to_string().contains("MaybeUninit") {
+                node.states.init = false;
+            }
             var_map.insert(idx, node);
         }
         Self {
@@ -176,6 +188,9 @@ impl<'tcx> DominatedGraph<'tcx> {
 
     // if current node is ptr or ref, then return the new node pointed by it.
     pub fn check_ptr(&mut self, arg: usize) -> usize {
+        if self.get_var_node_mut(arg).unwrap().ty.is_none() {
+            display_hashmap(&self.variables, 1);
+        };
         let node_ty = self.get_var_node_mut(arg).unwrap().ty.unwrap();
         if is_ptr(node_ty) || is_ref(node_ty) {
             return self.generate_ptr_with_obj_node(node_ty, arg);
@@ -221,7 +236,7 @@ impl<'tcx> DominatedGraph<'tcx> {
     }
 }
 
-// This implementation has the auxiliary function of DominatedGraph,
+// This implementation has the auxiliary functions of DominatedGraph,
 // including c/r/u/d nodes and printing chains' structure.
 impl<'tcx> DominatedGraph<'tcx> {
     // Only for inserting field obj node or pointed obj node.
@@ -262,9 +277,29 @@ impl<'tcx> DominatedGraph<'tcx> {
     }
 
     pub fn find_var_id_with_fields_seq(&mut self, local: usize, fields: Vec<usize>) -> usize {
-        let mut cur = local;
+        let mut cur = self.get_point_to_id(local);
         for field in fields {
-            cur = self.get_field_node_id(cur, field, None);
+            cur = self.get_point_to_id(cur);
+            let cur_node = self.get_var_node(cur).unwrap();
+            match cur_node.ty.unwrap().kind() {
+                TyKind::Adt(adt_def, substs) => {
+                    if adt_def.is_struct() {
+                        for (idx, field_def) in adt_def.all_fields().enumerate() {
+                            if idx == field {
+                                cur = self.get_field_node_id(
+                                    cur,
+                                    field,
+                                    Some(field_def.ty(self.tcx, substs)),
+                                );
+                            }
+                        }
+                    }
+                }
+                // TODO: maybe unsafe here for setting ty as None!
+                _ => {
+                    cur = self.get_field_node_id(cur, field, None);
+                }
+            }
         }
         return cur;
     }
@@ -285,6 +320,10 @@ impl<'tcx> DominatedGraph<'tcx> {
 
     pub fn get_var_nod_id(&self, local_id: usize) -> usize {
         self.get_var_node(local_id).unwrap().id
+    }
+
+    pub fn get_map_idx_node(&self, local_id: usize) -> &VariableNode<'tcx> {
+        self.variables.get(&local_id).unwrap()
     }
 
     pub fn get_var_node(&self, local_id: usize) -> Option<&VariableNode<'tcx>> {
@@ -323,8 +362,14 @@ impl<'tcx> DominatedGraph<'tcx> {
         }
         let lv_node = self.get_var_node_mut(lv).unwrap();
         lv_node.alias_set.remove(&lv);
+        let lv_ty = lv_node.ty;
+        let lv_states = lv_node.states.clone();
         let rv_node = self.get_var_node_mut(rv).unwrap();
         rv_node.alias_set.insert(lv);
+        // rv_node.states.merge_states(&lv_states);
+        if rv_node.ty.is_none() {
+            rv_node.ty = lv_ty;
+        }
     }
 
     // Called when (lv = copy rv);
@@ -387,7 +432,6 @@ impl<'tcx> DominatedGraph<'tcx> {
 
     pub fn update_value(&mut self, arg: usize, value: usize) {
         let node = self.get_var_node_mut(arg).unwrap();
-
         node.const_value = value;
         node.states.init = true;
     }

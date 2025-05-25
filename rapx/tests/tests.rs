@@ -258,10 +258,17 @@ fn test_audit_case1() {
 }
 
 #[test]
-fn test_verify() {
-    let output = running_tests_with_arg("safety_check/slice_from_raw_parts", "-verify");
+fn test_aligned() {
+    let output = running_tests_with_arg("safety_check/align", "-verify");
     assert_eq!(output.contains("Aligned"), true);
 }
+
+#[test]
+fn test_init() {
+    let output = running_tests_with_arg("safety_check/init", "-verify");
+    assert_eq!(output.contains("Init"), true);
+}
+
 #[test]
 fn test_ssa_transform() {
     let output = running_tests_with_arg("ssa/ssa_transform", "-ssa");

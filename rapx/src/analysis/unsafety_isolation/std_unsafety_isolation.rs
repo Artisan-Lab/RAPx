@@ -1,16 +1,16 @@
-use crate::analysis::utils::fn_info::*;
-use rustc_hir::def::DefKind;
-use rustc_hir::def_id::DefId;
-use rustc_middle::ty::Visibility;
-use rustc_middle::{ty, ty::TyCtxt};
-use std::collections::HashMap;
-use std::collections::HashSet;
-// use crate::analysis::unsafety_isolation::draw_dot::render_dot_graphs;
 use super::{
     generate_dot::{NodeType, UigUnit},
     UnsafetyIsolationCheck,
 };
+use crate::analysis::unsafety_isolation::draw_dot::render_dot_graphs;
+use crate::analysis::utils::fn_info::*;
+use rustc_hir::def::DefKind;
+use rustc_hir::def_id::DefId;
 use rustc_middle::mir::Local;
+use rustc_middle::ty::Visibility;
+use rustc_middle::{ty, ty::TyCtxt};
+use std::collections::HashMap;
+use std::collections::HashSet;
 
 impl<'tcx> UnsafetyIsolationCheck<'tcx> {
     pub fn handle_std_unsafe(&mut self) {
@@ -18,17 +18,29 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
         // self.get_units_data(self.tcx);
         let mut dot_strs = Vec::new();
         for uig in &self.uigs {
-            let dot_str = uig.generate_dot_str();
-            dot_strs.push(dot_str);
+            // let dot_str = uig.generate_dot_str();
+            if get_cleaned_def_path_name(self.tcx, uig.caller.0).contains("core::slice::")
+                && check_visibility(self.tcx, uig.caller.0)
+            {
+                let dot_str = uig.generate_dot_str();
+                dot_strs.push(dot_str);
+                // uig.print_self(self.tcx);
+            }
         }
         for uig in &self.single {
-            let dot_str = uig.generate_dot_str();
-            dot_strs.push(dot_str);
-            // println!("{:?}", get_cleaned_def_path_name(self.tcx, uig.caller.0));
+            // let dot_str = uig.generate_dot_str();
+            if get_cleaned_def_path_name(self.tcx, uig.caller.0).contains("core::slice::")
+                && check_visibility(self.tcx, uig.caller.0)
+            {
+                let dot_str = uig.generate_dot_str();
+                dot_strs.push(dot_str);
+                // uig.print_self(self.tcx);
+            }
         }
         // println!("single {:?}",self.uigs.len());
         // println!("single {:?}",self.single.len());
-        // render_dot_graphs(dot_strs);
+        render_dot_graphs(dot_strs);
+        // println!("{:?}", dot_strs);
     }
 
     pub fn get_all_std_unsafe_def_id_by_treat_std_as_local_crate(
@@ -47,28 +59,10 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
             if Self::filter_mir(def_id) {
                 continue;
             }
-            if get_cleaned_def_path_name(self.tcx, def_id).contains("UdpSocket") {
-                println!("1");
-                let impl_vec = get_impls_for_struct(self.tcx, def_id);
-                for impl_id in impl_vec {
-                    println!("2");
-
-                    let associated_items = tcx.associated_items(impl_id);
-                    for item in associated_items.in_definition_order() {
-                        if let ty::AssocKind::Fn = item.kind {
-                            let item_def_id = item.def_id;
-                            println!("method {:?}", item_def_id);
-                        }
-                    }
-                }
-            }
             if tcx.def_kind(def_id) == DefKind::Fn || tcx.def_kind(def_id) == DefKind::AssocFn {
                 if check_safety(tcx, def_id)
                     && !get_cleaned_def_path_name(self.tcx, def_id).contains("intrinsic")
                 {
-                    // if get_cleaned_def_path_name(self.tcx, def_id).contains("std::") {
-                    //     println!("{:?}", get_cleaned_def_path_name(self.tcx, def_id));
-                    // }
                     let sp_set = get_sp(tcx, def_id);
                     if sp_set.len() != 0 {
                         unsafe_fn.insert(def_id);
@@ -97,7 +91,7 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                 self.insert_uig(def_id, get_callees(tcx, def_id), get_cons(tcx, def_id));
             }
         }
-        self.analyze_struct();
+        // self.analyze_struct();
         // self.analyze_uig();
         // self.get_units_data(self.tcx);
         // for (sp, count) in &sp_count_map {

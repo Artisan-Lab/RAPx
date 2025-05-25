@@ -13,6 +13,7 @@ use rustc_middle::{
     ty,
 };
 use rustc_span::def_id::LocalDefId;
+use rustc_span::kw;
 use rustc_span::sym;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -192,7 +193,11 @@ pub fn get_type(tcx: TyCtxt<'_>, def_id: DefId) -> usize {
                     }
                 }
                 TyKind::Adt(adt_def, substs) => {
-                    if adt_def.is_enum() && tcx.is_diagnostic_item(sym::Option, adt_def.did()) {
+                    if adt_def.is_enum()
+                        && (tcx.is_diagnostic_item(sym::Option, adt_def.did())
+                            || tcx.is_diagnostic_item(sym::Result, adt_def.did())
+                            || tcx.is_diagnostic_item(kw::Box, adt_def.did()))
+                    {
                         let inner_ty = substs.type_at(0);
                         if inner_ty.is_param(0) {
                             node_type = 0;
@@ -442,4 +447,24 @@ pub fn match_std_unsafe_callee(tcx: TyCtxt<'_>, terminator: &Terminator<'_>) -> 
         _ => {}
     }
     results
+}
+
+// Bug definition: (1) strict -> weak & dst is mutable;
+//                 (2) _ -> strict
+pub fn is_strict_ty_convert<'tcx>(tcx: TyCtxt<'tcx>, src_ty: Ty<'tcx>, dst_ty: Ty<'tcx>) -> bool {
+    return (is_strict_ty(tcx, src_ty) && dst_ty.is_mutable_ptr()) || is_strict_ty(tcx, dst_ty);
+}
+
+// strict ty: bool, str, adt fields containing bool or str;
+pub fn is_strict_ty<'tcx>(tcx: TyCtxt<'tcx>, ori_ty: Ty<'tcx>) -> bool {
+    let ty = get_pointee(ori_ty);
+    let mut flag = false;
+    if let TyKind::Adt(adt_def, substs) = ty.kind() {
+        if adt_def.is_struct() {
+            for field_def in adt_def.all_fields() {
+                flag = flag | is_strict_ty(tcx, field_def.ty(tcx, substs));
+            }
+        }
+    }
+    ty.is_bool() || ty.is_str() || flag
 }

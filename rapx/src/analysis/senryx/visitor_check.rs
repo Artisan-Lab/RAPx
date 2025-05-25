@@ -5,7 +5,10 @@ use super::{
     matcher::{get_arg_place, UnsafeApi},
     visitor::{BodyVisitor, CheckResult, PlaceTy},
 };
-use crate::analysis::senryx::FnMap;
+use crate::analysis::{
+    senryx::FnMap,
+    utils::fn_info::{display_hashmap, is_strict_ty_convert},
+};
 use crate::{analysis::utils::fn_info::get_cleaned_def_path_name, rap_warn};
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::Operand;
@@ -342,15 +345,16 @@ impl<'tcx> BodyVisitor<'tcx> {
     // TODO: Currently can not support unaligned offset checking
     pub fn check_align(&self, arg: usize) -> bool {
         let obj_ty = self.chains.get_obj_ty_through_chain(arg);
-        let var_ty = self.chains.get_var_node(arg);
-        if obj_ty.is_none() || var_ty.is_none() {
+        let var = self.chains.get_var_node(arg);
+        if obj_ty.is_none() || var.is_none() {
             rap_warn!(
                 "In func {:?}, visitor checker error! Can't get {arg} in chain!",
                 get_cleaned_def_path_name(self.tcx, self.def_id)
             );
+            display_hashmap(&self.chains.variables, 1);
         }
         let ori_ty = self.visit_ty_and_get_layout(obj_ty.unwrap());
-        let cur_ty = self.visit_ty_and_get_layout(var_ty.unwrap().ty.unwrap());
+        let cur_ty = self.visit_ty_and_get_layout(var.unwrap().ty.unwrap());
         let point_to_id = self.chains.get_point_to_id(arg);
         let var_ty = self.chains.get_var_node(point_to_id);
         return AlignState::Cast(ori_ty, cur_ty).check() && var_ty.unwrap().states.align;
@@ -363,6 +367,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                 "In func {:?}, visitor checker error! Can't get {arg} in chain!",
                 get_cleaned_def_path_name(self.tcx, self.def_id)
             );
+            display_hashmap(&self.chains.variables, 1);
         }
         let ori_ty = self.visit_ty_and_get_layout(obj_ty.unwrap());
         match ori_ty {
@@ -386,18 +391,13 @@ impl<'tcx> BodyVisitor<'tcx> {
 
     // checking the value ptr points to is valid for its type
     pub fn check_typed(&self, arg: usize) -> bool {
-        let obj_ty = self.chains.get_obj_ty_through_chain(arg);
-        let var_ty = self.chains.get_var_node(arg);
-        if obj_ty.is_none() || var_ty.is_none() {
-            rap_warn!(
-                "In func {:?}, visitor checker error! Can't get {arg} in chain!",
-                get_cleaned_def_path_name(self.tcx, self.def_id)
-            );
+        let obj_ty = self.chains.get_obj_ty_through_chain(arg).unwrap();
+        let var = self.chains.get_var_node(arg);
+        // display_hashmap(&self.chains.variables, 1);
+        let var_ty = var.unwrap().ty.unwrap();
+        if obj_ty != var_ty && is_strict_ty_convert(self.tcx, obj_ty, var_ty) {
+            return false;
         }
-        let _ori_ty = self.visit_ty_and_get_layout(obj_ty.unwrap());
-        let _cur_ty = self.visit_ty_and_get_layout(var_ty.unwrap().ty.unwrap());
-        let point_to_id = self.chains.get_point_to_id(arg);
-        let _var_ty = self.chains.get_var_node(point_to_id);
         return self.check_init(arg);
     }
 
@@ -411,6 +411,23 @@ impl<'tcx> BodyVisitor<'tcx> {
             );
         }
         return var_ty.unwrap().states.nonnull;
+    }
+
+    // check each field's init state in the tree.
+    // check arg itself when it doesn't have fields.
+    pub fn check_init(&self, arg: usize) -> bool {
+        let point_to_id = self.chains.get_point_to_id(arg);
+        let var = self.chains.get_var_node(point_to_id);
+        // display_hashmap(&self.chains.variables, 1);
+        if var.unwrap().field.len() > 0 {
+            let mut init_flag = true;
+            for field in &var.unwrap().field {
+                init_flag &= self.check_init(*field.1);
+            }
+            return init_flag;
+        } else {
+            return var.unwrap().states.init;
+        }
     }
 
     pub fn check_allocator_consistency(&self, _func_name: String, _arg: usize) -> bool {
@@ -435,18 +452,6 @@ impl<'tcx> BodyVisitor<'tcx> {
 
     pub fn check_valid_num(&self, _arg: usize) -> bool {
         return true;
-    }
-
-    pub fn check_init(&self, arg: usize) -> bool {
-        let point_to_id = self.chains.get_point_to_id(arg);
-        let var_ty = self.chains.get_var_node(point_to_id);
-        if var_ty.is_none() {
-            rap_warn!(
-                "In func {:?}, visitor checker error! Can't get {arg} in chain!",
-                get_cleaned_def_path_name(self.tcx, self.def_id)
-            );
-        }
-        return var_ty.unwrap().states.init;
     }
 
     pub fn check_alias(&self, _arg: usize) -> bool {

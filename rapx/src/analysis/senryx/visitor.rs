@@ -435,14 +435,14 @@ impl<'tcx> BodyVisitor<'tcx> {
                     let snd_var = self.chains.find_var_id_with_fields_seq(r_place.1, r_fields);
                     self.chains
                         .update_value(self.chains.get_point_to_id(snd_var), l_place.1);
-                    return;
+                    continue;
                 }
                 // if right value is a constant, then update left variable's value
                 if r_place.0 {
                     let fst_var = self.chains.find_var_id_with_fields_seq(l_place.1, l_fields);
                     self.chains
                         .update_value(self.chains.get_point_to_id(fst_var), r_place.1);
-                    return;
+                    continue;
                 }
                 let (fst_var, snd_var) = (
                     self.chains.find_var_id_with_fields_seq(l_place.1, l_fields),

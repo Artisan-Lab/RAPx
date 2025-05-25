@@ -203,7 +203,7 @@ impl UigUnit {
         );
 
         write!(dot_str, "{}", dot).unwrap();
-        // println!("{}",dot_str);
+        println!("{}", dot_str);
         dot_str
     }
 
