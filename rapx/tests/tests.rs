@@ -275,4 +275,8 @@ fn test_range_analysis() {
         output.contains("var: _1. Range { rtype: Regular, range: Interval { left: Closed(0), right: Closed(0) } }"),
         true
     );
+    assert_eq!(
+        output.contains("var: _5. Range { rtype: Regular, range: Interval { left: Closed(0), right: Closed(0) } }"),
+        true
+    );
 }
