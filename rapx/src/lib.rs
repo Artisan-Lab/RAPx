@@ -5,6 +5,8 @@
 pub mod utils;
 pub mod analysis;
 
+extern crate intervals;
+extern crate rustc_abi;
 extern crate rustc_ast;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
@@ -18,12 +20,13 @@ extern crate rustc_session;
 extern crate rustc_span;
 extern crate rustc_target;
 extern crate stable_mir;
+
 use crate::analysis::core::heap_item::TypeAnalysis;
 use analysis::core::alias::mop::MopAlias;
 use analysis::core::api_dep::ApiDep;
 use analysis::core::call_graph::CallGraph;
 use analysis::core::dataflow::DataFlow;
-use analysis::core::range_analysis::SSATrans;
+use analysis::core::range_analysis::{RangeAnalysis, SSATrans};
 use analysis::opt::Opt;
 use analysis::rcanary::rCanary;
 use analysis::safedrop::SafeDrop;
@@ -61,6 +64,7 @@ pub struct RapCallback {
     opt: usize,
     heap_item: bool,
     ssa: bool,
+    range: bool,
 }
 
 #[allow(clippy::derivable_impls)]
@@ -80,6 +84,7 @@ impl Default for RapCallback {
             opt: usize::MAX,
             heap_item: false,
             ssa: false,
+            range: false,
         }
     }
 }
@@ -248,6 +253,12 @@ impl RapCallback {
     pub fn is_ssa_transform_enabled(self) -> bool {
         self.ssa
     }
+    pub fn enable_range_analysis(&mut self) {
+        self.range = true;
+    }
+    pub fn is_range_analysis_enabled(self) -> bool {
+        self.range
+    }
 }
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
@@ -328,5 +339,8 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
     }
     if callback.is_ssa_transform_enabled() {
         SSATrans::new(tcx, false).start();
+    }
+    if callback.is_range_analysis_enabled() {
+        RangeAnalysis::new(tcx, false).start();
     }
 }

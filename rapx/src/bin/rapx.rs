@@ -39,6 +39,7 @@ fn main() {
             "-callgraph" => compiler.enable_callgraph(),
             "-dataflow" => compiler.enable_dataflow(1),
             "-ssa" => compiler.enable_ssa_transform(),
+            "-range" => compiler.enable_range_analysis(),
             "-dataflow=debug" => compiler.enable_dataflow(2),
             "-audit" => compiler.enable_unsafety_isolation(1),
             "-doc" => compiler.enable_unsafety_isolation(2),

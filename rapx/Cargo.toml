@@ -39,7 +39,8 @@ cargo_metadata  = "0.18"
 annotate-snippets = "0.11.4"
 petgraph = "0.7.0"
 if_chain = "1.0"
-
+num-traits = "0.2.19"
+intervals = "2.1"
 [features]
 backtraces = ["snafu/backtraces", "snafu/backtraces-impl-backtrace-crate"]
 

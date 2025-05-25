@@ -1,0 +1,136 @@
+// WARNING: This output format is intended for human consumers only
+// and is subject to change without notice. Knock yourself out.
+static _SSAstmt: std::option::Option<SSAstmt> = {
+    let mut _0: std::option::Option<SSAstmt>;
+
+    bb0: {
+        _0 = std::option::Option::<SSAstmt>::None;
+        return;
+    }
+}
+
+static _ESSAstmt: std::option::Option<ESSAstmt> = {
+    let mut _0: std::option::Option<ESSAstmt>;
+
+    bb0: {
+        _0 = std::option::Option::<ESSAstmt>::None;
+        return;
+    }
+}
+
+fn main() -> () {
+    let mut _0: ();
+    let mut _1: i32;
+    let mut _2: ();
+    let mut _3: bool;
+    let mut _4: i32;
+    let _7: ();
+    let mut _8: bool;
+    let mut _9: i32;
+    let mut _10: i32;
+    let mut _11: (i32, bool);
+    let mut _12: (i32, bool);
+    let mut _13: !;
+    let _14: ();
+    let mut _15: !;
+    let mut _16: (i32, bool);
+    let mut _17: !;
+    let _18: ();
+    let mut _19: !;
+    scope 1 {
+        debug k => _1;
+        let mut _5: i32;
+        scope 2 {
+            debug i => _5;
+            let mut _6: i32;
+            scope 3 {
+                debug j => _6;
+            }
+        }
+    }
+
+    bb0: {
+        StorageLive(_1);
+        _1 = const 0_i32;
+        goto -> bb1;
+    }
+
+    bb1: {
+        StorageLive(_3);
+        StorageLive(_4);
+        _4 = copy _1;
+        _3 = Lt(move _4, const 100_i32);
+        switchInt(move _3) -> [0: bb9, otherwise: bb2];
+    }
+
+    bb2: {
+        StorageDead(_4);
+        StorageLive(_5);
+        _5 = const 0_i32;
+        StorageLive(_6);
+        _6 = copy _1;
+        StorageLive(_7);
+        goto -> bb3;
+    }
+
+    bb3: {
+        StorageLive(_8);
+        StorageLive(_9);
+        _9 = copy _5;
+        StorageLive(_10);
+        _10 = copy _6;
+        _8 = Lt(move _9, move _10);
+        switchInt(move _8) -> [0: bb7, otherwise: bb4];
+    }
+
+    bb4: {
+        StorageDead(_10);
+        StorageDead(_9);
+        _11 = AddWithOverflow(copy _5, const 1_i32);
+        assert(!move (_11.1: bool), "attempt to compute `{} + {}`, which would overflow", copy _5, const 1_i32) -> [success: bb5, unwind continue];
+    }
+
+    bb5: {
+        _5 = move (_11.0: i32);
+        _12 = SubWithOverflow(copy _6, const 1_i32);
+        assert(!move (_12.1: bool), "attempt to compute `{} - {}`, which would overflow", copy _6, const 1_i32) -> [success: bb6, unwind continue];
+    }
+
+    bb6: {
+        _6 = move (_12.0: i32);
+        _2 = const ();
+        StorageDead(_8);
+        goto -> bb3;
+    }
+
+    bb7: {
+        StorageDead(_10);
+        StorageDead(_9);
+        StorageLive(_14);
+        _7 = const ();
+        StorageDead(_14);
+        StorageDead(_8);
+        StorageDead(_7);
+        _16 = AddWithOverflow(copy _1, const 1_i32);
+        assert(!move (_16.1: bool), "attempt to compute `{} + {}`, which would overflow", copy _1, const 1_i32) -> [success: bb8, unwind continue];
+    }
+
+    bb8: {
+        _1 = move (_16.0: i32);
+        _2 = const ();
+        StorageDead(_6);
+        StorageDead(_5);
+        StorageDead(_3);
+        goto -> bb1;
+    }
+
+    bb9: {
+        StorageDead(_4);
+        StorageLive(_18);
+        _0 = const ();
+        StorageDead(_18);
+        StorageDead(_3);
+        StorageDead(_1);
+        return;
+    }
+}

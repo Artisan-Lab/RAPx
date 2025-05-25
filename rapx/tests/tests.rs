@@ -267,3 +267,12 @@ fn test_ssa_transform() {
     let output = running_tests_with_arg("ssa/ssa_transform", "-ssa");
     assert_eq!(output.contains("ssa lvalue check true"), true);
 }
+#[test]
+fn test_range_analysis() {
+    let output = running_tests_with_arg("ssa/ssa_transform", "-range");
+    print!("Output: {}", output);
+    assert_eq!(
+        output.contains("var: _1. Range { rtype: Regular, range: Interval { left: Closed(0), right: Closed(0) } }"),
+        true
+    );
+}

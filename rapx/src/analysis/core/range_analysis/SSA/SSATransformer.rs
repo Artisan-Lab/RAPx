@@ -1,16 +1,17 @@
 #![allow(unused_imports)]
-#![allow(non_snake_case)]
 #![allow(unused_variables)]
 #![allow(dead_code)]
+
 use rustc_data_structures::graph::dominators::Dominators;
 use rustc_data_structures::graph::{dominators, Predecessors};
-use rustc_driver::Callbacks;
-use rustc_hir::def_id::LocalDefId;
+use rustc_hir::def_id::DefId;
+use rustc_hir::def_id::{CrateNum, DefIndex, LocalDefId, CRATE_DEF_INDEX, LOCAL_CRATE};
 use rustc_middle::mir::*;
 use rustc_middle::{
     mir::{visit::Visitor, Body, Local, Location},
     ty::TyCtxt,
 };
+use rustc_span::symbol::Symbol;
 use std::collections::{HashMap, HashSet};
 
 // use std::path::PathBuf;
@@ -24,9 +25,9 @@ use std::collections::{HashMap, HashSet};
 // use rustc_middle::mir::*;
 // use rustc_index::IndexVec;
 // use super::Replacer::*;
+pub struct PhiPlaceholder;
 pub struct SSATransformer<'tcx> {
     pub tcx: TyCtxt<'tcx>,
-    pub def_id: LocalDefId,
     pub body: Body<'tcx>,
     pub cfg: HashMap<BasicBlock, Vec<BasicBlock>>,
     pub dominators: Dominators<BasicBlock>,
@@ -40,10 +41,56 @@ pub struct SSATransformer<'tcx> {
     pub phi_index: HashMap<*const Statement<'tcx>, usize>,
     pub phi_statements: HashMap<*const Statement<'tcx>, bool>,
     pub essa_statements: HashMap<*const Statement<'tcx>, bool>,
+    pub phi_def_id: DefId,
+    pub essa_def_id: DefId,
 }
 
 impl<'tcx> SSATransformer<'tcx> {
-    pub fn new(tcx: TyCtxt<'tcx>, body: &Body<'tcx>, def_id: LocalDefId) -> Self {
+    pub fn print_ssatransformer(&self) {
+        // println!("SSATransformer:");
+        // println!("cfg: {:?}", self.cfg);
+        // println!("dominators: {:?}", self.dominators);
+        // println!("dom_tree: {:?}", self.dom_tree);
+        // println!("df: {:?}", self.df);
+        // println!("local_assign_blocks: {:?}", self.local_assign_blocks);
+        // println!("reaching_def: {:?}", self.reaching_def);
+        // println!("local_index: {:?}", self.local_index);
+        // println!("local_defination_block: {:?}", self.local_defination_block);
+        // println!("skipped: {:?}", self.skipped);
+        // println!("phi_index: {:?}", self.phi_index);
+        // println!("phi_statements: {:?}", self.phi_statements);
+        // println!("essa_statements: {:?}", self.essa_statements);
+    }
+    fn find_phi_placeholder(tcx: TyCtxt<'_>, crate_name: &str) -> Option<DefId> {
+        let sym_crate = Symbol::intern(crate_name);
+        let krate = tcx
+            .crates(())
+            .iter()
+            .find(|&&c| tcx.crate_name(c) == sym_crate)?;
+        let root_def_id = DefId {
+            krate: *krate,
+            index: CRATE_DEF_INDEX,
+        };
+        // print!("Phid\n");
+
+        for item in tcx.module_children(root_def_id) {
+            // println!("Module child: {:?}", item.ident.name.as_str());
+
+            if item.ident.name.as_str() == "PhiPlaceholder" {
+                if let Some(def_id) = item.res.opt_def_id() {
+                    return Some(def_id);
+                }
+            }
+        }
+        // print!("Phid\n");
+        return Some(root_def_id);
+    }
+    pub fn new(
+        tcx: TyCtxt<'tcx>,
+        body: &Body<'tcx>,
+        ssa_def_id: DefId,
+        essa_def_id: DefId,
+    ) -> Self {
         let cfg: HashMap<BasicBlock, Vec<BasicBlock>> = Self::extract_cfg_from_predecessors(&body);
 
         let dominators: Dominators<BasicBlock> = body.basic_blocks.dominators().clone();
@@ -62,9 +109,22 @@ impl<'tcx> SSATransformer<'tcx> {
         if len > 0 {
             skipped.extend(1..len + 1);
         }
+        // let phi_def_id = tcx.type_of(tcx.local_def_id_to_hir_id(def_id).owner.to_def_id());
+        // print!("phi_def_id: {:?}\n", def_id);
+        // let phi_defid = Self::find_phi_placeholder(tcx, "RAP-interval-demo");
+        // if let Some(def_id) = phi_defid {
+        //     print!("phi_def_id: {:?}\n", def_id);
+        // } else {
+        //     print!("phi_def_id not found\n");
+        // }
+        // let phi_ty = tcx.type_of(def_id).skip_binder();
+        // print!("phi_ty: {:?}\n", phi_ty);
+        // let crate_num: CrateNum = CrateNum::new(10); // LOCAL_CRATE 是当前 crate，或者用 CrateNum::new(0)
+        // let def_index: DefIndex = CRATE_DEF_INDEX; // 这通常是 0，也可以用 DefIndex::from_usize(123)
+        // let my_def_id = DefId { krate: crate_num, index: def_index };
+
         SSATransformer {
             tcx,
-            def_id,
             body: body.clone(),
             cfg,
             dominators,
@@ -78,6 +138,8 @@ impl<'tcx> SSATransformer<'tcx> {
             phi_index: HashMap::default(),
             phi_statements: HashMap::default(),
             essa_statements: HashMap::default(),
+            phi_def_id: ssa_def_id,
+            essa_def_id: essa_def_id,
         }
     }
 
