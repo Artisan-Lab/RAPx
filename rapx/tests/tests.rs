@@ -252,9 +252,9 @@ fn test_heap_proxy() {
 }
 
 #[test]
-fn test_audit_case1() {
-    let output = running_tests_with_arg("safety_check/audit_case1", "-I");
-    assert_eq!(output.contains("Lack safety annotations"), true);
+fn test_test_cons_merge() {
+    let output = running_tests_with_arg("safety_check/test_cons_merge", "-verify");
+    assert_eq!(output.contains("NonNull"), true);
 }
 
 #[test]
