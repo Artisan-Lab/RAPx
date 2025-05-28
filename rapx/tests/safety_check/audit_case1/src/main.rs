@@ -16,6 +16,7 @@ impl St1 {
         self.len = 1;
     }
 }
+
 impl St2 {
     pub unsafe fn from(p: *mut u8, l: usize) -> St2 {
         St2 { ptr: p, len: l }

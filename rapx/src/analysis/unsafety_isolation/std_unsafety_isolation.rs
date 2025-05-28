@@ -64,11 +64,11 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                     && !get_cleaned_def_path_name(self.tcx, def_id).contains("intrinsic")
                 {
                     let sp_set = get_sp(tcx, def_id);
-                    if sp_set.len() != 0 {
+                    if !sp_set.is_empty() {
                         unsafe_fn.insert(def_id);
                         let mut flag = false;
                         for sp in &sp_set {
-                            if sp == ""
+                            if sp.is_empty()
                                 || sp == "Function_sp"
                                 || sp == "System_sp"
                                 || sp == "ValidSlice"
@@ -76,7 +76,7 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                                 flag = true;
                             }
                         }
-                        if flag == false {
+                        if !flag {
                             api_cnt += 1;
                             sp_cnt += sp_set.len();
                         }
@@ -129,16 +129,16 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
         for uig in &self.uigs {
             if uig.caller.2 == 1 {
                 // method
-                if uig.caller.1 == true {
+                if uig.caller.1 {
                     m_pro1.push(uig.clone());
-                } else if uig.caller.1 != true {
+                } else if !uig.caller.1 {
                     m_enc1.push(uig.clone());
                 }
             } else {
                 //function
-                if uig.caller.1 == true {
+                if uig.caller.1 {
                     func_pro1.push(uig.clone());
-                } else if uig.caller.1 != true {
+                } else if !uig.caller.1 {
                     func_enc1.push(uig.clone());
                 }
             }
@@ -249,35 +249,35 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                         for item in associated_items.in_definition_order() {
                             if let ty::AssocKind::Fn = item.kind {
                                 let item_def_id = item.def_id;
-                                if get_sp(self.tcx, item_def_id).len() > 0 {
+                                if !get_sp(self.tcx, item_def_id).is_empty() {
                                     vi_flag = true;
                                 }
                                 if get_type(self.tcx, item_def_id) == 0
-                                    && check_safety(self.tcx, item_def_id) == true
+                                    && check_safety(self.tcx, item_def_id)
                                 // && get_sp(self.tcx, item_def_id).len() > 0
                                 {
                                     unsafe_constructors.push(item_def_id);
                                 }
                                 if get_type(self.tcx, item_def_id) == 0
-                                    && check_safety(self.tcx, item_def_id) == false
+                                    && !check_safety(self.tcx, item_def_id)
                                 {
                                     safe_constructors.push(item_def_id);
                                 }
                                 if get_type(self.tcx, item_def_id) == 1
-                                    && check_safety(self.tcx, item_def_id) == true
+                                    && check_safety(self.tcx, item_def_id)
                                 // && get_sp(self.tcx, item_def_id).len() > 0
                                 {
                                     unsafe_methods.push(item_def_id);
                                 }
                                 if get_type(self.tcx, item_def_id) == 1
-                                    && check_safety(self.tcx, item_def_id) == false
+                                    && !check_safety(self.tcx, item_def_id)
                                 {
-                                    if get_callees(tcx, item_def_id).len() != 0 {
+                                    if !get_callees(tcx, item_def_id).is_empty() {
                                         safe_methods.push(item_def_id);
                                     }
                                 }
                                 if get_type(self.tcx, item_def_id) == 1
-                                    && has_mut_self_param(self.tcx, item_def_id) == true
+                                    && has_mut_self_param(self.tcx, item_def_id)
                                 {
                                     mut_methods.push(item_def_id);
                                 }
@@ -287,17 +287,17 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                 }
             }
         }
-        if struct_name == "".to_string()
-            || (unsafe_constructors.len() == 0
-                && unsafe_methods.len() == 0
-                && safe_methods.len() == 0)
+        if struct_name == *""
+            || (unsafe_constructors.is_empty()
+                && unsafe_methods.is_empty()
+                && safe_methods.is_empty())
         {
             return;
         }
         if vi_flag {
             *vi += 1;
         }
-        if unsafe_constructors.len() > 0 {
+        if !unsafe_constructors.is_empty() {
             *uc += 1;
         }
         if ty_flag == 0 {
@@ -404,7 +404,7 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
 
     pub fn filter_mir(_def_id: DefId) -> bool {
         // let def_id_fmt = format!("{:?}", def_id);
-        return false;
+        false
         // def_id_fmt.contains("core_arch")
         //     || def_id_fmt.contains("::__")
         //     || def_id_fmt.contains("backtrace_rs")
@@ -434,7 +434,7 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
             let callee_cons = get_cons(self.tcx, *callee);
             pairs.insert((generate_node_ty(self.tcx, *callee), callee_cons));
         }
-        if !check_safety(self.tcx, caller) && callee_set.len() == 0 {
+        if !check_safety(self.tcx, caller) && callee_set.is_empty() {
             return;
         }
         // if check_safety(self.tcx, caller)
@@ -444,7 +444,7 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
         //     return;
         // }
         let uig = UigUnit::new_by_pair(generate_node_ty(self.tcx, caller), caller_cons, pairs);
-        if callee_set.len() > 0 {
+        if !callee_set.is_empty() {
             self.uigs.push(uig);
         } else {
             self.single.push(uig);

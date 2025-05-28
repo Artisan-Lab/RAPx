@@ -70,10 +70,10 @@ impl UigUnit {
     }
 
     pub fn count_basic_units(&self, data: &mut [u32]) {
-        if self.caller.1 == true && self.callee_cons_pair.len() == 0 {
+        if self.caller.1 && self.callee_cons_pair.is_empty() {
             data[0] += 1;
         }
-        if self.caller.1 == false && self.caller.2 != 1 {
+        if !self.caller.1 && self.caller.2 != 1 {
             for (callee, _) in &self.callee_cons_pair {
                 if callee.2 == 1 {
                     data[2] += 1;
@@ -82,7 +82,7 @@ impl UigUnit {
                 }
             }
         }
-        if self.caller.1 == true && self.caller.2 != 1 {
+        if self.caller.1 && self.caller.2 != 1 {
             for (callee, _) in &self.callee_cons_pair {
                 if callee.2 == 1 {
                     data[4] += 1;
@@ -91,11 +91,11 @@ impl UigUnit {
                 }
             }
         }
-        if self.caller.1 == true && self.caller.2 == 1 {
+        if self.caller.1 && self.caller.2 == 1 {
             let mut unsafe_cons = 0;
             let mut safe_cons = 0;
             for cons in &self.caller_cons {
-                if cons.1 == true {
+                if cons.1 {
                     unsafe_cons += 1;
                 } else {
                     safe_cons += 1;
@@ -106,19 +106,19 @@ impl UigUnit {
             }
             for (callee, _) in &self.callee_cons_pair {
                 if callee.2 == 1 {
-                    data[7] += 1 * safe_cons;
-                    data[8] += 1 * unsafe_cons;
+                    data[7] += safe_cons;
+                    data[8] += unsafe_cons;
                 } else {
-                    data[5] += 1 * safe_cons;
-                    data[6] += 1 * unsafe_cons;
+                    data[5] += safe_cons;
+                    data[6] += unsafe_cons;
                 }
             }
         }
-        if self.caller.1 == false && self.caller.2 == 1 {
+        if !self.caller.1 && self.caller.2 == 1 {
             let mut unsafe_cons = 0;
             let mut safe_cons = 0;
             for cons in &self.caller_cons {
-                if cons.1 == true {
+                if cons.1 {
                     unsafe_cons += 1;
                 } else {
                     safe_cons += 1;
@@ -129,11 +129,11 @@ impl UigUnit {
             }
             for (callee, _) in &self.callee_cons_pair {
                 if callee.2 == 1 {
-                    data[11] += 1 * safe_cons;
-                    data[12] += 1 * unsafe_cons;
+                    data[11] += safe_cons;
+                    data[12] += unsafe_cons;
                 } else {
-                    data[9] += 1 * safe_cons;
-                    data[10] += 1 * unsafe_cons;
+                    data[9] += safe_cons;
+                    data[10] += unsafe_cons;
                 }
             }
         }
@@ -282,7 +282,7 @@ impl UigUnit {
             get_cleaned_def_path_name(tcx, self.caller.0),
             self.caller_cons
                 .iter()
-                .filter(|cons| cons.1 == true)
+                .filter(|cons| cons.1)
                 .map(|node_type| get_cleaned_def_path_name(tcx, node_type.0))
                 .collect::<Vec<_>>(),
             caller_label
@@ -304,7 +304,7 @@ pub enum UigOp {
     TypeCount,
 }
 
-impl<'tcx> UnsafetyIsolationCheck<'tcx> {
+impl UnsafetyIsolationCheck<'_> {
     pub fn get_node_name_by_def_id(&self, def_id: DefId) -> String {
         if let Some(node) = self.nodes.iter().find(|n| n.node_id == def_id) {
             return node.node_name.clone();

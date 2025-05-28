@@ -22,6 +22,7 @@ use super::contracts::abstract_state::{
 };
 use super::contracts::contract::Contract;
 use super::dominated_chain::DominatedGraph;
+use super::dominated_chain::InterResultNode;
 use super::generic_check::GenericChecker;
 use super::inter_record::InterAnalysisRecord;
 use super::matcher::UnsafeApi;
@@ -109,6 +110,8 @@ impl<'tcx> BodyVisitor<'tcx> {
         let param_env = tcx.param_env(def_id);
         let satisfied_ty_map_for_generic =
             GenericChecker::new(tcx, param_env).get_satisfied_ty_map();
+        let mut chains = DominatedGraph::new(tcx, def_id);
+        chains.init_arg();
         Self {
             tcx,
             def_id,
@@ -121,7 +124,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             generic_map: satisfied_ty_map_for_generic,
             global_recorder,
             proj_ty: HashMap::new(),
-            chains: DominatedGraph::new(tcx, def_id),
+            chains,
             paths: Vec::new(),
         }
     }
@@ -132,15 +135,21 @@ impl<'tcx> BodyVisitor<'tcx> {
         return locals[Local::from(p)].ty;
     }
 
-    pub fn path_forward_check(&mut self, fn_map: &FnMap) {
+    pub fn update_fields_states(&mut self, inter_result: InterResultNode<'tcx>) {
+        self.chains.init_self_with_inter(inter_result);
+    }
+
+    pub fn path_forward_check(&mut self, fn_map: &FnMap) -> InterResultNode<'tcx> {
+        let tmp_chain = self.chains.clone();
+        let mut inter_return_value =
+            InterResultNode::construct_from_var_node(self.chains.clone(), 0);
         if self.visit_time >= 1000 {
-            return;
+            return inter_return_value;
         }
+
+        // get path and body
         let paths: Vec<Vec<usize>> = self.get_all_paths();
         self.paths = paths.clone();
-        if self.visit_time == 0 {
-            // rap_warn!("{:?}",self.chains.variables);
-        }
         let body = self.tcx.optimized_mir(self.def_id);
 
         // initialize local vars' types
@@ -153,8 +162,7 @@ impl<'tcx> BodyVisitor<'tcx> {
 
         // Iterate all the paths. Paths have been handled by tarjan.
         for (index, path_info) in paths.iter().enumerate() {
-            self.chains = DominatedGraph::new(self.tcx, self.def_id);
-            self.chains.init_arg();
+            self.chains = tmp_chain.clone();
             self.abstract_states.insert(index, PathInfo::new());
             for block_index in path_info.iter() {
                 if block_index >= &body.basic_blocks.len() {
@@ -180,11 +188,17 @@ impl<'tcx> BodyVisitor<'tcx> {
                     }
                 }
             }
-            // if self.visit_time == 0 {
-            //     rap_warn!("In path {index}");
-            //     display_hashmap(&self.chains.variables, 1);
-            // }
+            // merge path analysis results
+            let curr_path_inter_return_value =
+                InterResultNode::construct_from_var_node(self.chains.clone(), 0);
+            inter_return_value.merge(curr_path_inter_return_value);
         }
+
+        if get_cleaned_def_path_name(self.tcx, self.def_id).contains("::get") {
+            display_hashmap(&self.chains.variables, 1);
+        }
+
+        inter_return_value
     }
 
     pub fn path_analyze_block(
@@ -305,7 +319,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             Rvalue::Cast(cast_kind, op, ty) => match op {
                 Operand::Move(rplace) | Operand::Copy(rplace) => {
                     let rpjc_local = self.handle_proj(true, rplace.clone());
-                    self.chains.point(lpjc_local, rpjc_local);
+                    self.chains.merge(lpjc_local, rpjc_local);
                     self.handle_cast(rpjc_local, lpjc_local, ty, path_index, cast_kind);
                 }
                 _ => {}
@@ -317,8 +331,23 @@ impl<'tcx> BodyVisitor<'tcx> {
                 }
                 _ => {}
             },
-            Rvalue::Aggregate(box ref agg_kind, _op_vec) => match agg_kind {
+            Rvalue::Aggregate(box ref agg_kind, op_vec) => match agg_kind {
                 AggregateKind::Array(_ty) => {}
+                AggregateKind::Adt(_adt_def_id, _, _, _, _) => {
+                    for (idx, op) in op_vec.into_iter().enumerate() {
+                        let (is_const, val) = get_arg_place(op);
+                        if is_const {
+                            self.chains.insert_field_node(
+                                lpjc_local,
+                                idx,
+                                Some(Ty::new_uint(self.tcx, rustc_middle::ty::UintTy::Usize)),
+                            );
+                        } else {
+                            let node = self.chains.get_var_node_mut(lpjc_local).unwrap();
+                            node.field.insert(idx, val);
+                        }
+                    }
+                }
                 _ => {}
             },
             Rvalue::Discriminant(_place) => {
@@ -652,7 +681,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                 return abs;
             }
         }
-        return AbstractStateItem::new_default();
+        AbstractStateItem::new_default()
     }
 
     pub fn handle_cast(

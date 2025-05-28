@@ -52,6 +52,79 @@ impl States {
 }
 
 #[derive(Debug, Clone)]
+pub struct InterResultNode<'tcx> {
+    pub point_to: Option<Box<InterResultNode<'tcx>>>,
+    pub fields: HashMap<usize, InterResultNode<'tcx>>,
+    pub ty: Option<Ty<'tcx>>,
+    pub states: States,
+    pub const_value: usize,
+}
+
+impl<'tcx> InterResultNode<'tcx> {
+    pub fn new_default(ty: Option<Ty<'tcx>>) -> Self {
+        Self {
+            point_to: None,
+            fields: HashMap::new(),
+            ty,
+            states: States::new(),
+            const_value: 0, // To be modified
+        }
+    }
+
+    pub fn construct_from_var_node(chain: DominatedGraph<'tcx>, var_id: usize) -> Self {
+        let var_node = chain.get_var_node(var_id).unwrap();
+        let point_node = if var_node.points_to.is_none() {
+            None
+        } else {
+            Some(Box::new(Self::construct_from_var_node(
+                chain.clone(),
+                var_node.points_to.unwrap(),
+            )))
+        };
+        let fields = var_node
+            .field
+            .iter()
+            .map(|(k, v)| (*k, Self::construct_from_var_node(chain.clone(), *v)))
+            .collect();
+        Self {
+            point_to: point_node,
+            fields,
+            ty: var_node.ty.clone(),
+            states: var_node.states.clone(),
+            const_value: var_node.const_value,
+        }
+    }
+
+    pub fn merge(&mut self, other: InterResultNode<'tcx>) {
+        if self.ty != other.ty {
+            return;
+        }
+        // merge current node's states
+        self.states.merge_states(&other.states);
+
+        // merge node it points to
+        match (&mut self.point_to, other.point_to) {
+            (Some(self_ptr), Some(other_ptr)) => self_ptr.merge(*other_ptr),
+            (None, Some(other_ptr)) => {
+                self.point_to = Some(other_ptr.clone());
+            }
+            _ => {}
+        }
+        // merge the fields nodess
+        for (field_id, other_node) in &other.fields {
+            match self.fields.get_mut(field_id) {
+                Some(self_node) => self_node.merge(other_node.clone()),
+                None => {
+                    self.fields.insert(*field_id, other_node.clone());
+                }
+            }
+        }
+        // TODO: merge into a range
+        self.const_value = std::cmp::max(self.const_value, other.const_value);
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct VariableNode<'tcx> {
     pub id: usize,
     pub alias_set: HashSet<usize>,
@@ -114,6 +187,7 @@ impl<'tcx> VariableNode<'tcx> {
     }
 }
 
+#[derive(Clone)]
 pub struct DominatedGraph<'tcx> {
     pub tcx: TyCtxt<'tcx>,
     pub def_id: DefId,
@@ -144,6 +218,40 @@ impl<'tcx> DominatedGraph<'tcx> {
             def_id,
             local_len: locals.len(),
             variables: var_map,
+        }
+    }
+
+    pub fn init_self_with_inter(&mut self, inter_result: InterResultNode<'tcx>) {
+        let self_node = self.get_var_node(1).unwrap().clone();
+        if self_node.ty.unwrap().is_ref() {
+            let obj_node = self.get_var_node(self.get_point_to_id(1)).unwrap();
+            self.dfs_insert_inter_results(inter_result, obj_node.id);
+        } else {
+            self.dfs_insert_inter_results(inter_result, self_node.id);
+        }
+    }
+
+    pub fn dfs_insert_inter_results(&mut self, inter_result: InterResultNode<'tcx>, local: usize) {
+        let new_id = self.generate_node_id();
+        let node = self.get_var_node_mut(local).unwrap();
+        // node.ty = inter_result.ty;
+        node.states = inter_result.states;
+        node.const_value = inter_result.const_value;
+        if inter_result.point_to.is_some() {
+            let new_node = inter_result.point_to.unwrap();
+            node.points_to = Some(new_id);
+            self.insert_node(
+                new_id,
+                new_node.ty.clone(),
+                local,
+                None,
+                new_node.states.clone(),
+            );
+            self.dfs_insert_inter_results(*new_node, new_id);
+        }
+        for (field_idx, field_inter) in inter_result.fields {
+            let field_node_id = self.insert_field_node(local, field_idx, field_inter.ty.clone());
+            self.dfs_insert_inter_results(field_inter, field_node_id);
         }
     }
 
@@ -195,7 +303,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         if is_ptr(node_ty) || is_ref(node_ty) {
             return self.generate_ptr_with_obj_node(node_ty, arg);
         }
-        return arg;
+        arg
     }
 
     pub fn get_local_ty_by_place(&self, arg: usize) -> Option<Ty<'tcx>> {
@@ -213,10 +321,11 @@ impl<'tcx> DominatedGraph<'tcx> {
         let var = self.get_var_node(arg).unwrap();
         // If the var is ptr or ref, then find its pointed obj.
         if let Some(pointed_idx) = var.points_to {
-            let pointed_var = self.get_var_node(pointed_idx).unwrap();
-            return pointed_var.ty;
+            // let pointed_var = self.get_var_node(pointed_idx).unwrap();
+            // pointed_var.ty
+            self.get_obj_ty_through_chain(pointed_idx)
         } else {
-            return var.ty;
+            var.ty
         }
     }
 
@@ -225,9 +334,9 @@ impl<'tcx> DominatedGraph<'tcx> {
         // println!("{:?}",self.def_id);
         let var = self.get_var_node(arg).unwrap();
         if let Some(pointed_idx) = var.points_to {
-            return pointed_idx;
+            pointed_idx
         } else {
-            return arg;
+            arg
         }
     }
 
@@ -244,7 +353,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         if self.variables.len() == 0 || *self.variables.keys().max().unwrap() < self.local_len {
             return self.local_len;
         }
-        return *self.variables.keys().max().unwrap() + 1;
+        *self.variables.keys().max().unwrap() + 1
     }
 
     pub fn get_field_node_id(
@@ -255,7 +364,7 @@ impl<'tcx> DominatedGraph<'tcx> {
     ) -> usize {
         let node = self.get_var_node(local).unwrap();
         if let Some(alias_local) = node.field.get(&field_idx) {
-            return *alias_local;
+            *alias_local
         } else {
             self.insert_field_node(local, field_idx, ty)
         }
@@ -427,7 +536,7 @@ impl<'tcx> DominatedGraph<'tcx> {
             }
             ori_node.is_dropped = true;
         }
-        return true;
+        true
     }
 
     pub fn update_value(&mut self, arg: usize, value: usize) {

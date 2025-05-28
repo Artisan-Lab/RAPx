@@ -5,7 +5,7 @@ use std::process::Command;
 // please ensure 'graphviz' has been installed
 pub fn render_dot_graphs(dot_graphs: Vec<String>) {
     Command::new("mkdir")
-        .args(&["UPG"])
+        .args(["UPG"])
         .output()
         .expect("Failed to create directory");
 
@@ -16,7 +16,7 @@ pub fn render_dot_graphs(dot_graphs: Vec<String>) {
             .expect("Unable to write data");
 
         Command::new("dot")
-            .args(&[
+            .args([
                 "-Tpng",
                 &file_name,
                 "-o",

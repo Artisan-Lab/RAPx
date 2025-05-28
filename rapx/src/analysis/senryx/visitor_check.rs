@@ -16,24 +16,24 @@ use rustc_middle::mir::Place;
 use rustc_span::source_map::Spanned;
 use rustc_span::Span;
 
-impl<'tcx> BodyVisitor<'tcx> {
+impl BodyVisitor<'_> {
     pub fn handle_std_unsafe_call(
         &mut self,
         _dst_place: &Place<'_>,
         def_id: &DefId,
-        args: &Box<[Spanned<Operand>]>,
+        args: &[Spanned<Operand>],
         _path_index: usize,
         _fn_map: &FnMap,
         fn_span: Span,
         fn_result: UnsafeApi,
     ) {
         for (idx, sp_set) in fn_result.sps.iter().enumerate() {
-            if args.len() == 0 {
+            if args.is_empty() {
                 break;
             }
             let arg_tuple = get_arg_place(&args[idx].node);
             // if this arg is a constant
-            if arg_tuple.0 == true {
+            if arg_tuple.0 {
                 continue;
             }
             let arg_place = arg_tuple.1;
@@ -371,11 +371,9 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
         let ori_ty = self.visit_ty_and_get_layout(obj_ty.unwrap());
         match ori_ty {
-            PlaceTy::Ty(_align, size) => {
-                return size == 0;
-            }
+            PlaceTy::Ty(_align, size) => size == 0,
             PlaceTy::GenericTy(_, _, tys) => {
-                if tys.len() == 0 {
+                if tys.is_empty() {
                     return false;
                 }
                 for (_, size) in tys {
@@ -383,9 +381,9 @@ impl<'tcx> BodyVisitor<'tcx> {
                         return false;
                     }
                 }
-                return true;
+                true
             }
-            _ => return false,
+            _ => false,
         }
     }
 
@@ -398,7 +396,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         if obj_ty != var_ty && is_strict_ty_convert(self.tcx, obj_ty, var_ty) {
             return false;
         }
-        return self.check_init(arg);
+        self.check_init(arg)
     }
 
     pub fn check_non_null(&self, arg: usize) -> bool {
@@ -410,7 +408,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                 get_cleaned_def_path_name(self.tcx, self.def_id)
             );
         }
-        return var_ty.unwrap().states.nonnull;
+        var_ty.unwrap().states.nonnull
     }
 
     // check each field's init state in the tree.
@@ -419,58 +417,58 @@ impl<'tcx> BodyVisitor<'tcx> {
         let point_to_id = self.chains.get_point_to_id(arg);
         let var = self.chains.get_var_node(point_to_id);
         // display_hashmap(&self.chains.variables, 1);
-        if var.unwrap().field.len() > 0 {
+        if var.unwrap().field.is_empty() {
             let mut init_flag = true;
             for field in &var.unwrap().field {
                 init_flag &= self.check_init(*field.1);
             }
-            return init_flag;
+            init_flag
         } else {
-            return var.unwrap().states.init;
+            var.unwrap().states.init
         }
     }
 
     pub fn check_allocator_consistency(&self, _func_name: String, _arg: usize) -> bool {
-        return true;
+        true
     }
 
     pub fn check_allocated(&self, _arg: usize) -> bool {
-        return true;
+        true
     }
 
     pub fn check_inbounded(&self, _arg: usize) -> bool {
-        return true;
+        true
     }
 
     pub fn check_valid_string(&self, _arg: usize) -> bool {
-        return true;
+        true
     }
 
     pub fn check_valid_cstr(&self, _arg: usize) -> bool {
-        return true;
+        true
     }
 
     pub fn check_valid_num(&self, _arg: usize) -> bool {
-        return true;
+        true
     }
 
     pub fn check_alias(&self, _arg: usize) -> bool {
-        return true;
+        true
     }
 
     // Compound SPs
     pub fn check_valid_ptr(&self, arg: usize) -> bool {
-        return !self.check_non_zst(arg) || (self.check_non_zst(arg) && self.check_deref(arg));
+        !self.check_non_zst(arg) || (self.check_non_zst(arg) && self.check_deref(arg))
     }
 
     pub fn check_deref(&self, arg: usize) -> bool {
-        return self.check_allocated(arg) && self.check_inbounded(arg);
+        self.check_allocated(arg) && self.check_inbounded(arg)
     }
 
     pub fn check_ref_to_ptr(&self, arg: usize) -> bool {
-        return self.check_deref(arg)
+        self.check_deref(arg)
             && self.check_init(arg)
             && self.check_align(arg)
-            && self.check_alias(arg);
+            && self.check_alias(arg)
     }
 }

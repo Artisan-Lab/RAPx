@@ -40,7 +40,7 @@ impl<'tcx> Visitor<'tcx> for RelatedFnCollector<'tcx> {
                 ..
             }) => {
                 let key = Some(self_ty.hir_id);
-                let entry = self.hash_map.entry(key).or_insert(Vec::new());
+                let entry = self.hash_map.entry(key).or_default();
                 entry.extend(impl_items.iter().filter_map(|impl_item_ref| {
                     if let rustc_hir::AssocItemKind::Fn { has_self: _ } = impl_item_ref.kind {
                         let hir_id = impl_item_ref.id.hir_id();
@@ -54,7 +54,7 @@ impl<'tcx> Visitor<'tcx> for RelatedFnCollector<'tcx> {
             }
             ItemKind::Trait(_is_auto, _unsafety, _generics, _generic_bounds, trait_items) => {
                 let key = None;
-                let entry = self.hash_map.entry(key).or_insert(Vec::new());
+                let entry = self.hash_map.entry(key).or_default();
                 entry.extend(trait_items.iter().filter_map(|trait_item_ref| {
                     if let rustc_hir::AssocItemKind::Fn { has_self: _ } = trait_item_ref.kind {
                         let hir_id = trait_item_ref.id.hir_id();
@@ -73,7 +73,7 @@ impl<'tcx> Visitor<'tcx> for RelatedFnCollector<'tcx> {
                 has_body: _,
             } => {
                 let key = Some(body_id.hir_id);
-                let entry = self.hash_map.entry(key).or_insert(Vec::new());
+                let entry = self.hash_map.entry(key).or_default();
                 entry.push((*body_id, item.span));
             }
             _ => (),
@@ -108,7 +108,7 @@ impl<'tcx> ContainsUnsafe<'tcx> {
         };
 
         let body = visitor.tcx.hir().body(body_id);
-        visitor.function_unsafe = visitor.body_unsafety(&body);
+        visitor.function_unsafe = visitor.body_unsafety(body);
         visitor.visit_body(body);
 
         (visitor.function_unsafe, visitor.block_unsafe)
@@ -168,14 +168,14 @@ pub type AdtImplMap<'tcx> = FxHashMap<DefId, Vec<(DefId, Ty<'tcx>)>>;
 /// Create & initialize `AdtImplMap`.
 /// `AdtImplMap` is initialized before analysis of each crate,
 /// avoiding quadratic complexity of scanning all impl blocks for each ADT.
-pub fn create_adt_impl_map<'tcx>(tcx: TyCtxt<'tcx>) -> AdtImplMap<'tcx> {
+pub fn create_adt_impl_map(tcx: TyCtxt<'_>) -> AdtImplMap<'_> {
     let mut map = FxHashMap::default();
     for item_id in tcx.hir().items() {
         if let ItemKind::Impl(Impl { self_ty, .. }) = tcx.hir().item(item_id).kind {
             let impl_self_ty = tcx.type_of(self_ty.hir_id.owner).skip_binder();
             if let ty::Adt(impl_self_adt_def, _impl_substs) = impl_self_ty.kind() {
                 map.entry(impl_self_adt_def.did())
-                    .or_insert_with(|| Vec::new())
+                    .or_insert_with(Vec::new)
                     .push((tcx.hir().item(item_id).owner_id.to_def_id(), impl_self_ty));
             }
         }

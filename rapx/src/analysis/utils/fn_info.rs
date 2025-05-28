@@ -89,10 +89,7 @@ pub fn get_cleaned_def_path_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
         .filter_map(|s| {
             if s.contains("{") {
                 if remove_first {
-                    match get_struct_name(tcx, def_id) {
-                        Some(name) => Some(name),
-                        None => None,
-                    }
+                    get_struct_name(tcx, def_id)
                 } else {
                     None
                 }
@@ -214,7 +211,16 @@ pub fn get_type(tcx: TyCtxt<'_>, def_id: DefId) -> usize {
             }
         }
     }
-    return node_type;
+    node_type
+}
+
+pub fn get_adt_ty(tcx: TyCtxt<'_>, def_id: DefId) -> Option<Ty> {
+    if let Some(assoc_item) = tcx.opt_associated_item(def_id) {
+        if let Some(impl_id) = assoc_item.impl_container(tcx) {
+            return Some(tcx.type_of(impl_id).skip_binder());
+        }
+    }
+    None
 }
 
 pub fn get_cons(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<NodeType> {
@@ -250,26 +256,23 @@ pub fn get_callees(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<DefId> {
     if tcx.is_mir_available(def_id) {
         let body = tcx.optimized_mir(def_id);
         for bb in body.basic_blocks.iter() {
-            match &bb.terminator().kind {
-                TerminatorKind::Call { func, .. } => {
-                    if let Operand::Constant(func_constant) = func {
-                        if let ty::FnDef(ref callee_def_id, _) = func_constant.const_.ty().kind() {
-                            if check_safety(tcx, *callee_def_id)
-                            // && check_visibility(tcx, *callee_def_id)
-                            {
-                                let sp_set = get_sp(tcx, *callee_def_id);
-                                if sp_set.len() != 0 {
-                                    callees.insert(*callee_def_id);
-                                }
+            if let TerminatorKind::Call { func, .. } = &bb.terminator().kind {
+                if let Operand::Constant(func_constant) = func {
+                    if let ty::FnDef(ref callee_def_id, _) = func_constant.const_.ty().kind() {
+                        if check_safety(tcx, *callee_def_id)
+                        // && check_visibility(tcx, *callee_def_id)
+                        {
+                            let sp_set = get_sp(tcx, *callee_def_id);
+                            if sp_set.len() != 0 {
+                                callees.insert(*callee_def_id);
                             }
                         }
                     }
                 }
-                _ => {}
             }
         }
     }
-    return callees;
+    callees
 }
 
 // return all the impls def id of corresponding struct
@@ -279,7 +282,7 @@ pub fn get_impls_for_struct(tcx: TyCtxt<'_>, struct_def_id: DefId) -> Vec<DefId>
         let item = tcx.hir().item(item_id);
         if let rustc_hir::ItemKind::Impl(ref impl_item) = item.kind {
             if let rustc_hir::TyKind::Path(ref qpath) = impl_item.self_ty.kind {
-                if let rustc_hir::QPath::Resolved(_, ref path) = qpath {
+                if let rustc_hir::QPath::Resolved(_, path) = qpath {
                     if let rustc_hir::def::Res::Def(_, ref def_id) = path.res {
                         if *def_id == struct_def_id {
                             impls.push(item.owner_id.to_def_id());
@@ -322,14 +325,14 @@ pub fn is_ptr(matched_ty: Ty<'_>) -> bool {
     if let ty::RawPtr(_, _) = matched_ty.kind() {
         return true;
     }
-    return false;
+    false
 }
 
 pub fn is_ref(matched_ty: Ty<'_>) -> bool {
     if let ty::Ref(_, _, _) = matched_ty.kind() {
         return true;
     }
-    return false;
+    false
 }
 
 pub fn has_mut_self_param(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
@@ -422,8 +425,7 @@ pub fn get_all_std_unsafe_callees_block_id(tcx: TyCtxt<'_>, def_id: DefId) -> Ve
                 .clone()
                 .terminator(),
         )
-        .len()
-            > 0
+        .is_empty()
         {
             results.push(i);
         }
@@ -433,18 +435,15 @@ pub fn get_all_std_unsafe_callees_block_id(tcx: TyCtxt<'_>, def_id: DefId) -> Ve
 
 pub fn match_std_unsafe_callee(tcx: TyCtxt<'_>, terminator: &Terminator<'_>) -> Vec<String> {
     let mut results = Vec::new();
-    match &terminator.kind {
-        TerminatorKind::Call { func, .. } => {
-            if let Operand::Constant(func_constant) = func {
-                if let ty::FnDef(ref callee_def_id, _raw_list) = func_constant.const_.ty().kind() {
-                    let func_name = get_cleaned_def_path_name(tcx, *callee_def_id);
-                    if parse_unsafe_api(&func_name).is_some() {
-                        results.push(func_name);
-                    }
+    if let TerminatorKind::Call { func, .. } = &terminator.kind {
+        if let Operand::Constant(func_constant) = func {
+            if let ty::FnDef(ref callee_def_id, _raw_list) = func_constant.const_.ty().kind() {
+                let func_name = get_cleaned_def_path_name(tcx, *callee_def_id);
+                if parse_unsafe_api(&func_name).is_some() {
+                    results.push(func_name);
                 }
             }
         }
-        _ => {}
     }
     results
 }
@@ -452,7 +451,7 @@ pub fn match_std_unsafe_callee(tcx: TyCtxt<'_>, terminator: &Terminator<'_>) -> 
 // Bug definition: (1) strict -> weak & dst is mutable;
 //                 (2) _ -> strict
 pub fn is_strict_ty_convert<'tcx>(tcx: TyCtxt<'tcx>, src_ty: Ty<'tcx>, dst_ty: Ty<'tcx>) -> bool {
-    return (is_strict_ty(tcx, src_ty) && dst_ty.is_mutable_ptr()) || is_strict_ty(tcx, dst_ty);
+    (is_strict_ty(tcx, src_ty) && dst_ty.is_mutable_ptr()) || is_strict_ty(tcx, dst_ty)
 }
 
 // strict ty: bool, str, adt fields containing bool or str;
@@ -462,7 +461,7 @@ pub fn is_strict_ty<'tcx>(tcx: TyCtxt<'tcx>, ori_ty: Ty<'tcx>) -> bool {
     if let TyKind::Adt(adt_def, substs) = ty.kind() {
         if adt_def.is_struct() {
             for field_def in adt_def.all_fields() {
-                flag = flag | is_strict_ty(tcx, field_def.ty(tcx, substs));
+                flag |= is_strict_ty(tcx, field_def.ty(tcx, substs))
             }
         }
     }

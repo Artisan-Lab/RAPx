@@ -54,7 +54,7 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
         let related_items = RelatedFnCollector::collect(self.tcx);
         let hir_map = self.tcx.hir();
         let mut ufunc = 0;
-        for (_, &ref vec) in &related_items {
+        for vec in related_items.values() {
             for (body_id, span) in vec {
                 let (function_unsafe, _block_unsafe) =
                     ContainsUnsafe::contains_unsafe(self.tcx, *body_id);
@@ -96,7 +96,7 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
 
         //'related_items' is used for recording whether this api is in crate or not
         //then init the queue, including all unsafe func and interior unsafe func
-        for (_, &ref vec) in &related_items {
+        for vec in related_items.values() {
             for (body_id, _) in vec {
                 let (function_unsafe, block_unsafe) =
                     ContainsUnsafe::contains_unsafe(self.tcx, *body_id);
@@ -142,14 +142,14 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                 }
             }
         }
-        return false;
+        false
     }
 
     pub fn check_if_node_exists(&self, body_did: DefId) -> bool {
         if let Some(_node) = self.nodes.iter().find(|n| n.node_id == body_did) {
             return true;
         }
-        return false;
+        false
     }
 
     pub fn get_name(&self, body_did: DefId) -> String {
@@ -170,7 +170,7 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
             let verbose_name = tcx.def_path(body_did).to_string_no_crate_verbose();
             name = verbose_name.split("::").last().unwrap_or("").to_string();
         }
-        return name;
+        name
     }
 
     pub fn search_constructor(&mut self, def_id: DefId) -> Vec<DefId> {
@@ -241,25 +241,20 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
         if tcx.is_mir_available(def_id) {
             let body = tcx.optimized_mir(def_id);
             for bb in body.basic_blocks.iter() {
-                match &bb.terminator().kind {
-                    TerminatorKind::Call { func, .. } => {
-                        if let Operand::Constant(func_constant) = func {
-                            if let ty::FnDef(ref callee_def_id, _) =
-                                func_constant.const_.ty().kind()
-                            {
-                                if check_safety(self.tcx, *callee_def_id) {
-                                    if !callees.contains(callee_def_id) {
-                                        callees.push(*callee_def_id);
-                                        if !self.check_if_node_exists(*callee_def_id) {
-                                            self.check_and_insert_node(*callee_def_id);
-                                            self.set_caller_for_callee(def_id, *callee_def_id);
-                                        }
+                if let TerminatorKind::Call { func, .. } = &bb.terminator().kind {
+                    if let Operand::Constant(func_constant) = func {
+                        if let ty::FnDef(ref callee_def_id, _) = func_constant.const_.ty().kind() {
+                            if check_safety(self.tcx, *callee_def_id) {
+                                if !callees.contains(callee_def_id) {
+                                    callees.push(*callee_def_id);
+                                    if !self.check_if_node_exists(*callee_def_id) {
+                                        self.check_and_insert_node(*callee_def_id);
+                                        self.set_caller_for_callee(def_id, *callee_def_id);
                                     }
                                 }
                             }
                         }
                     }
-                    _ => {}
                 }
             }
         }
@@ -267,11 +262,11 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
             node.callees = callees.clone();
             node.visited_tag = true;
         }
-        return callees;
+        callees
     }
 
     pub fn is_crate_api_node(&self, body_did: DefId) -> bool {
-        return self.related_func_def_id.contains(&body_did);
+        self.related_func_def_id.contains(&body_did)
     }
 
     pub fn check_and_insert_node(&mut self, body_did: DefId) {

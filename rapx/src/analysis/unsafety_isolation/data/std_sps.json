@@ -174,7 +174,7 @@
         "0": [
             "ValidCStr",
             "ValidPtr",
-            "!Null",
+            "NonNull",
             "Alias",
             "ValidNum"
         ]
@@ -188,7 +188,7 @@
         "0": [
             "ValidPtr",
             "Aligned",
-            "!Null",
+            "NonNull",
             "Allocated"
         ]
     },
@@ -468,24 +468,24 @@
     },
     "core::ptr::non_null::as_uninit_ref": {
         "0": [
-            "!Null | ",
+            "NonNull | ",
             "ValidPtr2Ref"
         ]
     },
     "core::ptr::non_null::as_uninit_mut": {
         "0": [
-            "!Null | ",
+            "NonNull | ",
             "ValidPtr2Ref"
         ]
     },
     "core::ptr::non_null::new_unchecked": {
         "0": [
-            "!Null"
+            "NonNull"
         ]
     },
     "core::ptr::non_null::as_ref": {
         "0": [
-            "!Null | ",
+            "NonNull | ",
             "ValidPtr2Ref"
         ]
     },
@@ -657,7 +657,7 @@
     },
     "core::ptr::non_null::as_uninit_slice": {
         "0": [
-            "!Null",
+            "NonNull",
             "ValidPtr",
             "Init",
             "Alive",
@@ -668,7 +668,7 @@
     },
     "core::ptr::non_null::as_uninit_slice_mut": {
         "0": [
-            "!Null",
+            "NonNull",
             "ValidPtr",
             "Init",
             "Alive",
@@ -686,7 +686,7 @@
 
     "core::ptr::const_ptr::as_ref": {
         "0": [
-            "!Null | ",
+            "NonNull | ",
             "ValidPtr2Ref"
         ]
     },
@@ -697,7 +697,7 @@
     },
     "core::ptr::const_ptr::as_uninit_ref": {
         "0": [
-            "!Null | ",
+            "NonNull | ",
             "ValidPtr2Ref"
         ]
     },
@@ -809,7 +809,7 @@
     },
     "core::ptr::const_ptr::as_uninit_slice": {
         "0": [
-            "!Null",
+            "NonNull",
             "ValidPtr",
             "Init",
             "Alive",
@@ -829,7 +829,7 @@
 
     "core::ptr::mut_ptr::as_ref": {
         "0": [
-            "!Null | ",
+            "NonNull | ",
             "ValidPtr2Ref"
         ]
     },
@@ -840,7 +840,7 @@
     },
     "core::ptr::mut_ptr::as_uninit_ref": {
         "0": [
-            "!Null | ",
+            "NonNull | ",
             "ValidPtr2Ref"
         ]
     },
@@ -862,7 +862,7 @@
     },
     "core::ptr::mut_ptr::as_uninit_mut": {
         "0": [
-            "!Null | ",
+            "NonNull | ",
             "ValidPtr2Ref"
         ]
     },
@@ -982,7 +982,7 @@
         "0": [
             "ValidPtr",
             "Aligned",
-            "!Null"
+            "NonNull"
         ]
     },
     "core::ptr::mut_ptr::write": {
@@ -1036,7 +1036,7 @@
     },
     "core::ptr::mut_ptr::as_uninit_slice": {
         "0": [
-            "!Null",
+            "NonNull",
             "ValidPtr",
             "Init",
             "Alive",
@@ -1048,7 +1048,7 @@
     "core::ptr::mut_ptr::as_uninit_slice_mut": {
         "0": [
 
-            "!Null",
+            "NonNull",
             "ValidPtr",
             "Init",
             "Alive",
@@ -1068,7 +1068,7 @@
         "0": [
             "ValidPtr",
             "Aligned",
-            "!Null"
+            "NonNull"
         ]
     },
     "core::ptr::replace": {
@@ -1227,7 +1227,7 @@
     },
     "core::slice::raw::from_raw_parts": {
         "0":[
-            "!Null",
+            "NonNull",
             "ValidPtr",
             "Init",
             "Alive",
@@ -1238,7 +1238,7 @@
     },
     "core::slice::raw::from_raw_parts_mut": {
         "0":[
-            "!Null",
+            "NonNull",
             "ValidPtr",
             "Init",
             "Alive",
@@ -1261,7 +1261,7 @@
     },
     "core::slice::raw::from_ptr_range": {
         "0": [
-            "!Null",
+            "NonNull",
             "ValidPtr",
             "Init",
             "Alive",
@@ -1274,7 +1274,7 @@
     },
     "core::slice::raw::from_mut_ptr_range": {
         "0": [
-            "!Null",
+            "NonNull",
             "ValidPtr",
             "Init",
             "Alive",
@@ -1324,7 +1324,7 @@
     },
     "core::str::converts::from_raw_parts": {
         "0": [
-            "!Null",
+            "NonNull",
             "ValidPtr",
             "Init",
             "Alive",
@@ -1335,7 +1335,7 @@
     },
     "core::str::converts::from_raw_parts_mut": {
         "0": [
-            "!Null",
+            "NonNull",
             "ValidPtr",
             "Init",
             "Alive",
@@ -1875,7 +1875,7 @@
         "0": [
             "ValidPtr",
             "Aligned",
-            "!Null"
+            "NonNull"
         ]
     },
     "core::intrinsics::const_deallocate": {

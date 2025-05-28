@@ -108,7 +108,7 @@ impl<'tcx> GenericChecker<'tcx> {
     fn get_satisfied_ty_for_pod(tcx: TyCtxt<'tcx>) -> HashSet<Ty<'tcx>> {
         let mut satisfied_ty_set_for_pod: HashSet<Ty<'tcx>> = HashSet::new();
         // f64, u64, i8, i32, u8, i16, u16, u32, usize, i128, isize, i64, u128, f32
-        let pod_ty = vec![
+        let pod_ty = [
             tcx.mk_ty_from_kind(TyKind::Int(IntTy::Isize)),
             tcx.mk_ty_from_kind(TyKind::Int(IntTy::I8)),
             tcx.mk_ty_from_kind(TyKind::Int(IntTy::I16)),
