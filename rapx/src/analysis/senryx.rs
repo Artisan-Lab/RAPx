@@ -53,7 +53,6 @@ impl<'tcx> SenryxCheck<'tcx> {
     }
 
     pub fn start(&mut self, check_level: CheckLevel, is_verify: bool) {
-        let hir_map = self.tcx.hir();
         let tcx = self.tcx;
         let mut mop = MopAlias::new(self.tcx);
         let fn_map = mop.start();
@@ -62,7 +61,7 @@ impl<'tcx> SenryxCheck<'tcx> {
             for (body_id, _span) in vec {
                 let (function_unsafe, block_unsafe) =
                     ContainsUnsafe::contains_unsafe(tcx, *body_id);
-                let def_id = hir_map.body_owner_def_id(*body_id).to_def_id();
+                let def_id = tcx.hir_body_owner_def_id(*body_id).to_def_id();
                 if !Self::filter_by_check_level(tcx, &check_level, def_id) {
                     continue;
                 }

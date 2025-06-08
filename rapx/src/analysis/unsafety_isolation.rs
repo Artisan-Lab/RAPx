@@ -52,13 +52,12 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
             return; //TODO:
         }
         let related_items = RelatedFnCollector::collect(self.tcx);
-        let hir_map = self.tcx.hir();
         let mut ufunc = 0;
         for vec in related_items.values() {
             for (body_id, span) in vec {
                 let (function_unsafe, _block_unsafe) =
                     ContainsUnsafe::contains_unsafe(self.tcx, *body_id);
-                let def_id = hir_map.body_owner_def_id(*body_id).to_def_id();
+                let def_id = self.tcx.hir_body_owner_def_id(*body_id).to_def_id();
                 if function_unsafe {
                     ufunc = ufunc + 1;
                     if ins == UigInstruction::Doc {
@@ -90,7 +89,6 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
 
     pub fn filter_and_extend_unsafe(&mut self) {
         let related_items = RelatedFnCollector::collect(self.tcx);
-        let hir_map = self.tcx.hir();
         let mut queue = VecDeque::new();
         let mut visited = std::collections::HashSet::new();
 
@@ -100,7 +98,7 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
             for (body_id, _) in vec {
                 let (function_unsafe, block_unsafe) =
                     ContainsUnsafe::contains_unsafe(self.tcx, *body_id);
-                let body_did = hir_map.body_owner_def_id(*body_id).to_def_id();
+                let body_did = self.tcx.hir_body_owner_def_id(*body_id).to_def_id();
                 if function_unsafe || block_unsafe {
                     let node_type = get_type(self.tcx, body_did);
                     let name = self.get_name(body_did);
@@ -186,7 +184,11 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                     for impl_id in impl_vec {
                         let associated_items = tcx.associated_items(impl_id);
                         for item in associated_items.in_definition_order() {
-                            if let ty::AssocKind::Fn = item.kind {
+                            if let ty::AssocKind::Fn {
+                                name: _,
+                                has_self: _,
+                            } = item.kind
+                            {
                                 let item_def_id = item.def_id;
                                 if get_type(self.tcx, item_def_id) == 0 {
                                     constructors.push(item_def_id);
@@ -216,7 +218,11 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                     for impl_id in impl_vec {
                         let associated_items = tcx.associated_items(impl_id);
                         for item in associated_items.in_definition_order() {
-                            if let ty::AssocKind::Fn = item.kind {
+                            if let ty::AssocKind::Fn {
+                                name: _,
+                                has_self: _,
+                            } = item.kind
+                            {
                                 let item_def_id = item.def_id;
                                 if get_type(self.tcx, item_def_id) == 0 {
                                     constructors.push(item_def_id);

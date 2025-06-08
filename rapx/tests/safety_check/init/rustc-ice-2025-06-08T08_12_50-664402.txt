@@ -1,0 +1,40 @@
+thread 'rustc' panicked at src/analysis/senryx/generic_check.rs:39:44:
+DefId::expect_local: `DefId(2:4054 ~ core[814b]::ops::function::impls::{impl#2})` isn't local
+stack backtrace:
+   0:     0x7f519d0ca045 - std::backtrace::Backtrace::create::hc62a47492b9df09a
+   1:     0x7f519d0c9f95 - std::backtrace::Backtrace::force_capture::h187db761dc4db9c4
+   2:     0x7f519c1f9cb1 - std[3730efd3237fb2fe]::panicking::update_hook::<alloc[728ef8426c311d6f]::boxed::Box<rustc_driver_impl[4423190d2384c153]::install_ice_hook::{closure#1}>>::{closure#0}
+   3:     0x7f519d0e3fd3 - std::panicking::rust_panic_with_hook::hb81599440b437817
+   4:     0x7f519d0e3cca - std::panicking::begin_panic_handler::{{closure}}::h7a731a74ab3fd8e5
+   5:     0x7f519d0e01c9 - std::sys::backtrace::__rust_end_short_backtrace::h1f727fbc9961adc0
+   6:     0x7f519d0e398d - __rustc[a3537046f032bc96]::rust_begin_unwind
+   7:     0x7f51998a8a80 - core::panicking::panic_fmt::he78c0e2ddfc3e30a
+   8:     0x55e8ac3fa821 - rapx::analysis::senryx::generic_check::GenericChecker::new::h512441d4a88d168a
+   9:     0x55e8ac380f04 - rapx::analysis::senryx::visitor::BodyVisitor::new::hde835fa4b5645af0
+  10:     0x55e8ac3842b1 - rapx::analysis::senryx::visitor::BodyVisitor::handle_call::hc59da318cd2bd532
+  11:     0x55e8ac3833cf - rapx::analysis::senryx::visitor::BodyVisitor::path_analyze_terminator::h6f73519adb03c689
+  12:     0x55e8ac381f4a - rapx::analysis::senryx::visitor::BodyVisitor::path_forward_check::hf85bafd66543ea9b
+  13:     0x55e8ac3842cf - rapx::analysis::senryx::visitor::BodyVisitor::handle_call::hc59da318cd2bd532
+  14:     0x55e8ac3833cf - rapx::analysis::senryx::visitor::BodyVisitor::path_analyze_terminator::h6f73519adb03c689
+  15:     0x55e8ac381f4a - rapx::analysis::senryx::visitor::BodyVisitor::path_forward_check::hf85bafd66543ea9b
+  16:     0x55e8ac38d8ad - rapx::analysis::senryx::SenryxCheck::body_visit_and_check::h2907c125490ecc08
+  17:     0x55e8ac38d03d - rapx::analysis::senryx::SenryxCheck::start::ha42cbb3d68b2be58
+  18:     0x55e8ac31979c - rapx::start_analyzer::h91659d1170ef1a2c
+  19:     0x55e8ac318d01 - <rapx::RapCallback as rustc_driver_impl::Callbacks>::after_analysis::h11d7ff10aa6cc13e
+  20:     0x7f519ebd1f5a - rustc_interface[e6912908bdc5aeb7]::passes::create_and_enter_global_ctxt::<core[814bb4b6e04d0e65]::option::Option<rustc_interface[e6912908bdc5aeb7]::queries::Linker>, rustc_driver_impl[4423190d2384c153]::run_compiler::{closure#0}::{closure#2}>::{closure#2}::{closure#0}
+  21:     0x7f519e9b0b4c - rustc_interface[e6912908bdc5aeb7]::interface::run_compiler::<(), rustc_driver_impl[4423190d2384c153]::run_compiler::{closure#0}>::{closure#1}
+  22:     0x7f519e8dc97e - std[3730efd3237fb2fe]::sys::backtrace::__rust_begin_short_backtrace::<rustc_interface[e6912908bdc5aeb7]::util::run_in_thread_with_globals<rustc_interface[e6912908bdc5aeb7]::util::run_in_thread_pool_with_globals<rustc_interface[e6912908bdc5aeb7]::interface::run_compiler<(), rustc_driver_impl[4423190d2384c153]::run_compiler::{closure#0}>::{closure#1}, ()>::{closure#0}, ()>::{closure#0}::{closure#0}, ()>
+  23:     0x7f519e8dc664 - <<std[3730efd3237fb2fe]::thread::Builder>::spawn_unchecked_<rustc_interface[e6912908bdc5aeb7]::util::run_in_thread_with_globals<rustc_interface[e6912908bdc5aeb7]::util::run_in_thread_pool_with_globals<rustc_interface[e6912908bdc5aeb7]::interface::run_compiler<(), rustc_driver_impl[4423190d2384c153]::run_compiler::{closure#0}>::{closure#1}, ()>::{closure#0}, ()>::{closure#0}::{closure#0}, ()>::{closure#1} as core[814bb4b6e04d0e65]::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+  24:     0x7f519e8dac7d - std::sys::pal::unix::thread::Thread::new::thread_start::h4c462331eebbf5ed
+  25:     0x7f519744fac3 - start_thread
+                               at ./nptl/pthread_create.c:442:8
+  26:     0x7f51974e1850 - __GI___clone3
+                               at ./misc/../sysdeps/unix/sysv/linux/x86_64/clone3.S:81:0
+  27:                0x0 - <unknown>
+
+
+rustc version: 1.89.0-nightly (99e7c15e8 2025-06-01)
+platform: x86_64-unknown-linux-gnu
+
+query stack during panic:
+end of query stack

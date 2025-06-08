@@ -1,11 +1,11 @@
 pub mod ownership;
 pub mod type_visitor;
 
+use rustc_abi::VariantIdx;
 use rustc_middle::ty::EarlyBinder;
 use rustc_middle::ty::TypeVisitable;
 use rustc_middle::ty::{self, Ty, TyCtxt, TyKind};
 use rustc_span::def_id::DefId;
-use rustc_target::abi::VariantIdx;
 
 use std::collections::{HashMap, HashSet};
 use std::env;

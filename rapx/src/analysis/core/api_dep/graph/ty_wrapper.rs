@@ -38,7 +38,7 @@ fn eq_ty<'tcx>(lhs: Ty<'tcx>, rhs: Ty<'tcx>) -> bool {
                 return false;
             }
             for (arg1, arg2) in generic_arg1.iter().zip(generic_arg2.iter()) {
-                match (arg1.unpack(), arg2.unpack()) {
+                match (arg1.kind(), arg2.kind()) {
                     (ty::GenericArgKind::Lifetime(_), ty::GenericArgKind::Lifetime(_)) => continue,
                     (ty::GenericArgKind::Type(ty1), ty::GenericArgKind::Type(ty2)) => {
                         if !eq_ty(ty1, ty2) {
@@ -84,7 +84,7 @@ fn traverse_ty_with_lifetime<'tcx, F: Fn(ty::Region, usize)>(ty: Ty<'tcx>, no: &
     match ty.kind() {
         ty::TyKind::Adt(adt_def, generic_arg) => {
             for arg in generic_arg.iter() {
-                match arg.unpack() {
+                match arg.kind() {
                     ty::GenericArgKind::Lifetime(lt) => {
                         *no = *no + 1;
                         f(lt, *no);
@@ -145,7 +145,7 @@ fn hash_ty<'tcx, H: std::hash::Hasher>(ty: Ty<'tcx>, state: &mut H, no: &mut usi
         ty::TyKind::Adt(adt_def, generic_arg) => {
             adt_def.did().hash(state);
             for arg in generic_arg.iter() {
-                match arg.unpack() {
+                match arg.kind() {
                     ty::GenericArgKind::Lifetime(lt) => {
                         *no = *no + 1;
                         no.hash(state);
@@ -194,7 +194,7 @@ pub fn desc_ty_str<'tcx>(ty: Ty<'tcx>, no: &mut usize, tcx: TyCtxt<'tcx>) -> Str
                 ty_str += "<";
                 ty_str += &generic_arg
                     .iter()
-                    .map(|arg| match arg.unpack() {
+                    .map(|arg| match arg.kind() {
                         ty::GenericArgKind::Lifetime(lt) => {
                             let current_no = *no;
                             *no = *no + 1;

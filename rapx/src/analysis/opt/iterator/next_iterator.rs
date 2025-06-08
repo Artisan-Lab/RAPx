@@ -73,7 +73,7 @@ impl OptCheck for NextIteratorCheck {
     fn check(&mut self, graph: &Graph, tcx: &TyCtxt) {
         let _ = &DEFPATHS.get_or_init(|| DefPaths::new(tcx));
         let def_id = graph.def_id;
-        let body = tcx.hir().body_owned_by(def_id.as_local().unwrap());
+        let body = tcx.hir_body_owned_by(def_id.as_local().unwrap());
         let typeck_results = tcx.typeck(def_id.as_local().unwrap());
         let mut next_chain_finder = NextFinder {
             typeck_results,

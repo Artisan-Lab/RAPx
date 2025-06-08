@@ -309,6 +309,7 @@ impl Graph {
                     self.add_node_edge(src, dst, EdgeOp::Nop); // Mutability?
                     self.nodes[dst].ops[seq] = NodeOp::RawPtr;
                 }
+                _ => todo!(),
             };
             self.nodes[dst].seq = seq + 1;
         }

@@ -114,6 +114,7 @@ impl<'b, 'tcx> CallGraphVisitor<'b, 'tcx> {
                                     None
                                 }
                             }
+                            _ => todo!(),
                         };
                         if let Some(instance_def_id) = instance_def_id {
                             self.add_to_call_graph(instance_def_id, Some(is_virtual));

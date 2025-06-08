@@ -152,12 +152,11 @@ fn non_local_item_children_by_name(tcx: &TyCtxt<'_>, def_id: DefId, name: Symbol
 }
 
 fn local_item_children_by_name(tcx: &TyCtxt<'_>, local_id: LocalDefId, name: Symbol) -> Vec<Res> {
-    let hir = tcx.hir();
-
     let root_mod;
-    let item_kind = match tcx.hir_node_by_def_id(local_id) {
-        Node::Crate(r#mod) => {
-            root_mod = ItemKind::Mod(r#mod);
+    let hir_node = tcx.hir_node_by_def_id(local_id);
+    let item_kind = match hir_node {
+        Node::Crate(module) => {
+            root_mod = ItemKind::Mod(hir_node.ident().unwrap(), module);
             &root_mod
         }
         Node::Item(item) => &item.kind,
@@ -174,10 +173,10 @@ fn local_item_children_by_name(tcx: &TyCtxt<'_>, local_id: LocalDefId, name: Sym
     };
 
     match item_kind {
-        ItemKind::Mod(r#mod) => r#mod
+        ItemKind::Mod(ident, module) => module
             .item_ids
             .iter()
-            .filter_map(|&item_id| res(hir.item(item_id).ident, item_id.owner_id))
+            .filter_map(|&item_id| res(tcx.hir_ident(item_id.hir_id()), item_id.owner_id))
             .collect(),
         ItemKind::Impl(r#impl) => r#impl
             .items

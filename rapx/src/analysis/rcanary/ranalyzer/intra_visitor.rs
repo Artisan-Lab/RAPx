@@ -1,3 +1,4 @@
+use rustc_abi::VariantIdx;
 use rustc_data_structures::graph;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{
@@ -7,7 +8,6 @@ use rustc_middle::mir::{
 use rustc_middle::ty::{self, Ty, TyKind, TypeVisitable};
 use rustc_span::source_map::Spanned;
 use rustc_span::Symbol;
-use rustc_target::abi::VariantIdx;
 
 use annotate_snippets::{Level, Renderer, Snippet};
 use std::ops::Add;
@@ -2847,6 +2847,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                     prj.unsupport = true;
                     break;
                 }
+                _ => todo!(),
             }
         }
         prj

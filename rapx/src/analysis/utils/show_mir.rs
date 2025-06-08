@@ -110,6 +110,7 @@ impl<'tcx> Display for Rvalue<'tcx> {
             Rvalue::ShallowInitBox(..) => s += "ShallowInitBox",
             Rvalue::CopyForDeref(..) => s += "CopyForDeref",
             Rvalue::RawPtr(_, _) => s += "RawPtr",
+            _ => todo!(),
         }
         s
     }

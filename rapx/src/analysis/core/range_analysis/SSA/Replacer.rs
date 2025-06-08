@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 
 use super::SSATransformer::SSATransformer;
+use rustc_abi::FieldIdx;
 use rustc_index::IndexVec;
 use rustc_middle::mir::*;
 use rustc_middle::ty::TyCtxt;
@@ -374,8 +375,8 @@ impl<'tcx> Replacer<'tcx> {
                                     if let Rvalue::Aggregate(_, operands) = rvalue {
                                         let loc_1: usize = 0;
                                         let loc_2: usize = 1;
-                                        operands[loc_1.into()] = op1.clone();
-                                        operands[loc_2.into()] = op2.clone();
+                                        operands[FieldIdx::from_usize(loc_1)] = op1.clone();
+                                        operands[FieldIdx::from_usize(loc_2)] = op2.clone();
                                     }
                                 }
                                 _ => {}
@@ -389,8 +390,8 @@ impl<'tcx> Replacer<'tcx> {
                                     if let Rvalue::Aggregate(_, operands) = rvalue {
                                         let loc_1: usize = 0;
                                         let loc_2: usize = 1;
-                                        operands[loc_1.into()] = op2.clone();
-                                        operands[loc_2.into()] = op1.clone();
+                                        operands[FieldIdx::from_usize(loc_1)] = op2.clone();
+                                        operands[FieldIdx::from_usize(loc_2)] = op1.clone();
                                     }
                                 }
                                 _ => {}
@@ -404,7 +405,7 @@ impl<'tcx> Replacer<'tcx> {
                                 StatementKind::Assign(box (place, rvalue)) => {
                                     if let Rvalue::Aggregate(_, operands) = rvalue {
                                         let loc: usize = 0;
-                                        operands[loc.into()] = op1.clone();
+                                        operands[FieldIdx::from_usize(loc)] = op1.clone();
                                     }
                                 }
                                 _ => {}
@@ -438,7 +439,7 @@ impl<'tcx> Replacer<'tcx> {
 
                         if index < operand_count {
                             // self.replace_operand(&mut operands[(index).into()], &succ_bb);s
-                            match &mut operands[(index).into()] {
+                            match &mut operands[FieldIdx::from_usize(index)] {
                                 Operand::Copy(place) | Operand::Move(place) => {
                                     self.replace_place(place, &do_bb);
                                 }

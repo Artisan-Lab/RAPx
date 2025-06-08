@@ -377,6 +377,8 @@ impl<'tcx> SafeDropGraph<'tcx> {
                     target,
                     unwind,
                     replace: _,
+                    drop: _,
+                    async_fut: _,
                 } => {
                     cur_bb.add_next(target.as_usize());
                     cur_bb.drops.push(terminator.clone());

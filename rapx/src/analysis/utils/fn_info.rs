@@ -2,12 +2,10 @@ use crate::analysis::senryx::matcher::parse_unsafe_api;
 use crate::analysis::unsafety_isolation::generate_dot::NodeType;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::DefId;
+use rustc_hir::ImplItemKind;
 use rustc_middle::mir::Local;
 use rustc_middle::mir::{BasicBlock, Terminator};
-use rustc_middle::ty::Mutability;
-use rustc_middle::ty::Ty;
-use rustc_middle::ty::TyCtxt;
-use rustc_middle::ty::TyKind;
+use rustc_middle::ty::{AssocKind, Mutability, Ty, TyCtxt, TyKind};
 use rustc_middle::{
     mir::{Operand, TerminatorKind},
     ty,
@@ -161,54 +159,59 @@ pub fn check_safety(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
 pub fn get_type(tcx: TyCtxt<'_>, def_id: DefId) -> usize {
     let mut node_type = 2;
     if let Some(assoc_item) = tcx.opt_associated_item(def_id) {
-        if assoc_item.fn_has_self_parameter {
-            node_type = 1;
-        } else {
-            let fn_sig = tcx.fn_sig(def_id).skip_binder();
-            let output = fn_sig.output().skip_binder();
-            // return type is 'Self'
-            if output.is_param(0) {
-                node_type = 0;
-            }
-            // return type is struct's name
-            if let Some(impl_id) = assoc_item.impl_container(tcx) {
-                let ty = tcx.type_of(impl_id).skip_binder();
-                if output == ty {
-                    node_type = 0;
-                }
-            }
-            match output.kind() {
-                TyKind::Ref(_, ref_ty, _) => {
-                    if ref_ty.is_param(0) {
+        match assoc_item.kind {
+            AssocKind::Fn { has_self, .. } => {
+                if has_self {
+                    node_type = 1;
+                } else {
+                    let fn_sig = tcx.fn_sig(def_id).skip_binder();
+                    let output = fn_sig.output().skip_binder();
+                    // return type is 'Self'
+                    if output.is_param(0) {
                         node_type = 0;
                     }
+                    // return type is struct's name
                     if let Some(impl_id) = assoc_item.impl_container(tcx) {
                         let ty = tcx.type_of(impl_id).skip_binder();
-                        if *ref_ty == ty {
+                        if output == ty {
                             node_type = 0;
                         }
                     }
-                }
-                TyKind::Adt(adt_def, substs) => {
-                    if adt_def.is_enum()
-                        && (tcx.is_diagnostic_item(sym::Option, adt_def.did())
-                            || tcx.is_diagnostic_item(sym::Result, adt_def.did())
-                            || tcx.is_diagnostic_item(kw::Box, adt_def.did()))
-                    {
-                        let inner_ty = substs.type_at(0);
-                        if inner_ty.is_param(0) {
-                            node_type = 0;
-                        }
-                        if let Some(impl_id) = assoc_item.impl_container(tcx) {
-                            let ty_impl = tcx.type_of(impl_id).skip_binder();
-                            if inner_ty == ty_impl {
+                    match output.kind() {
+                        TyKind::Ref(_, ref_ty, _) => {
+                            if ref_ty.is_param(0) {
                                 node_type = 0;
                             }
+                            if let Some(impl_id) = assoc_item.impl_container(tcx) {
+                                let ty = tcx.type_of(impl_id).skip_binder();
+                                if *ref_ty == ty {
+                                    node_type = 0;
+                                }
+                            }
                         }
+                        TyKind::Adt(adt_def, substs) => {
+                            if adt_def.is_enum()
+                                && (tcx.is_diagnostic_item(sym::Option, adt_def.did())
+                                    || tcx.is_diagnostic_item(sym::Result, adt_def.did())
+                                    || tcx.is_diagnostic_item(kw::Box, adt_def.did()))
+                            {
+                                let inner_ty = substs.type_at(0);
+                                if inner_ty.is_param(0) {
+                                    node_type = 0;
+                                }
+                                if let Some(impl_id) = assoc_item.impl_container(tcx) {
+                                    let ty_impl = tcx.type_of(impl_id).skip_binder();
+                                    if inner_ty == ty_impl {
+                                        node_type = 0;
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
-                _ => {}
             }
+            _ => todo!(),
         }
     }
     node_type
@@ -278,18 +281,21 @@ pub fn get_callees(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<DefId> {
 // return all the impls def id of corresponding struct
 pub fn get_impls_for_struct(tcx: TyCtxt<'_>, struct_def_id: DefId) -> Vec<DefId> {
     let mut impls = Vec::new();
-    for item_id in tcx.hir().items() {
-        let item = tcx.hir().item(item_id);
-        if let rustc_hir::ItemKind::Impl(ref impl_item) = item.kind {
-            if let rustc_hir::TyKind::Path(ref qpath) = impl_item.self_ty.kind {
-                if let rustc_hir::QPath::Resolved(_, path) = qpath {
-                    if let rustc_hir::def::Res::Def(_, ref def_id) = path.res {
-                        if *def_id == struct_def_id {
-                            impls.push(item.owner_id.to_def_id());
+    for impl_item_id in tcx.hir_crate_items(()).impl_items() {
+        let impl_item = tcx.hir_impl_item(impl_item_id);
+        match impl_item.kind {
+            ImplItemKind::Type(ty) => {
+                if let rustc_hir::TyKind::Path(ref qpath) = ty.kind {
+                    if let rustc_hir::QPath::Resolved(_, path) = qpath {
+                        if let rustc_hir::def::Res::Def(_, ref def_id) = path.res {
+                            if *def_id == struct_def_id {
+                                impls.push(impl_item.owner_id.to_def_id());
+                            }
                         }
                     }
                 }
             }
+            _ => (),
         }
     }
     impls
@@ -337,12 +343,18 @@ pub fn is_ref(matched_ty: Ty<'_>) -> bool {
 
 pub fn has_mut_self_param(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
     if let Some(assoc_item) = tcx.opt_associated_item(def_id) {
-        if assoc_item.fn_has_self_parameter {
-            let body = tcx.optimized_mir(def_id);
-            let fst_arg = body.local_decls[Local::from_usize(1)].clone();
-            let ty = fst_arg.ty;
-            let is_mut_ref = matches!(ty.kind(), ty::Ref(_, _, mutbl) if *mutbl == Mutability::Mut);
-            return fst_arg.mutability.is_mut() || is_mut_ref;
+        match assoc_item.kind {
+            AssocKind::Fn { has_self, .. } => {
+                if has_self {
+                    let body = tcx.optimized_mir(def_id);
+                    let fst_arg = body.local_decls[Local::from_usize(1)].clone();
+                    let ty = fst_arg.ty;
+                    let is_mut_ref =
+                        matches!(ty.kind(), ty::Ref(_, _, mutbl) if *mutbl == Mutability::Mut);
+                    return fst_arg.mutability.is_mut() || is_mut_ref;
+                }
+            }
+            _ => (),
         }
     }
     false
@@ -358,7 +370,11 @@ pub fn get_all_mutable_methods(tcx: TyCtxt<'_>, def_id: DefId) -> HashMap<DefId,
     for impl_id in impl_vec {
         let associated_items = tcx.associated_items(impl_id);
         for item in associated_items.in_definition_order() {
-            if let ty::AssocKind::Fn = item.kind {
+            if let AssocKind::Fn {
+                name: _,
+                has_self: _,
+            } = item.kind
+            {
                 let item_def_id = item.def_id;
                 if has_mut_self_param(tcx, item_def_id) {
                     // TODO: using dataflow to detect field modificaiton, combined with public fields

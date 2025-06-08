@@ -68,7 +68,7 @@ impl<'tcx> MopAlias<'tcx> {
         let fn_name = get_fn_name(self.tcx, def_id);
         rap_trace!("query_mop: {:?}", fn_name);
         /* filter const mir */
-        if let Some(_other) = self.tcx.hir().body_const_context(def_id.expect_local()) {
+        if let Some(_other) = self.tcx.hir_body_const_context(def_id.expect_local()) {
             return;
         }
 

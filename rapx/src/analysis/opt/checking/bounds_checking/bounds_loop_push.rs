@@ -98,7 +98,7 @@ impl OptCheck for BoundsLoopPushCheck {
         let level = LEVEL.lock().unwrap();
         if *level == 2 {
             let def_id = graph.def_id;
-            let body = tcx.hir().body_owned_by(def_id.as_local().unwrap());
+            let body = tcx.hir_body_owned_by(def_id.as_local().unwrap());
             let typeck_results = tcx.typeck(def_id.as_local().unwrap());
             let mut loop_finder = LoopFinder {
                 typeck_results,

@@ -10,7 +10,7 @@ use rustc_hir::def_id::DefId;
 use rustc_index::IndexVec;
 use rustc_middle::mir::*;
 
-use rustc_target::abi::FieldIdx;
+use rustc_abi::FieldIdx;
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -488,7 +488,7 @@ where
         let mut phiop = PhiOp::new(IntervalType::Basic(BI), sink, inst, 0);
         let bop_index = self.oprs.len();
         for i in 0..operands.len() {
-            let source = match &operands[i.into()] {
+            let source = match &operands[FieldIdx::from_usize(i)] {
                 Operand::Copy(place) | Operand::Move(place) => Some(place),
                 _ => None,
             };
@@ -569,12 +569,12 @@ where
         // let BI: BasicInterval<T> = BasicInterval::new(Range::default(T::min_value()));
         let loc_1: usize = 0;
         let loc_2: usize = 1;
-        let source1 = match &operands[loc_1.into()] {
+        let source1 = match &operands[FieldIdx::from_usize(loc_1)] {
             Operand::Copy(place) | Operand::Move(place) => Some(place),
             _ => None,
         };
         // print!("addvar_in_essa_op{:?}\n", source1.unwrap());
-        let op = &operands[loc_2.into()];
+        let op = &operands[FieldIdx::from_usize(loc_2)];
         let bop_index = self.oprs.len();
 
         let BI: IntervalType<'_, T>;

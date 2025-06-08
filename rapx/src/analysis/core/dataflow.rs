@@ -39,8 +39,7 @@ impl<'tcx> DataFlow<'tcx> {
         for local_def_id in self.tcx.iter_local_def_id() {
             let def_kind = self.tcx.def_kind(local_def_id);
             if matches!(def_kind, DefKind::Fn) || matches!(def_kind, DefKind::AssocFn) {
-                let hir_map = self.tcx.hir();
-                if hir_map.maybe_body_owned_by(local_def_id).is_some() {
+                if self.tcx.hir_maybe_body_owned_by(local_def_id).is_some() {
                     let def_id = local_def_id.to_def_id();
                     self.build_graph(def_id);
                 }

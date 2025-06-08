@@ -37,9 +37,7 @@ impl<'tcx> ApiDep<'tcx> {
 
         let mut api_graph = ApiDepGraph::new();
         let mut fn_visitor = FnVisitor::new(self.tcx, &mut api_graph);
-        self.tcx
-            .hir()
-            .visit_all_item_likes_in_crate(&mut fn_visitor);
+        self.tcx.hir_visit_all_item_likes_in_crate(&mut fn_visitor);
         rap_debug!("api-dep find {} APIs.", fn_visitor.fn_cnt());
 
         let statistics = api_graph.statistics();

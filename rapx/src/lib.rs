@@ -33,14 +33,13 @@ use analysis::safedrop::SafeDrop;
 use analysis::senryx::{CheckLevel, SenryxCheck};
 use analysis::unsafety_isolation::{UigInstruction, UnsafetyIsolationCheck};
 use analysis::utils::show_mir::ShowMir;
-use rustc_data_structures::sync::Lrc;
 use rustc_driver::{Callbacks, Compilation};
 use rustc_interface::interface::Compiler;
 use rustc_interface::Config;
 use rustc_middle::ty::TyCtxt;
 use rustc_middle::util::Providers;
 use rustc_session::search_paths::PathKind;
-use std::env;
+use std::{env, sync::Arc};
 use std::path::PathBuf;
 
 // Insert rustc arguments at the beginning of the argument list that RAP wants to be
@@ -99,7 +98,7 @@ impl Callbacks for RapCallback {
                 // HACK: rustc will emit "crate ... required to be available in rlib format, but
                 // was not found in this form" errors once we use `tcx.dependency_formats()` if
                 // there's no rlib provided, so setting a dummy path here to workaround those errors.
-                Lrc::make_mut(&mut crate_source).rlib = Some((PathBuf::new(), PathKind::All));
+                Arc::make_mut(&mut crate_source).rlib = Some((PathBuf::new(), PathKind::All));
                 crate_source
             };
         });

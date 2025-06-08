@@ -47,7 +47,7 @@ impl<'tcx> SafeDrop<'tcx> {
 
 pub fn query_safedrop(tcx: TyCtxt, fn_map: &FnMap, def_id: DefId, adt_owner: AdtOwner) {
     /* filter const mir */
-    if let Some(_other) = tcx.hir().body_const_context(def_id.expect_local()) {
+    if let Some(_other) = tcx.hir_body_const_context(def_id.expect_local()) {
         return;
     }
     if tcx.is_mir_available(def_id) {

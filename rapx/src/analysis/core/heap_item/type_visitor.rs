@@ -1,3 +1,4 @@
+use rustc_abi::VariantIdx;
 use rustc_middle::mir::visit::{TyContext, Visitor};
 use rustc_middle::mir::{
     BasicBlock, BasicBlockData, Body, Local, LocalDecl, Operand, TerminatorKind,
@@ -7,7 +8,6 @@ use rustc_middle::ty::{
     self, GenericArgKind, Ty, TyCtxt, TyKind, TypeSuperVisitable, TypeVisitable, TypeVisitor,
 };
 use rustc_span::def_id::DefId;
-use rustc_target::abi::VariantIdx;
 
 use std::collections::HashMap;
 use std::ops::ControlFlow;
@@ -224,7 +224,7 @@ impl<'tcx, 'a> TypeAnalysis<'tcx, 'a> {
                         if field_adt_def.is_phantom_data() {
                             // Extract all generic args in the type
                             for generic_arg in *field_substs {
-                                match generic_arg.unpack() {
+                                match generic_arg.kind() {
                                     GenericArgKind::Type(g_ty) => {
                                         let mut raw_generic_field_subst =
                                             IsolatedParamFieldSubst::new();
@@ -431,7 +431,7 @@ impl<'tcx, 'a> TypeVisitor<TyCtxt<'tcx>> for IsolatedParamPropagation<'tcx, 'a> 
 
                 let mut map_raw_generic_field_subst = HashMap::new();
                 for (index, subst) in substs.iter().enumerate() {
-                    match subst.unpack() {
+                    match subst.kind() {
                         GenericArgKind::Lifetime(..) => continue,
                         GenericArgKind::Const(..) => continue,
                         GenericArgKind::Type(g_ty) => {

@@ -247,7 +247,11 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                     for impl_id in impl_vec {
                         let associated_items = tcx.associated_items(impl_id);
                         for item in associated_items.in_definition_order() {
-                            if let ty::AssocKind::Fn = item.kind {
+                            if let ty::AssocKind::Fn {
+                                name: _,
+                                has_self: _,
+                            } = item.kind
+                            {
                                 let item_def_id = item.def_id;
                                 if !get_sp(self.tcx, item_def_id).is_empty() {
                                     vi_flag = true;

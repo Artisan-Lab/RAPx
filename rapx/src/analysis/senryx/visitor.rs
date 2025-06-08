@@ -270,9 +270,11 @@ impl<'tcx> BodyVisitor<'tcx> {
             }
             TerminatorKind::Drop {
                 place,
-                target,
+                target: _,
                 unwind: _,
                 replace: _,
+                drop: _,
+                async_fut: _,
             } => {
                 let drop_local = self.handle_proj(false, *place);
                 if !self.chains.set_drop(drop_local) {

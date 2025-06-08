@@ -12,8 +12,6 @@ pub struct GenericChecker<'tcx> {
 
 impl<'tcx> GenericChecker<'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>, p_env: ParamEnv<'tcx>) -> Self {
-        let hir = tcx.hir();
-
         let mut trait_bnd_map_for_generic: HashMap<String, HashSet<String>> = HashMap::new();
         let mut satisfied_ty_map_for_generic: HashMap<String, HashSet<Ty<'tcx>>> = HashMap::new();
 
@@ -34,11 +32,15 @@ impl<'tcx> GenericChecker<'tcx> {
                 trait_bnd_set.insert(trait_name.clone());
 
                 // for each implementation
-                for &def_id in hir.trait_impls(trait_def_id) {
+                for def_id in tcx.all_impls(trait_def_id) {
                     // impl_id: LocalDefId
-                    let impl_owner_id = tcx.hir_owner_node(OwnerId { def_id }).def_id();
+                    let impl_owner_id = tcx
+                        .hir_owner_node(OwnerId {
+                            def_id: def_id.expect_local(),
+                        })
+                        .def_id();
 
-                    let item = hir.item(ItemId {
+                    let item = tcx.hir_item(ItemId {
                         owner_id: impl_owner_id,
                     });
                     if_chain! {

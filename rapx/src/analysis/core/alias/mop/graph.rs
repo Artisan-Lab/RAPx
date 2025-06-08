@@ -361,6 +361,8 @@ impl<'tcx> MopGraph<'tcx> {
                     ref target,
                     ref unwind,
                     replace: _,
+                    drop: _,
+                    async_fut: _,
                 } => {
                     cur_bb.add_next(target.as_usize());
                     if let UnwindAction::Cleanup(target) = unwind {

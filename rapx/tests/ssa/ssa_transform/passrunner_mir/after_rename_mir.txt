@@ -36,8 +36,8 @@ fn main() -> () {
     }
 
     bb1: {
-        _20 = (copy _5, copy _33);
-        _21 = (copy _2, copy _35);
+        _20 = (copy _2, copy _35);
+        _21 = (copy _5, copy _33);
         _22 = (copy _6, copy _32);
         _23 = (copy _1, copy _34);
         StorageLive(_3);
@@ -60,7 +60,7 @@ fn main() -> () {
 
     bb3: {
         _25 = (copy _5, copy _30);
-        _26 = (copy _21, copy _2);
+        _26 = (copy _20, copy _2);
         _27 = (copy _6, copy _31);
         StorageLive(_8);
         StorageLive(_9);

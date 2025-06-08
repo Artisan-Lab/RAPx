@@ -21,6 +21,8 @@ impl<'tcx> SafeDropGraph<'tcx> {
                     target: _,
                     unwind: _,
                     replace: _,
+                    drop: _,
+                    async_fut: _,
                 } => {
                     if !self.drop_heap_item_check(place, tcx) {
                         continue;

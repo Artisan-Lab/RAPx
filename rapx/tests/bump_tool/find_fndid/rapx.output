@@ -1,0 +1,800 @@
+    Checking find_fndid v0.1.0 (/home/aisr/RAPx/rapx/tests/bump_tool/find_fndid)
+16:07:19|RAP|INFO|: Start analysis with RAP.
+warning: variable does not need to be mutable
+  --> src/main.rs:83:9
+   |
+83 |     let mut b = Box::new(1);
+   |         ----^
+   |         |
+   |         help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` on by default
+
+warning: unused variable: `b`
+  --> src/main.rs:88:9
+   |
+88 |     let b = Box::new(1).clone();
+   |         ^ help: if this is intentional, prefix it with an underscore: `_b`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: function `t12` is never used
+  --> src/main.rs:82:11
+   |
+82 | unsafe fn t12() {
+   |           ^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: unused arithmetic operation that must be used
+  --> src/main.rs:53:9
+   |
+53 |         x + 1;
+   |         ^^^^^ the arithmetic operation produces a value
+   |
+   = note: `#[warn(unused_must_use)]` on by default
+help: use `let _ = ...` to ignore the resulting value
+   |
+53 |         let _ = x + 1;
+   |         +++++++
+
+warning: unnecessary allocation, use `&` instead
+  --> src/main.rs:88:13
+   |
+88 |     let b = Box::new(1).clone();
+   |             ^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_allocation)]` on by default
+
+16:07:19|RAP|INFO|: Show MIR
+16:07:19|RAP|INFO|: DefId(0:10 ~ find_fndid[b526]::main)
+16:07:19|RAP|INFO|: _0:  @ () 
+_1:  @ () 
+_2:  @ () 
+_3:  @ () 
+_4:  @ () 
+_5:  @ () 
+_6:  @ () 
+_7:  @ () 
+_8:  @ () 
+_9:  @ () 
+_10:  @ () 
+_11:  @ () 
+
+16:07:19|RAP|INFO|: bb 0 {
+CleanUp: false
+    StorageLive(_1) @ StorageLive
+    _1 = t1() -> [return: bb1, unwind continue] @ Call: FnDid: 11
+}
+bb 1 {
+CleanUp: false
+    StorageDead(_1) @ StorageDead
+    StorageLive(_2) @ StorageLive
+    _2 = t2() -> [return: bb2, unwind continue] @ Call: FnDid: 12
+}
+bb 2 {
+CleanUp: false
+    StorageDead(_2) @ StorageDead
+    StorageLive(_3) @ StorageLive
+    _3 = t3() -> [return: bb3, unwind continue] @ Call: FnDid: 13
+}
+bb 3 {
+CleanUp: false
+    StorageDead(_3) @ StorageDead
+    StorageLive(_4) @ StorageLive
+    _4 = t4() -> [return: bb4, unwind continue] @ Call: FnDid: 23
+}
+bb 4 {
+CleanUp: false
+    StorageDead(_4) @ StorageDead
+    StorageLive(_5) @ StorageLive
+    _5 = t5() -> [return: bb5, unwind continue] @ Call: FnDid: 14
+}
+bb 5 {
+CleanUp: false
+    StorageDead(_5) @ StorageDead
+    StorageLive(_6) @ StorageLive
+    _6 = t6() -> [return: bb6, unwind continue] @ Call: FnDid: 15
+}
+bb 6 {
+CleanUp: false
+    StorageDead(_6) @ StorageDead
+    StorageLive(_7) @ StorageLive
+    _7 = t7() -> [return: bb7, unwind continue] @ Call: FnDid: 16
+}
+bb 7 {
+CleanUp: false
+    StorageDead(_7) @ StorageDead
+    StorageLive(_8) @ StorageLive
+    _8 = t8() -> [return: bb8, unwind continue] @ Call: FnDid: 18
+}
+bb 8 {
+CleanUp: false
+    StorageDead(_8) @ StorageDead
+    StorageLive(_9) @ StorageLive
+    _9 = t9() -> [return: bb9, unwind continue] @ Call: FnDid: 19
+}
+bb 9 {
+CleanUp: false
+    StorageDead(_9) @ StorageDead
+    StorageLive(_10) @ StorageLive
+    _10 = t10() -> [return: bb10, unwind continue] @ Call: FnDid: 20
+}
+bb 10 {
+CleanUp: false
+    StorageDead(_10) @ StorageDead
+    StorageLive(_11) @ StorageLive
+    _11 = t11() -> [return: bb11, unwind continue] @ Call: FnDid: 21
+}
+bb 11 {
+CleanUp: false
+    StorageDead(_11) @ StorageDead
+    Assign((_0, const ())) @ _0=const () @ Use
+    return @ Return
+}
+
+16:07:19|RAP|INFO|: DefId(0:11 ~ find_fndid[b526]::t1)
+16:07:19|RAP|INFO|: _0:  @ () 
+_1:  @ std::string::String 
+_2:  @ () 
+_3:  @ std::string::String 
+
+16:07:19|RAP|INFO|: bb 0 {
+CleanUp: false
+    StorageLive(_1) @ StorageLive
+    _1 = <std::string::String as std::convert::From<&str>>::from(const "a") -> [return: bb1, unwind continue] @ Call: FnDid: 3487
+}
+bb 1 {
+CleanUp: false
+    StorageLive(_2) @ StorageLive
+    StorageLive(_3) @ StorageLive
+    Assign((_3, move _1)) @ _3=move _1 @ Use
+    _2 = std::mem::drop::<std::string::String>(move _3) -> [return: bb2, unwind: bb3] @ Call: FnDid: 2435
+}
+bb 2 {
+CleanUp: false
+    StorageDead(_3) @ StorageDead
+    StorageDead(_2) @ StorageDead
+    Assign((_0, const ())) @ _0=const () @ Use
+    StorageDead(_1) @ StorageDead
+    return @ Return
+}
+bb 3 {
+CleanUp: true
+    resume @ UnwindResume
+}
+
+16:07:19|RAP|INFO|: DefId(0:12 ~ find_fndid[b526]::t2)
+16:07:19|RAP|INFO|: _0:  @ () 
+_1:  @ &'{erased} mut i32 
+_2:  @ std::boxed::Box<i32, std::alloc::Global> 
+_3:  @ () 
+_4:  @ *mut i32 
+_5:  @ *mut i32 
+
+16:07:19|RAP|INFO|: bb 0 {
+CleanUp: false
+    StorageLive(_1) @ StorageLive
+    StorageLive(_2) @ StorageLive
+    _2 = std::boxed::Box::<i32>::new(const 1_i32) -> [return: bb1, unwind continue] @ Call: FnDid: 681
+}
+bb 1 {
+CleanUp: false
+    _1 = std::boxed::Box::<i32>::leak::<'_>(move _2) -> [return: bb2, unwind: bb4] @ Call: FnDid: 744
+}
+bb 2 {
+CleanUp: false
+    StorageDead(_2) @ StorageDead
+    StorageLive(_3) @ StorageLive
+    StorageLive(_4) @ StorageLive
+    StorageLive(_5) @ StorageLive
+    Assign((_5, &raw mut (*_1))) @ _5=&raw mut (*_1) @ RawPtr
+    Assign((_4, copy _5)) @ _4=copy _5 @ Use
+    _3 = std::ptr::drop_in_place::<i32>(move _4) -> [return: bb3, unwind continue] @ Call: FnDid: 3040
+}
+bb 3 {
+CleanUp: false
+    StorageDead(_4) @ StorageDead
+    StorageDead(_5) @ StorageDead
+    StorageDead(_3) @ StorageDead
+    Assign((_0, const ())) @ _0=const () @ Use
+    StorageDead(_1) @ StorageDead
+    return @ Return
+}
+bb 4 {
+CleanUp: true
+    resume @ UnwindResume
+}
+
+16:07:19|RAP|INFO|: DefId(0:13 ~ find_fndid[b526]::t3)
+16:07:19|RAP|INFO|: _0:  @ () 
+_1:  @ std::mem::ManuallyDrop<std::boxed::Box<i32, std::alloc::Global>> 
+_2:  @ std::boxed::Box<i32, std::alloc::Global> 
+_3:  @ () 
+_4:  @ &'{erased} mut std::mem::ManuallyDrop<std::boxed::Box<i32, std::alloc::Global>> 
+_5:  @ &'{erased} mut std::mem::ManuallyDrop<std::boxed::Box<i32, std::alloc::Global>> 
+
+16:07:19|RAP|INFO|: bb 0 {
+CleanUp: false
+    StorageLive(_1) @ StorageLive
+    StorageLive(_2) @ StorageLive
+    _2 = std::boxed::Box::<i32>::new(const 1_i32) -> [return: bb1, unwind continue] @ Call: FnDid: 681
+}
+bb 1 {
+CleanUp: false
+    _1 = std::mem::ManuallyDrop::<std::boxed::Box<i32>>::new(move _2) -> [return: bb2, unwind: bb4] @ Call: FnDid: 2254
+}
+bb 2 {
+CleanUp: false
+    StorageDead(_2) @ StorageDead
+    StorageLive(_3) @ StorageLive
+    StorageLive(_4) @ StorageLive
+    StorageLive(_5) @ StorageLive
+    Assign((_5, &mut _1)) @ _5=&mut _1 @ Ref
+    Assign((_4, &mut (*_5))) @ _4=&mut (*_5) @ Ref
+    _3 = std::mem::ManuallyDrop::<std::boxed::Box<i32>>::drop(move _4) -> [return: bb3, unwind continue] @ Call: FnDid: 2259
+}
+bb 3 {
+CleanUp: false
+    StorageDead(_4) @ StorageDead
+    StorageDead(_5) @ StorageDead
+    StorageDead(_3) @ StorageDead
+    Assign((_0, const ())) @ _0=const () @ Use
+    StorageDead(_1) @ StorageDead
+    return @ Return
+}
+bb 4 {
+CleanUp: true
+    resume @ UnwindResume
+}
+
+16:07:19|RAP|INFO|: DefId(0:14 ~ find_fndid[b526]::t5)
+16:07:19|RAP|INFO|: _0:  @ () 
+_1:  @ std::mem::MaybeUninit<std::option::Option<std::vec::Vec<u32, std::alloc::Global>>> 
+_2:  @ &'{erased} mut std::option::Option<std::vec::Vec<u32, std::alloc::Global>> 
+_3:  @ &'{erased} mut std::mem::MaybeUninit<std::option::Option<std::vec::Vec<u32, std::alloc::Global>>> 
+_4:  @ std::option::Option<std::vec::Vec<u32, std::alloc::Global>> 
+_5:  @ std::vec::Vec<u32, std::alloc::Global> 
+_6:  @ std::boxed::Box<[u32], std::alloc::Global> 
+_7:  @ std::boxed::Box<[u32; 3_usize], std::alloc::Global> 
+_8:  @ usize 
+_9:  @ usize 
+_10:  @ *mut u8 
+_11:  @ std::boxed::Box<[u32; 3_usize], std::alloc::Global> 
+_12:  @ () 
+_13:  @ &'{erased} mut std::mem::MaybeUninit<std::option::Option<std::vec::Vec<u32, std::alloc::Global>>> 
+_14:  @ *const [u32; 3_usize] 
+_15:  @ *const () 
+_16:  @ usize 
+_17:  @ usize 
+_18:  @ usize 
+_19:  @ usize 
+_20:  @ bool 
+_21:  @ *const () 
+_22:  @ usize 
+_23:  @ usize 
+_24:  @ bool 
+_25:  @ bool 
+_26:  @ bool 
+_27:  @ bool 
+
+16:07:19|RAP|INFO|: bb 0 {
+CleanUp: false
+    StorageLive(_1) @ StorageLive
+    _1 = std::mem::MaybeUninit::<std::option::Option<std::vec::Vec<u32>>>::uninit() -> [return: bb1, unwind continue] @ Call: FnDid: 2287
+}
+bb 1 {
+CleanUp: false
+    StorageLive(_2) @ StorageLive
+    StorageLive(_3) @ StorageLive
+    Assign((_3, &mut _1)) @ _3=&mut _1 @ Ref
+    StorageLive(_4) @ StorageLive
+    StorageLive(_5) @ StorageLive
+    StorageLive(_6) @ StorageLive
+    StorageLive(_7) @ StorageLive
+    Assign((_8, SizeOf([u32; 3]))) @ _8=SizeOf([u32; 3]) @ NullaryOp
+    Assign((_9, AlignOf([u32; 3]))) @ _9=AlignOf([u32; 3]) @ NullaryOp
+    _10 = alloc::alloc::exchange_malloc(move _8, move _9) -> [return: bb2, unwind continue] @ Call: FnDid: 147
+}
+bb 2 {
+CleanUp: false
+    StorageLive(_11) @ StorageLive
+    Assign((_11, ShallowInitBox(move _10, [u32; 3]))) @ _11=ShallowInitBox(move _10, [u32; 3]) @ ShallowInitBox
+    Assign((_14, copy ((_11.0: std::ptr::Unique<[u32; 3]>).0: std::ptr::NonNull<[u32; 3]>) as *const [u32; 3] (Transmute))) @ _14=copy ((_11.0: std::ptr::Unique<[u32; 3]>).0: std::ptr::NonNull<[u32; 3]>) as *const [u32; 3] (Transmute) @ Cast
+    Assign((_15, copy _14 as *const () (PtrToPtr))) @ _15=copy _14 as *const () (PtrToPtr) @ Cast
+    Assign((_16, copy _15 as usize (Transmute))) @ _16=copy _15 as usize (Transmute) @ Cast
+    Assign((_17, AlignOf([u32; 3]))) @ _17=AlignOf([u32; 3]) @ NullaryOp
+    Assign((_18, Sub(copy _17, const 1_usize))) @ _18=Sub(copy _17, const 1_usize) @ BinaryOp
+    Assign((_19, BitAnd(copy _16, copy _18))) @ _19=BitAnd(copy _16, copy _18) @ BinaryOp
+    Assign((_20, Eq(copy _19, const 0_usize))) @ _20=Eq(copy _19, const 0_usize) @ BinaryOp
+    assert(copy _20, "misaligned pointer dereference: address must be a multiple of {} but is {}", copy _17, copy _16) -> [success: bb7, unwind unreachable] @ Assert
+}
+bb 3 {
+CleanUp: false
+    StorageDead(_6) @ StorageDead
+    Assign((_4, std::option::Option::<std::vec::Vec<u32>>::Some(move _5))) @ _4=std::option::Option::<std::vec::Vec<u32>>::Some(move _5) @ Aggregate
+    StorageDead(_5) @ StorageDead
+    _2 = std::mem::MaybeUninit::<std::option::Option<std::vec::Vec<u32>>>::write(move _3, move _4) -> [return: bb4, unwind: bb6] @ Call: FnDid: 2289
+}
+bb 4 {
+CleanUp: false
+    StorageDead(_4) @ StorageDead
+    StorageDead(_3) @ StorageDead
+    StorageDead(_2) @ StorageDead
+    StorageLive(_12) @ StorageLive
+    StorageLive(_13) @ StorageLive
+    Assign((_13, &mut _1)) @ _13=&mut _1 @ Ref
+    _12 = std::mem::MaybeUninit::<std::option::Option<std::vec::Vec<u32>>>::assume_init_drop(move _13) -> [return: bb5, unwind continue] @ Call: FnDid: 2294
+}
+bb 5 {
+CleanUp: false
+    StorageDead(_13) @ StorageDead
+    StorageDead(_12) @ StorageDead
+    Assign((_0, const ())) @ _0=const () @ Use
+    StorageDead(_1) @ StorageDead
+    return @ Return
+}
+bb 6 {
+CleanUp: true
+    resume @ UnwindResume
+}
+bb 7 {
+CleanUp: false
+    Assign((_21, copy _14 as *const () (PtrToPtr))) @ _21=copy _14 as *const () (PtrToPtr) @ Cast
+    Assign((_22, copy _21 as usize (Transmute))) @ _22=copy _21 as usize (Transmute) @ Cast
+    Assign((_23, SizeOf([u32; 3]))) @ _23=SizeOf([u32; 3]) @ NullaryOp
+    Assign((_24, Ne(copy _23, const 0_usize))) @ _24=Ne(copy _23, const 0_usize) @ BinaryOp
+    Assign((_25, Eq(copy _22, const 0_usize))) @ _25=Eq(copy _22, const 0_usize) @ BinaryOp
+    Assign((_26, BitAnd(copy _25, copy _24))) @ _26=BitAnd(copy _25, copy _24) @ BinaryOp
+    Assign((_27, Not(copy _26))) @ _27=Not(copy _26) @ UnaryOp
+    assert(copy _27, "null pointer dereference occurred") -> [success: bb8, unwind unreachable] @ Assert
+}
+bb 8 {
+CleanUp: false
+    Assign(((*_14), [const 0_u32, const 1_u32, const 2_u32])) @ (*_14)=[const 0_u32, const 1_u32, const 2_u32] @ Aggregate
+    Assign((_7, move _11)) @ _7=move _11 @ Use
+    Assign((_6, move _7 as std::boxed::Box<[u32]> (PointerCoercion(Unsize, Implicit)))) @ _6=move _7 as std::boxed::Box<[u32]> (PointerCoercion(Unsize, Implicit)) @ Cast
+    StorageDead(_11) @ StorageDead
+    StorageDead(_7) @ StorageDead
+    _5 = std::slice::<impl [u32]>::into_vec::<std::alloc::Global>(move _6) -> [return: bb3, unwind: bb6] @ Call: FnDid: 6172
+}
+
+16:07:19|RAP|INFO|: DefId(0:15 ~ find_fndid[b526]::t6)
+16:07:19|RAP|INFO|: _0:  @ () 
+_1:  @ std::boxed::Box<u8, std::alloc::Global> 
+_2:  @ &'{erased} mut u8 
+_3:  @ &'{erased} mut std::boxed::Box<u8, std::alloc::Global> 
+_4:  @ () 
+_5:  @ *mut u8 
+_6:  @ std::alloc::Layout 
+
+16:07:19|RAP|INFO|: bb 0 {
+CleanUp: false
+    StorageLive(_1) @ StorageLive
+    _1 = std::boxed::Box::<u8>::new(const 1_u8) -> [return: bb1, unwind continue] @ Call: FnDid: 681
+}
+bb 1 {
+CleanUp: false
+    StorageLive(_2) @ StorageLive
+    StorageLive(_3) @ StorageLive
+    Assign((_3, &mut _1)) @ _3=&mut _1 @ Ref
+    _2 = <std::boxed::Box<u8> as std::convert::AsMut<u8>>::as_mut(move _3) -> [return: bb2, unwind: bb6] @ Call: FnDid: 3481
+}
+bb 2 {
+CleanUp: false
+    StorageDead(_3) @ StorageDead
+    StorageLive(_4) @ StorageLive
+    StorageLive(_5) @ StorageLive
+    Assign((_5, &raw mut (*_2))) @ _5=&raw mut (*_2) @ RawPtr
+    StorageLive(_6) @ StorageLive
+    _6 = std::alloc::Layout::new::<i32>() -> [return: bb3, unwind: bb6] @ Call: FnDid: 15749
+}
+bb 3 {
+CleanUp: false
+    _4 = std::alloc::dealloc(move _5, move _6) -> [return: bb4, unwind: bb6] @ Call: FnDid: 134
+}
+bb 4 {
+CleanUp: false
+    StorageDead(_6) @ StorageDead
+    StorageDead(_5) @ StorageDead
+    StorageDead(_4) @ StorageDead
+    Assign((_0, const ())) @ _0=const () @ Use
+    StorageDead(_2) @ StorageDead
+    drop(_1) -> [return: bb5, unwind: bb7] @ Drop
+}
+bb 5 {
+CleanUp: false
+    StorageDead(_1) @ StorageDead
+    return @ Return
+}
+bb 6 {
+CleanUp: true
+    drop(_1) -> [return: bb7, unwind terminate(cleanup)] @ Drop
+}
+bb 7 {
+CleanUp: true
+    resume @ UnwindResume
+}
+
+16:07:19|RAP|INFO|: DefId(0:16 ~ find_fndid[b526]::t7)
+16:07:19|RAP|INFO|: _0:  @ () 
+_1:  @ i32 
+_2:  @ Closure(DefId(0:17 ~ find_fndid[b526]::t7::{closure#0}), [i8, Binder { value: extern "RustCall" fn(()), bound_vars: [] }, (&'{erased} i32,)]) 
+_3:  @ &'{erased} i32 
+_4:  @ () 
+_5:  @ &'{erased} mut Closure(DefId(0:17 ~ find_fndid[b526]::t7::{closure#0}), [i8, Binder { value: extern "RustCall" fn(()), bound_vars: [] }, (&'{erased} i32,)]) 
+_6:  @ () 
+
+16:07:19|RAP|INFO|: bb 0 {
+CleanUp: false
+    StorageLive(_1) @ StorageLive
+    Assign((_1, const 1_i32)) @ _1=const 1_i32 @ Use
+    StorageLive(_2) @ StorageLive
+    StorageLive(_3) @ StorageLive
+    Assign((_3, &_1)) @ _3=&_1 @ Ref
+    Assign((_2, {closure@src/main.rs:52:17: 52:19} { x: move _3 })) @ _2={closure@src/main.rs:52:17: 52:19} { x: move _3 } @ Aggregate
+    StorageDead(_3) @ StorageDead
+    StorageLive(_4) @ StorageLive
+    StorageLive(_5) @ StorageLive
+    Assign((_5, &mut _2)) @ _5=&mut _2 @ Ref
+    StorageLive(_6) @ StorageLive
+    Assign((_6, ())) @ _6=() @ Aggregate
+    _4 = <{closure@src/main.rs:52:17: 52:19} as std::ops::FnMut<()>>::call_mut(move _5, move _6) -> [return: bb1, unwind continue] @ Call: FnDid: 4039
+}
+bb 1 {
+CleanUp: false
+    StorageDead(_6) @ StorageDead
+    StorageDead(_5) @ StorageDead
+    StorageDead(_4) @ StorageDead
+    Assign((_0, const ())) @ _0=const () @ Use
+    StorageDead(_2) @ StorageDead
+    StorageDead(_1) @ StorageDead
+    return @ Return
+}
+
+16:07:19|RAP|INFO|: DefId(0:17 ~ find_fndid[b526]::t7::{closure#0})
+16:07:19|RAP|INFO|: _0:  @ () 
+_1:  @ &'{erased} Closure(DefId(0:17 ~ find_fndid[b526]::t7::{closure#0}), [i8, Binder { value: extern "RustCall" fn(()), bound_vars: [] }, (&'{erased} i32,)]) 
+_2:  @ i32 
+_3:  @ i32 
+_4:  @ (i32, bool) 
+_5:  @ &'{erased} i32 
+
+16:07:19|RAP|INFO|: bb 0 {
+CleanUp: false
+    StorageLive(_2) @ StorageLive
+    StorageLive(_3) @ StorageLive
+    Assign((_5, deref_copy ((*_1).0: &i32))) @ _5=deref_copy ((*_1).0: &i32) @ CopyForDeref
+    Assign((_3, copy (*_5))) @ _3=copy (*_5) @ Use
+    Assign((_4, AddWithOverflow(copy _3, const 1_i32))) @ _4=AddWithOverflow(copy _3, const 1_i32) @ BinaryOp
+    assert(!move (_4.1: bool), "attempt to compute `{} + {}`, which would overflow", move _3, const 1_i32) -> [success: bb1, unwind continue] @ Assert
+}
+bb 1 {
+CleanUp: false
+    Assign((_2, move (_4.0: i32))) @ _2=move (_4.0: i32) @ Use
+    StorageDead(_3) @ StorageDead
+    StorageDead(_2) @ StorageDead
+    Assign((_0, const ())) @ _0=const () @ Use
+    return @ Return
+}
+
+16:07:19|RAP|INFO|: DefId(0:18 ~ find_fndid[b526]::t8)
+16:07:19|RAP|INFO|: _0:  @ () 
+_1:  @ std::boxed::Box<i32, std::alloc::Global> 
+_2:  @ *mut i32 
+_3:  @ &'{erased} mut i32 
+_4:  @ &'{erased} mut std::boxed::Box<i32, std::alloc::Global> 
+_5:  @ () 
+_6:  @ *mut i32 
+_7:  @ *const i32 
+_8:  @ *mut i32 
+
+16:07:19|RAP|INFO|: bb 0 {
+CleanUp: false
+    StorageLive(_1) @ StorageLive
+    _1 = std::boxed::Box::<i32>::new(const 1_i32) -> [return: bb1, unwind continue] @ Call: FnDid: 681
+}
+bb 1 {
+CleanUp: false
+    StorageLive(_2) @ StorageLive
+    StorageLive(_3) @ StorageLive
+    StorageLive(_4) @ StorageLive
+    Assign((_4, &mut _1)) @ _4=&mut _1 @ Ref
+    _3 = <std::boxed::Box<i32> as std::convert::AsMut<i32>>::as_mut(move _4) -> [return: bb2, unwind: bb5] @ Call: FnDid: 3481
+}
+bb 2 {
+CleanUp: false
+    Assign((_2, &raw mut (*_3))) @ _2=&raw mut (*_3) @ RawPtr
+    StorageDead(_4) @ StorageDead
+    StorageDead(_3) @ StorageDead
+    StorageLive(_5) @ StorageLive
+    StorageLive(_6) @ StorageLive
+    Assign((_6, copy _2)) @ _6=copy _2 @ Use
+    StorageLive(_7) @ StorageLive
+    StorageLive(_8) @ StorageLive
+    Assign((_8, copy _2)) @ _8=copy _2 @ Use
+    Assign((_7, move _8 as *const i32 (PtrToPtr))) @ _7=move _8 as *const i32 (PtrToPtr) @ Cast
+    StorageDead(_8) @ StorageDead
+    _5 = std::ptr::mut_ptr::<impl *mut i32>::copy_from_nonoverlapping(move _6, move _7, const 0_usize) -> [return: bb3, unwind: bb5] @ Call: FnDid: 2982
+}
+bb 3 {
+CleanUp: false
+    StorageDead(_7) @ StorageDead
+    StorageDead(_6) @ StorageDead
+    StorageDead(_5) @ StorageDead
+    Assign((_0, const ())) @ _0=const () @ Use
+    StorageDead(_2) @ StorageDead
+    drop(_1) -> [return: bb4, unwind: bb6] @ Drop
+}
+bb 4 {
+CleanUp: false
+    StorageDead(_1) @ StorageDead
+    return @ Return
+}
+bb 5 {
+CleanUp: true
+    drop(_1) -> [return: bb6, unwind terminate(cleanup)] @ Drop
+}
+bb 6 {
+CleanUp: true
+    resume @ UnwindResume
+}
+
+16:07:19|RAP|INFO|: DefId(0:19 ~ find_fndid[b526]::t9)
+16:07:19|RAP|INFO|: _0:  @ () 
+_1:  @ std::boxed::Box<i32, std::alloc::Global> 
+_2:  @ *mut i32 
+_3:  @ &'{erased} mut i32 
+_4:  @ &'{erased} mut std::boxed::Box<i32, std::alloc::Global> 
+_5:  @ () 
+_6:  @ *mut i32 
+_7:  @ *mut i32 
+
+16:07:19|RAP|INFO|: bb 0 {
+CleanUp: false
+    StorageLive(_1) @ StorageLive
+    _1 = std::boxed::Box::<i32>::new(const 1_i32) -> [return: bb1, unwind continue] @ Call: FnDid: 681
+}
+bb 1 {
+CleanUp: false
+    StorageLive(_2) @ StorageLive
+    StorageLive(_3) @ StorageLive
+    StorageLive(_4) @ StorageLive
+    Assign((_4, &mut _1)) @ _4=&mut _1 @ Ref
+    _3 = <std::boxed::Box<i32> as std::convert::AsMut<i32>>::as_mut(move _4) -> [return: bb2, unwind: bb5] @ Call: FnDid: 3481
+}
+bb 2 {
+CleanUp: false
+    Assign((_2, &raw mut (*_3))) @ _2=&raw mut (*_3) @ RawPtr
+    StorageDead(_4) @ StorageDead
+    StorageDead(_3) @ StorageDead
+    StorageLive(_5) @ StorageLive
+    StorageLive(_6) @ StorageLive
+    Assign((_6, copy _2)) @ _6=copy _2 @ Use
+    StorageLive(_7) @ StorageLive
+    Assign((_7, copy _2)) @ _7=copy _2 @ Use
+    _5 = std::ptr::mut_ptr::<impl *mut i32>::copy_to_nonoverlapping(move _6, move _7, const 0_usize) -> [return: bb3, unwind: bb5] @ Call: FnDid: 2980
+}
+bb 3 {
+CleanUp: false
+    StorageDead(_7) @ StorageDead
+    StorageDead(_6) @ StorageDead
+    StorageDead(_5) @ StorageDead
+    Assign((_0, const ())) @ _0=const () @ Use
+    StorageDead(_2) @ StorageDead
+    drop(_1) -> [return: bb4, unwind: bb6] @ Drop
+}
+bb 4 {
+CleanUp: false
+    StorageDead(_1) @ StorageDead
+    return @ Return
+}
+bb 5 {
+CleanUp: true
+    drop(_1) -> [return: bb6, unwind terminate(cleanup)] @ Drop
+}
+bb 6 {
+CleanUp: true
+    resume @ UnwindResume
+}
+
+16:07:19|RAP|INFO|: DefId(0:20 ~ find_fndid[b526]::t10)
+16:07:19|RAP|INFO|: _0:  @ () 
+_1:  @ std::boxed::Box<i32, std::alloc::Global> 
+_2:  @ *mut i32 
+_3:  @ &'{erased} mut i32 
+_4:  @ &'{erased} mut std::boxed::Box<i32, std::alloc::Global> 
+_5:  @ () 
+_6:  @ *mut i32 
+_7:  @ *const i32 
+_8:  @ *mut i32 
+
+16:07:19|RAP|INFO|: bb 0 {
+CleanUp: false
+    StorageLive(_1) @ StorageLive
+    _1 = std::boxed::Box::<i32>::new(const 1_i32) -> [return: bb1, unwind continue] @ Call: FnDid: 681
+}
+bb 1 {
+CleanUp: false
+    StorageLive(_2) @ StorageLive
+    StorageLive(_3) @ StorageLive
+    StorageLive(_4) @ StorageLive
+    Assign((_4, &mut _1)) @ _4=&mut _1 @ Ref
+    _3 = <std::boxed::Box<i32> as std::convert::AsMut<i32>>::as_mut(move _4) -> [return: bb2, unwind: bb5] @ Call: FnDid: 3481
+}
+bb 2 {
+CleanUp: false
+    Assign((_2, &raw mut (*_3))) @ _2=&raw mut (*_3) @ RawPtr
+    StorageDead(_4) @ StorageDead
+    StorageDead(_3) @ StorageDead
+    StorageLive(_5) @ StorageLive
+    StorageLive(_6) @ StorageLive
+    Assign((_6, copy _2)) @ _6=copy _2 @ Use
+    StorageLive(_7) @ StorageLive
+    StorageLive(_8) @ StorageLive
+    Assign((_8, copy _2)) @ _8=copy _2 @ Use
+    Assign((_7, move _8 as *const i32 (PtrToPtr))) @ _7=move _8 as *const i32 (PtrToPtr) @ Cast
+    StorageDead(_8) @ StorageDead
+    _5 = std::ptr::mut_ptr::<impl *mut i32>::copy_from(move _6, move _7, const 0_usize) -> [return: bb3, unwind: bb5] @ Call: FnDid: 2981
+}
+bb 3 {
+CleanUp: false
+    StorageDead(_7) @ StorageDead
+    StorageDead(_6) @ StorageDead
+    StorageDead(_5) @ StorageDead
+    Assign((_0, const ())) @ _0=const () @ Use
+    StorageDead(_2) @ StorageDead
+    drop(_1) -> [return: bb4, unwind: bb6] @ Drop
+}
+bb 4 {
+CleanUp: false
+    StorageDead(_1) @ StorageDead
+    return @ Return
+}
+bb 5 {
+CleanUp: true
+    drop(_1) -> [return: bb6, unwind terminate(cleanup)] @ Drop
+}
+bb 6 {
+CleanUp: true
+    resume @ UnwindResume
+}
+
+16:07:19|RAP|INFO|: DefId(0:21 ~ find_fndid[b526]::t11)
+16:07:19|RAP|INFO|: _0:  @ () 
+_1:  @ std::boxed::Box<i32, std::alloc::Global> 
+_2:  @ *mut i32 
+_3:  @ &'{erased} mut i32 
+_4:  @ &'{erased} mut std::boxed::Box<i32, std::alloc::Global> 
+_5:  @ () 
+_6:  @ *mut i32 
+_7:  @ *mut i32 
+
+16:07:19|RAP|INFO|: bb 0 {
+CleanUp: false
+    StorageLive(_1) @ StorageLive
+    _1 = std::boxed::Box::<i32>::new(const 1_i32) -> [return: bb1, unwind continue] @ Call: FnDid: 681
+}
+bb 1 {
+CleanUp: false
+    StorageLive(_2) @ StorageLive
+    StorageLive(_3) @ StorageLive
+    StorageLive(_4) @ StorageLive
+    Assign((_4, &mut _1)) @ _4=&mut _1 @ Ref
+    _3 = <std::boxed::Box<i32> as std::convert::AsMut<i32>>::as_mut(move _4) -> [return: bb2, unwind: bb5] @ Call: FnDid: 3481
+}
+bb 2 {
+CleanUp: false
+    Assign((_2, &raw mut (*_3))) @ _2=&raw mut (*_3) @ RawPtr
+    StorageDead(_4) @ StorageDead
+    StorageDead(_3) @ StorageDead
+    StorageLive(_5) @ StorageLive
+    StorageLive(_6) @ StorageLive
+    Assign((_6, copy _2)) @ _6=copy _2 @ Use
+    StorageLive(_7) @ StorageLive
+    Assign((_7, copy _2)) @ _7=copy _2 @ Use
+    _5 = std::ptr::mut_ptr::<impl *mut i32>::copy_to(move _6, move _7, const 0_usize) -> [return: bb3, unwind: bb5] @ Call: FnDid: 2979
+}
+bb 3 {
+CleanUp: false
+    StorageDead(_7) @ StorageDead
+    StorageDead(_6) @ StorageDead
+    StorageDead(_5) @ StorageDead
+    Assign((_0, const ())) @ _0=const () @ Use
+    StorageDead(_2) @ StorageDead
+    drop(_1) -> [return: bb4, unwind: bb6] @ Drop
+}
+bb 4 {
+CleanUp: false
+    StorageDead(_1) @ StorageDead
+    return @ Return
+}
+bb 5 {
+CleanUp: true
+    drop(_1) -> [return: bb6, unwind terminate(cleanup)] @ Drop
+}
+bb 6 {
+CleanUp: true
+    resume @ UnwindResume
+}
+
+16:07:19|RAP|INFO|: DefId(0:22 ~ find_fndid[b526]::t12)
+16:07:19|RAP|INFO|: _0:  @ () 
+_1:  @ std::boxed::Box<i32, std::alloc::Global> 
+_2:  @ () 
+_3:  @ std::boxed::Box<i32, std::alloc::Global> 
+
+16:07:19|RAP|INFO|: bb 0 {
+CleanUp: false
+    StorageLive(_1) @ StorageLive
+    _1 = std::boxed::Box::<i32>::new(const 1_i32) -> [return: bb1, unwind continue] @ Call: FnDid: 681
+}
+bb 1 {
+CleanUp: false
+    StorageLive(_2) @ StorageLive
+    StorageLive(_3) @ StorageLive
+    Assign((_3, move _1)) @ _3=move _1 @ Use
+    _2 = std::mem::drop::<std::boxed::Box<i32>>(move _3) -> [return: bb2, unwind: bb3] @ Call: FnDid: 2435
+}
+bb 2 {
+CleanUp: false
+    StorageDead(_3) @ StorageDead
+    StorageDead(_2) @ StorageDead
+    Assign((_0, const ())) @ _0=const () @ Use
+    StorageDead(_1) @ StorageDead
+    return @ Return
+}
+bb 3 {
+CleanUp: true
+    resume @ UnwindResume
+}
+
+16:07:19|RAP|INFO|: DefId(0:23 ~ find_fndid[b526]::t4)
+16:07:19|RAP|INFO|: _0:  @ () 
+_1:  @ std::boxed::Box<i32, std::alloc::Global> 
+_2:  @ &'{erased} std::boxed::Box<i32, std::alloc::Global> 
+_3:  @ std::boxed::Box<i32, std::alloc::Global> 
+
+16:07:19|RAP|INFO|: bb 0 {
+CleanUp: false
+    StorageLive(_1) @ StorageLive
+    StorageLive(_2) @ StorageLive
+    StorageLive(_3) @ StorageLive
+    _3 = std::boxed::Box::<i32>::new(const 1_i32) -> [return: bb1, unwind continue] @ Call: FnDid: 681
+}
+bb 1 {
+CleanUp: false
+    Assign((_2, &_3)) @ _2=&_3 @ Ref
+    _1 = <std::boxed::Box<i32> as std::clone::Clone>::clone(move _2) -> [return: bb2, unwind: bb6] @ Call: FnDid: 3217
+}
+bb 2 {
+CleanUp: false
+    StorageDead(_2) @ StorageDead
+    drop(_3) -> [return: bb3, unwind: bb5] @ Drop
+}
+bb 3 {
+CleanUp: false
+    StorageDead(_3) @ StorageDead
+    Assign((_0, const ())) @ _0=const () @ Use
+    drop(_1) -> [return: bb4, unwind: bb7] @ Drop
+}
+bb 4 {
+CleanUp: false
+    StorageDead(_1) @ StorageDead
+    return @ Return
+}
+bb 5 {
+CleanUp: true
+    drop(_1) -> [return: bb7, unwind terminate(cleanup)] @ Drop
+}
+bb 6 {
+CleanUp: true
+    drop(_3) -> [return: bb7, unwind terminate(cleanup)] @ Drop
+}
+bb 7 {
+CleanUp: true
+    resume @ UnwindResume
+}
+
+warning: `find_fndid` (bin "find_fndid") generated 5 warnings (run `cargo fix --bin "find_fndid"` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.17s
