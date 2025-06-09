@@ -34,6 +34,9 @@ impl<'tcx> GenericChecker<'tcx> {
                 // for each implementation
                 for def_id in tcx.all_impls(trait_def_id) {
                     // impl_id: LocalDefId
+                    if !def_id.is_local() {
+                        continue;
+                    }
                     let impl_owner_id = tcx
                         .hir_owner_node(OwnerId {
                             def_id: def_id.expect_local(),

@@ -39,8 +39,8 @@ use rustc_interface::Config;
 use rustc_middle::ty::TyCtxt;
 use rustc_middle::util::Providers;
 use rustc_session::search_paths::PathKind;
-use std::{env, sync::Arc};
 use std::path::PathBuf;
+use std::{env, sync::Arc};
 
 // Insert rustc arguments at the beginning of the argument list that RAP wants to be
 // set per default, for maximal validation power.
