@@ -126,7 +126,7 @@ impl<'tcx> ContainsUnsafe<'tcx> {
 }
 
 impl<'tcx> Visitor<'tcx> for ContainsUnsafe<'tcx> {
-    type NestedFilter = nested_filter::OnlyBodies;
+    // type NestedFilter = nested_filter::OnlyBodies;
 
     //fn nested_visit_map(&mut self) -> Self::Map {
     //    self.tcx.hir()
