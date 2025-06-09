@@ -7,7 +7,7 @@ default-run = "rapx"
 license = "MPL-2.0"
 description = "A static analysis platform for use-after-free, memory leakage detection, etc"
 documentation = "https://artisan-lab.github.io/RAPx-Book/"
-homepage = "https://github.com/Artisan-Lab/RAPx"
+repository = "https://github.com/Artisan-Lab/RAPx"
 readme = "../README.md"
 
 [[bin]]
