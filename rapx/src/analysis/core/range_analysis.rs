@@ -75,8 +75,8 @@ impl<'tcx> SSATrans<'tcx> {
             // passrunner.print_diff(body_mut_ref);
             let essa_mir_string = passrunner.get_final_ssa_as_string(body_mut_ref);
 
-            rap_info!("final SSA {:?}\n", &essa_mir_string);
-            rap_info!("ssa lvalue check true{:?}", lvalue_check(&essa_mir_string));
+            // rap_info!("final SSA {:?}\n", &essa_mir_string);
+            rap_info!("ssa lvalue check {:?}", lvalue_check(&essa_mir_string));
         }
     }
 }
@@ -140,7 +140,7 @@ impl<'tcx> RangeAnalysis<'tcx> {
             let body_mut_ref: &mut Body<'tcx> = unsafe { &mut *(&mut body as *mut Body<'tcx>) };
             let passrunner = PassRunner::PassRunner::new(tcx);
             passrunner.run_pass(body_mut_ref, ssa_def_id, essa_def_id);
-            print_diff(tcx, body_mut_ref);
+            // print_diff(tcx, body_mut_ref);
             let mut cg: ConstraintGraph<'tcx, u32> = ConstraintGraph::new(essa_def_id, ssa_def_id);
             cg.build_graph(body_mut_ref);
             cg.build_nuutila(false);

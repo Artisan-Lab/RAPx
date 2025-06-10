@@ -1,3 +1,24 @@
+// WARNING: This output format is intended for human consumers only
+// and is subject to change without notice. Knock yourself out.
+// HINT: See also -Z dump-mir for MIR at specific points during compilation.
+static _SSAstmt: std::option::Option<SSAstmt> = {
+    let mut _0: std::option::Option<SSAstmt>;
+
+    bb0: {
+        _0 = std::option::Option::<SSAstmt>::None;
+        return;
+    }
+}
+
+static _ESSAstmt: std::option::Option<ESSAstmt> = {
+    let mut _0: std::option::Option<ESSAstmt>;
+
+    bb0: {
+        _0 = std::option::Option::<ESSAstmt>::None;
+        return;
+    }
+}
+
 fn main() -> () {
     let mut _0: ();
     let mut _1: i32;
@@ -36,66 +57,54 @@ fn main() -> () {
     }
 
     bb1: {
-        _20 = (copy _2, copy _35);
-        _21 = (copy _5, copy _33);
-        _22 = (copy _6, copy _32);
-        _23 = (copy _1, copy _34);
         StorageLive(_3);
         StorageLive(_4);
-        _4 = copy _23;
+        _4 = copy _1;
         _3 = Lt(move _4, const 100_i32);
         switchInt(move _3) -> [0: bb9, otherwise: bb2];
     }
 
     bb2: {
-        _24 = (copy _23, const 100_i32, const 1_usize);
         StorageDead(_4);
         StorageLive(_5);
         _5 = const 0_i32;
         StorageLive(_6);
-        _6 = copy _24;
+        _6 = copy _1;
         StorageLive(_7);
         goto -> bb3;
     }
 
     bb3: {
-        _25 = (copy _5, copy _30);
-        _26 = (copy _20, copy _2);
-        _27 = (copy _6, copy _31);
         StorageLive(_8);
         StorageLive(_9);
-        _9 = copy _25;
+        _9 = copy _5;
         StorageLive(_10);
-        _10 = copy _27;
+        _10 = copy _6;
         _8 = Lt(move _9, move _10);
         switchInt(move _8) -> [0: bb7, otherwise: bb4];
     }
 
     bb4: {
-        _28 = (copy _25, copy _27, const 2_usize, const 213134123_usize);
-        _29 = (copy _27, copy _25, const 1_usize, const 213134123_usize);
         StorageDead(_10);
         StorageDead(_9);
-        _11 = AddWithOverflow(copy _29, const 1_i32);
-        assert(!move _11, "attempt to compute `{} + {}`, which would overflow", copy _5, const 1_i32) -> [success: bb5, unwind continue];
+        _11 = AddWithOverflow(copy _5, const 1_i32);
+        assert(!move (_11.1: bool), "attempt to compute `{} + {}`, which would overflow", copy _5, const 1_i32) -> [success: bb5, unwind continue];
     }
 
     bb5: {
-        _30 = move _11;
-        _12 = SubWithOverflow(copy _28, const 1_i32);
-        assert(!move _12, "attempt to compute `{} - {}`, which would overflow", copy _6, const 1_i32) -> [success: bb6, unwind continue];
+        _5 = move (_11.0: i32);
+        _12 = SubWithOverflow(copy _6, const 1_i32);
+        assert(!move (_12.1: bool), "attempt to compute `{} - {}`, which would overflow", copy _6, const 1_i32) -> [success: bb6, unwind continue];
     }
 
     bb6: {
-        _31 = move _12;
+        _6 = move (_12.0: i32);
         _2 = const ();
         StorageDead(_8);
         goto -> bb3;
     }
 
     bb7: {
-        _32 = (copy _25, copy _27, const 1_usize, const 213134123_usize);
-        _33 = (copy _27, copy _25, const 2_usize, const 213134123_usize);
         StorageDead(_10);
         StorageDead(_9);
         StorageLive(_14);
@@ -103,13 +112,13 @@ fn main() -> () {
         StorageDead(_14);
         StorageDead(_8);
         StorageDead(_7);
-        _16 = AddWithOverflow(copy _24, const 1_i32);
-        assert(!move _16, "attempt to compute `{} + {}`, which would overflow", copy _1, const 1_i32) -> [success: bb8, unwind continue];
+        _16 = AddWithOverflow(copy _1, const 1_i32);
+        assert(!move (_16.1: bool), "attempt to compute `{} + {}`, which would overflow", copy _1, const 1_i32) -> [success: bb8, unwind continue];
     }
 
     bb8: {
-        _34 = move _16;
-        _35 = const ();
+        _1 = move (_16.0: i32);
+        _2 = const ();
         StorageDead(_6);
         StorageDead(_5);
         StorageDead(_3);
@@ -117,10 +126,9 @@ fn main() -> () {
     }
 
     bb9: {
-        _36 = (copy _23, const 100_i32, const 2_usize);
         StorageDead(_4);
         StorageLive(_18);
-        _37 = const ();
+        _0 = const ();
         StorageDead(_18);
         StorageDead(_3);
         StorageDead(_1);
