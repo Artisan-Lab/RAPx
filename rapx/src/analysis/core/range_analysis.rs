@@ -75,8 +75,8 @@ impl<'tcx> SSATrans<'tcx> {
             // passrunner.print_diff(body_mut_ref);
             let essa_mir_string = passrunner.get_final_ssa_as_string(body_mut_ref);
 
-            rap_info!("final SSA {:?}\n", &essa_mir_string);
-            rap_info!("ssa lvalue check true{:?}", lvalue_check(&essa_mir_string));
+            // rap_info!("final SSA {:?}\n", &essa_mir_string);
+            rap_info!("ssa lvalue check {:?}", lvalue_check(&essa_mir_string));
         }
     }
 }

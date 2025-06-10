@@ -59,21 +59,21 @@ fn main() -> () {
     }
 
     bb3: {
-        _25 = (copy _6, copy _31);
-        _26 = (copy _5, copy _30);
-        _27 = (copy _21, copy _2);
+        _25 = (copy _5, copy _30);
+        _26 = (copy _21, copy _2);
+        _27 = (copy _6, copy _31);
         StorageLive(_8);
         StorageLive(_9);
-        _9 = copy _26;
+        _9 = copy _25;
         StorageLive(_10);
-        _10 = copy _25;
+        _10 = copy _27;
         _8 = Lt(move _9, move _10);
         switchInt(move _8) -> [0: bb7, otherwise: bb4];
     }
 
     bb4: {
-        _28 = (copy _26, copy _25, const 2_usize, const 213134123_usize);
-        _29 = (copy _25, copy _26, const 1_usize, const 213134123_usize);
+        _28 = (copy _25, copy _27, const 2_usize, const 213134123_usize);
+        _29 = (copy _27, copy _25, const 1_usize, const 213134123_usize);
         StorageDead(_10);
         StorageDead(_9);
         _11 = AddWithOverflow(copy _29, const 1_i32);
@@ -94,8 +94,8 @@ fn main() -> () {
     }
 
     bb7: {
-        _32 = (copy _26, copy _25, const 1_usize, const 213134123_usize);
-        _33 = (copy _25, copy _26, const 2_usize, const 213134123_usize);
+        _32 = (copy _25, copy _27, const 1_usize, const 213134123_usize);
+        _33 = (copy _27, copy _25, const 2_usize, const 213134123_usize);
         StorageDead(_10);
         StorageDead(_9);
         StorageLive(_14);
