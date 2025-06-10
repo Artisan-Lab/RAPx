@@ -126,7 +126,7 @@ impl<'tcx, 'a> TypeAnalysis<'tcx, 'a> {
 
             for field in &variant.fields {
                 let field_ty = field.ty(self.tcx(), substs);
-                field_ty.visit_with(&mut raw_generic);
+                let _ = field_ty.visit_with(&mut raw_generic);
             }
             v_res.push((RawTypeOwner::Unowned, raw_generic.record_mut().clone()));
         }
@@ -187,7 +187,7 @@ impl<'tcx, 'a> TypeAnalysis<'tcx, 'a> {
 
             for field in &variant.fields {
                 let field_ty = field.ty(self.tcx(), substs);
-                field_ty.visit_with(&mut raw_generic_prop);
+                let _ = field_ty.visit_with(&mut raw_generic_prop);
             }
             v_res[variant_index as usize] =
                 (RawTypeOwner::Unowned, raw_generic_prop.record_mut().clone());
@@ -228,7 +228,7 @@ impl<'tcx, 'a> TypeAnalysis<'tcx, 'a> {
                                     GenericArgKind::Type(g_ty) => {
                                         let mut raw_generic_field_subst =
                                             IsolatedParamFieldSubst::new();
-                                        g_ty.visit_with(&mut raw_generic_field_subst);
+                                        let _ = g_ty.visit_with(&mut raw_generic_field_subst);
                                         if raw_generic_field_subst.contains_param() {
                                             {
                                                 // To enhance the soundness of phantom unit, the struct should have a
@@ -237,7 +237,7 @@ impl<'tcx, 'a> TypeAnalysis<'tcx, 'a> {
                                                 for field in adt_def.all_fields() {
                                                     let field_ty = field.ty(self.tcx(), substs);
                                                     let mut find_ptr = FindPtr::new(self.tcx());
-                                                    field_ty.visit_with(&mut find_ptr);
+                                                    let _ = field_ty.visit_with(&mut find_ptr);
                                                     if find_ptr.has_ptr() {
                                                         has_ptr = true;
                                                         break;
@@ -287,7 +287,7 @@ impl<'tcx, 'a> TypeAnalysis<'tcx, 'a> {
 
             for field in &variant.fields {
                 let field_ty = field.ty(self.tcx(), substs);
-                field_ty.visit_with(&mut owner_prop);
+                let _ = field_ty.visit_with(&mut owner_prop);
             }
             v_res[variant_index as usize].0 = owner_prop.ownership();
         }
@@ -436,7 +436,7 @@ impl<'tcx, 'a> TypeVisitor<TyCtxt<'tcx>> for IsolatedParamPropagation<'tcx, 'a> 
                         GenericArgKind::Const(..) => continue,
                         GenericArgKind::Type(g_ty) => {
                             let mut raw_generic_field_subst = IsolatedParamFieldSubst::new();
-                            g_ty.visit_with(&mut raw_generic_field_subst);
+                            let _ = g_ty.visit_with(&mut raw_generic_field_subst);
                             if !raw_generic_field_subst.contains_param() {
                                 continue;
                             }
@@ -469,7 +469,7 @@ impl<'tcx, 'a> TypeVisitor<TyCtxt<'tcx>> for IsolatedParamPropagation<'tcx, 'a> 
 
                 for field in adtdef.all_fields() {
                     let field_ty = field.ty(self.tcx(), substs);
-                    field_ty.visit_with(self);
+                    let _ = field_ty.visit_with(self);
                 }
 
                 self.unique_mut().remove(&adtdef.did());
@@ -517,7 +517,7 @@ impl<'tcx, 'a> TypeVisitor<TyCtxt<'tcx>> for OwnerPropagation<'tcx, 'a> {
 
                 for field in adtdef.all_fields() {
                     let field_ty = field.ty(self.tcx(), substs);
-                    field_ty.visit_with(self);
+                    let _ = field_ty.visit_with(self);
                 }
 
                 self.unique_mut().remove(&adtdef.did());
@@ -544,7 +544,7 @@ impl<'tcx> TypeVisitor<TyCtxt<'tcx>> for FindPtr<'tcx> {
 
                     for field in adtdef.all_fields() {
                         let field_ty = field.ty(self.tcx(), substs);
-                        field_ty.visit_with(self);
+                        let _ = field_ty.visit_with(self);
                     }
                     self.unique_mut().remove(&adtdef.did());
                 }
@@ -602,7 +602,7 @@ impl<'tcx, 'a> TypeVisitor<TyCtxt<'tcx>> for DefaultOwnership<'tcx, 'a> {
                             } else {
                                 let subset_ty = substs[index].expect_ty();
                                 self.unique_mut().remove(&adtdef.did());
-                                subset_ty.visit_with(self);
+                                let _ = subset_ty.visit_with(self);
                             }
                         }
                     }

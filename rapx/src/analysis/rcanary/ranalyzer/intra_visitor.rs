@@ -2663,7 +2663,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                 let mut res = OwnershipLayoutResult::new();
                 let mut default_ownership = DefaultOwnership::new(self.tcx(), self.owner());
 
-                ty.visit_with(&mut default_ownership);
+                let _ = ty.visit_with(&mut default_ownership);
                 res.update_from_default_ownership_visitor(&mut default_ownership);
 
                 res
@@ -2674,7 +2674,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                 for tuple_ty in tuple_ty_list.iter() {
                     let mut default_ownership = DefaultOwnership::new(self.tcx(), self.owner());
 
-                    tuple_ty.visit_with(&mut default_ownership);
+                    let _ = tuple_ty.visit_with(&mut default_ownership);
                     res.update_from_default_ownership_visitor(&mut default_ownership);
                 }
 
@@ -2695,7 +2695,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
                         let mut default_ownership = DefaultOwnership::new(self.tcx(), self.owner());
 
-                        field_ty.visit_with(&mut default_ownership);
+                        let _ = field_ty.visit_with(&mut default_ownership);
                         res.update_from_default_ownership_visitor(&mut default_ownership);
                     }
                 }
@@ -2708,7 +2708,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
                         let mut default_ownership = DefaultOwnership::new(self.tcx(), self.owner());
 
-                        field_ty.visit_with(&mut default_ownership);
+                        let _ = field_ty.visit_with(&mut default_ownership);
                         res.update_from_default_ownership_visitor(&mut default_ownership);
                     }
                 }

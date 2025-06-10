@@ -4,7 +4,6 @@ use rustc_hir::{
     def_id::DefId, intravisit, intravisit::Visitor, Block, Body, BodyId, ExprKind, HirId, Impl,
     ItemKind, QPath,
 };
-use rustc_middle::hir::nested_filter;
 use rustc_middle::ty::{self, Ty, TyCtxt};
 use rustc_span::Span;
 use std::collections::HashSet;
@@ -71,7 +70,7 @@ impl<'tcx> Visitor<'tcx> for RelatedFnCollector<'tcx> {
                 generics: _,
                 body: body_id,
                 has_body: _,
-                ident,
+                ident: _,
             } => {
                 let key = Some(body_id.hir_id);
                 let entry = self.hash_map.entry(key).or_default();

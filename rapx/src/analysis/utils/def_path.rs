@@ -173,7 +173,7 @@ fn local_item_children_by_name(tcx: &TyCtxt<'_>, local_id: LocalDefId, name: Sym
     };
 
     match item_kind {
-        ItemKind::Mod(ident, module) => module
+        ItemKind::Mod(_ident, module) => module
             .item_ids
             .iter()
             .filter_map(|&item_id| res(tcx.hir_ident(item_id.hir_id()), item_id.owner_id))

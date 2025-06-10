@@ -134,7 +134,7 @@ impl<'tcx> Encoder {
                 let mut res = OwnershipLayoutResult::new();
                 let mut default_ownership = DefaultOwnership::new(rcx.tcx(), rcx.adt_owner());
 
-                ty.visit_with(&mut default_ownership);
+                let _ = ty.visit_with(&mut default_ownership);
                 res.update_from_default_ownership_visitor(&mut default_ownership);
 
                 res
@@ -145,7 +145,7 @@ impl<'tcx> Encoder {
                 for tuple_ty in tuple_ty_list.iter() {
                     let mut default_ownership = DefaultOwnership::new(rcx.tcx(), rcx.adt_owner());
 
-                    tuple_ty.visit_with(&mut default_ownership);
+                    let _ = tuple_ty.visit_with(&mut default_ownership);
                     res.update_from_default_ownership_visitor(&mut default_ownership);
                 }
 
@@ -167,7 +167,7 @@ impl<'tcx> Encoder {
                         let mut default_ownership =
                             DefaultOwnership::new(rcx.tcx(), rcx.adt_owner());
 
-                        field_ty.visit_with(&mut default_ownership);
+                        let _ = field_ty.visit_with(&mut default_ownership);
                         res.update_from_default_ownership_visitor(&mut default_ownership);
                     }
                 }
@@ -181,7 +181,7 @@ impl<'tcx> Encoder {
                         let mut default_ownership =
                             DefaultOwnership::new(rcx.tcx(), rcx.adt_owner());
 
-                        field_ty.visit_with(&mut default_ownership);
+                        let _ = field_ty.visit_with(&mut default_ownership);
                         res.update_from_default_ownership_visitor(&mut default_ownership);
                     }
                 }
