@@ -1,21 +1,37 @@
 #![allow(unused_imports)]
 #![allow(unused_variables)]
 #![allow(dead_code)]
+#![allow(unused_assignments)]
+use std::{default, fmt};
 
+use bounds::Bound;
 use intervals::*;
 use num_traits::{Bounded, Num, Zero};
+use z3::ast::Int;
 // use std::ops::Range;
-// use std::ops::{Add, Mul, Sub};
+use std::ops::{Add, Mul, Sub};
 
 use super::domain::*;
+use once_cell::sync::Lazy;
 
+static STR_MIN: Lazy<String> = Lazy::new(|| "Min".to_string());
+static STR_MAX: Lazy<String> = Lazy::new(|| "Max".to_string());
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum RangeType {
     Unknown,
     Regular,
     Empty,
 }
-
+impl fmt::Display for RangeType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            RangeType::Unknown => "Unknown",
+            RangeType::Regular => "Regular",
+            RangeType::Empty => "Empty",
+        };
+        write!(f, "{}", s)
+    }
+}
 #[derive(Debug, PartialEq, Clone)]
 pub struct Range<T>
 where
@@ -25,13 +41,81 @@ where
     pub range: Closed<T>,
 }
 
-// #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-// enum UserType {
-//     Unknown,
-//     I32(i32),
-//     I64(i64),
-//     Usize(usize),
-//     Empty,
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+enum UserType {
+    Unknown,
+    I32(i32),
+    I64(i64),
+    Usize(usize),
+    Empty,
+}
+impl<T> fmt::Display for Range<T>
+where
+    T: IntervalArithmetic,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let lower = if self.range.left.0 == T::min_value() {
+            &*STR_MIN
+        } else if self.range.left.0 == T::max_value() {
+            &*STR_MAX
+        } else {
+            return write!(
+                f,
+                "{} [{}, {}]",
+                self.rtype, self.range.left.0, self.range.right.0
+            );
+        };
+
+        let upper = if self.range.right.0 == T::min_value() {
+            &*STR_MIN
+        } else if self.range.right.0 == T::max_value() {
+            &*STR_MAX
+        } else {
+            return write!(
+                f,
+                "{} [{}, {}]",
+                self.rtype, self.range.left.0, self.range.right.0
+            );
+        };
+        write!(f, "{} [{}, {}]", self.rtype, lower, upper)
+    }
+}
+// fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//     let lower: &Lazy<String> = if self.range.left.0 == T::min_value() {
+//         &STR_MIN
+//     } else if self.range.left.0 == T::max_value() {
+//         &STR_MAX
+//     } else {
+//         static DUMMY: Lazy<String> = Lazy::new(|| String::new());
+//         let tmp = format!("{}", self.range.left.0);
+//         let tmp_clone = tmp.clone();
+//         let local = Lazy::new(|| tmp);
+//         return write!(
+//             f,
+//             "{} [{}, {}]",
+//             self.rtype,
+//             *local,
+//             if self.range.right.0 == T::min_value() {
+//                 &*STR_MIN
+//             } else if self.range.right.0 == T::max_value() {
+//                 &*STR_MAX
+//             } else {
+//                 return write!(f, "{} [{}, {}]", self.rtype, tmp_clone, self.range.right.0);
+//             }
+//         );
+//     };
+
+//     let upper: &Lazy<String> = if self.range.right.0 == T::min_value() {
+//         &STR_MIN
+//     } else if self.range.right.0 == T::max_value() {
+//         &STR_MAX
+//     } else {
+//         let tmp = format!("{}", self.range.right.0);
+//         let local = Lazy::new(|| tmp);
+//         return write!(f, "{} [{}, {}]", self.rtype, &**lower, *local);
+//     };
+
+//     write!(f, "{} [{}, {}]", self.rtype, &**lower, &**upper)
 // }
 
 impl<T> Range<T>
@@ -56,7 +140,12 @@ where
         }
     }
     // Getter for lower bound
-
+    pub fn init(r: Closed<T>) -> Self {
+        Self {
+            rtype: RangeType::Regular,
+            range: r,
+        }
+    }
     pub fn get_lower(&self) -> T {
         self.range.left.0.clone()
     }
@@ -163,27 +252,59 @@ where
     }
 
     pub fn intersectwith(&self, other: &Range<T>) -> Range<T> {
-        let left = std::cmp::max_by(self.get_lower(), other.get_lower(), |a, b| {
-            a.partial_cmp(b).unwrap()
-        });
-        let right = std::cmp::min_by(self.get_upper(), other.get_upper(), |a, b| {
-            a.partial_cmp(b).unwrap()
-        });
-        if left <= right {
-            Range::new(left.clone(), right.clone(), RangeType::Regular)
+        if self.is_unknown() {
+            return Range::new(
+                other.get_lower().clone(),
+                other.get_upper().clone(),
+                RangeType::Regular,
+            );
+        } else if other.is_unknown() {
+            return Range::new(
+                self.get_lower().clone(),
+                self.get_upper().clone(),
+                RangeType::Regular,
+            );
         } else {
-            let empty = T::min_value();
-            Range::new(empty.clone(), empty, RangeType::Empty)
+            let result = self.range.clone().intersect(other.range.clone());
+
+            let range = Range::init(result.unwrap());
+            range
+            // let left = std::cmp::max_by(self.get_lower(), other.get_lower(), |a, b| {
+            //     a.partial_cmp(b).unwrap()
+            // });
+            // let right = std::cmp::min_by(self.get_upper(), other.get_upper(), |a, b| {
+            //     a.partial_cmp(b).unwrap()
+            // });
+            // if left <= right {
+            //     Range::new(left.clone(), right.clone(), RangeType::Regular)
+            // } else {
+            //     let empty = T::min_value();
+            //     Range::new(empty.clone(), empty, RangeType::Empty)
+            // }
         }
     }
     pub fn unionwith(&self, other: &Range<T>) -> Range<T> {
-        let left = std::cmp::min_by(self.get_lower(), other.get_lower(), |a, b| {
-            a.partial_cmp(b).unwrap()
-        });
-        let right = std::cmp::max_by(self.get_upper(), other.get_upper(), |a, b| {
-            a.partial_cmp(b).unwrap()
-        });
-        Range::new(left.clone(), right.clone(), RangeType::Regular)
+        if self.is_unknown() {
+            return Range::new(
+                other.get_lower().clone(),
+                other.get_upper().clone(),
+                RangeType::Regular,
+            );
+        } else if other.is_unknown() {
+            return Range::new(
+                self.get_lower().clone(),
+                self.get_upper().clone(),
+                RangeType::Regular,
+            );
+        } else {
+            let left = std::cmp::min_by(self.get_lower(), other.get_lower(), |a, b| {
+                a.partial_cmp(b).unwrap()
+            });
+            let right = std::cmp::max_by(self.get_upper(), other.get_upper(), |a, b| {
+                a.partial_cmp(b).unwrap()
+            });
+            Range::new(left.clone(), right.clone(), RangeType::Regular)
+        }
     }
     // Check if the range is the maximum range
     // pub fn is_max_range(&self) -> bool {
@@ -207,7 +328,7 @@ where
 pub struct Meet;
 
 impl Meet {
-    pub fn widen<'tcx, T: IntervalArithmetic + Clone + PartialOrd + std::fmt::Debug>(
+    pub fn widen<'tcx, T: IntervalArithmetic + fmt::Debug>(
         op: &mut BasicOpKind<'tcx, T>,
         constant_vector: &[T],
         vars: &mut VarNodes<'tcx, T>,
@@ -257,10 +378,10 @@ impl Meet {
         vars.get_mut(sink)
             .unwrap()
             .set_range(new_sink_interval.clone());
-        // println!(
-        //     "WIDEN::{:?}: {:?} -> {:?}",
-        //     sink, old_interval, new_sink_interval
-        // );
+        println!(
+            "WIDEN::{:?}: {:?} -> {:?}",
+            sink, old_interval, new_sink_interval
+        );
 
         old_interval != new_sink_interval
     }

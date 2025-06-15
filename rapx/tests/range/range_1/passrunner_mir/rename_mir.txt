@@ -36,19 +36,19 @@ fn main() -> () {
     }
 
     bb1: {
-        _20 = SSAstmt;
-        _21 = SSAstmt;
-        _22 = SSAstmt;
-        _23 = SSAstmt;
+        _20 = (copy _5, copy _33);
+        _21 = (copy _6, copy _32);
+        _22 = (copy _1, copy _34);
+        _23 = (copy _2, copy _35);
         StorageLive(_3);
         StorageLive(_4);
-        _4 = copy _23;
+        _4 = copy _22;
         _3 = Lt(move _4, const 100_i32);
         switchInt(move _3) -> [0: bb9, otherwise: bb2];
     }
 
     bb2: {
-        _24 = ESSAstmt;
+        _24 = (copy _22, const 100_i32, const 1_usize);
         StorageDead(_4);
         StorageLive(_5);
         _5 = const 0_i32;
@@ -59,30 +59,30 @@ fn main() -> () {
     }
 
     bb3: {
-        _25 = SSAstmt;
-        _26 = SSAstmt;
-        _27 = SSAstmt;
+        _25 = (copy _6, copy _31);
+        _26 = (copy _5, copy _30);
+        _27 = (copy _23, copy _2);
         StorageLive(_8);
         StorageLive(_9);
         _9 = copy _26;
         StorageLive(_10);
-        _10 = copy _27;
+        _10 = copy _25;
         _8 = Lt(move _9, move _10);
         switchInt(move _8) -> [0: bb7, otherwise: bb4];
     }
 
     bb4: {
-        _28 = ESSAstmt;
-        _29 = ESSAstmt;
+        _28 = (copy _26, copy _25, const 2_usize, const 213134123_usize);
+        _29 = (copy _25, copy _26, const 1_usize, const 213134123_usize);
         StorageDead(_10);
         StorageDead(_9);
-        _11 = AddWithOverflow(copy _28, const 1_i32);
+        _11 = AddWithOverflow(copy _29, const 1_i32);
         assert(!move _11, "attempt to compute `{} + {}`, which would overflow", copy _5, const 1_i32) -> [success: bb5, unwind continue];
     }
 
     bb5: {
         _30 = move _11;
-        _12 = SubWithOverflow(copy _29, const 1_i32);
+        _12 = SubWithOverflow(copy _28, const 1_i32);
         assert(!move _12, "attempt to compute `{} - {}`, which would overflow", copy _6, const 1_i32) -> [success: bb6, unwind continue];
     }
 
@@ -94,8 +94,8 @@ fn main() -> () {
     }
 
     bb7: {
-        _32 = ESSAstmt;
-        _33 = ESSAstmt;
+        _32 = (copy _26, copy _25, const 1_usize, const 213134123_usize);
+        _33 = (copy _25, copy _26, const 2_usize, const 213134123_usize);
         StorageDead(_10);
         StorageDead(_9);
         StorageLive(_14);
@@ -117,7 +117,7 @@ fn main() -> () {
     }
 
     bb9: {
-        _36 = ESSAstmt;
+        _36 = (copy _22, const 100_i32, const 2_usize);
         StorageDead(_4);
         StorageLive(_18);
         _37 = const ();
