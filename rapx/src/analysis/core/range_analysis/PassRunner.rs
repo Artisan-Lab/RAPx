@@ -79,5 +79,6 @@ impl<'tcx> PassRunner<'tcx> {
         replacer.insert_phi_statment(body);
         replacer.insert_essa_statement(body);
         replacer.rename_variables(body);
+        // print_diff(self.tcx, body);
     }
 }
