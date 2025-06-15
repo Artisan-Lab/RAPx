@@ -277,12 +277,6 @@ fn test_ssa_transform() {
 #[test]
 fn test_range_analysis() {
     let output = running_tests_with_arg("range/range_1", "-range");
-    assert_eq!(
-        output.contains("var: _1. Range { rtype: Regular, range: Interval { left: Closed(0), right: Closed(0) } }"),
-        true
-    );
-    assert_eq!(
-        output.contains("var: _5. Range { rtype: Regular, range: Interval { left: Closed(0), right: Closed(0) } }"),
-        true
-    );
+    assert_eq!(output.contains("var: _5. Regular [0, 0]"), true);
+    assert_eq!(output.contains("var: _1. Regular [0, 0]"), true);
 }
