@@ -11,6 +11,8 @@ use z3::ast::Int;
 // use std::ops::Range;
 use std::ops::{Add, Mul, Sub};
 
+use crate::rap_trace;
+
 use super::domain::*;
 use once_cell::sync::Lazy;
 
@@ -378,9 +380,11 @@ impl Meet {
         vars.get_mut(sink)
             .unwrap()
             .set_range(new_sink_interval.clone());
-        println!(
+        rap_trace!(
             "WIDEN::{:?}: {:?} -> {:?}",
-            sink, old_interval, new_sink_interval
+            sink,
+            old_interval,
+            new_sink_interval
         );
 
         old_interval != new_sink_interval

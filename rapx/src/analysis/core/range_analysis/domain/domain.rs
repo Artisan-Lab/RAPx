@@ -5,6 +5,8 @@
 #![allow(unused_parens)]
 #![allow(non_snake_case)]
 
+use crate::rap_trace;
+
 use super::range::{Range, RangeType};
 use num_traits::{Bounded, CheckedAdd, CheckedSub, One, ToPrimitive, Zero};
 use rustc_abi::Size;
@@ -385,7 +387,7 @@ impl<'tcx, T: IntervalArithmetic> BasicOpKind<'tcx, T> {
 
         if let IntervalType::Symb(symbi) = intersect {
             let range = symbi.sym_fix_intersects(v, sink);
-            println!(
+            rap_trace!(
                 "from {:?} to {:?} fix_intersects: {:} -> {}\n",
                 v.get_value().clone(),
                 sink.get_value().clone(),
@@ -535,7 +537,7 @@ impl<'tcx, T: IntervalArithmetic> EssaOp<'tcx, T> {
     pub fn eval(&self, vars: &VarNodes<'tcx, T>) -> Range<T> {
         let source_range = vars[self.source].get_range().clone();
         let result = source_range.intersectwith(self.intersect.get_range());
-        print!(
+        rap_trace!(
             "EssaOp eval: {:?} {} intersectwith {}-> {}\n",
             self.source,
             self.intersect.get_range(),
@@ -672,7 +674,7 @@ impl<'tcx, T: IntervalArithmetic> PhiOp<'tcx, T> {
         for &phisource in self.sources.iter() {
             let node = &vars[phisource];
             result = result.unionwith(node.get_range());
-            print!(
+            rap_trace!(
                 "PhiOp eval:  {} unionwith {} -> {}\n",
                 vars[first].get_range().clone(),
                 node.get_range(),

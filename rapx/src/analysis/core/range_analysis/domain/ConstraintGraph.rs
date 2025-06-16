@@ -8,6 +8,7 @@
 use super::{domain::*, range::RangeType, range::*};
 use crate::rap_debug;
 use crate::rap_info;
+use crate::rap_trace;
 use num_traits::Bounded;
 use once_cell::sync::{Lazy, OnceCell};
 // use rand::Rng;
@@ -91,19 +92,19 @@ where
     }
     pub fn print_vars(&self) {
         for (&key, value) in &self.vars {
-            println!("var: {:?}. {} ", key, value.get_range());
+            rap_trace!("var: {:?}. {} ", key, value.get_range());
         }
     }
     pub fn print_conponent_vars(&self) {
-        println!("====print_conponent_vars====");
+        rap_trace!("====print_conponent_vars====");
         for (key, value) in &self.components {
             if value.len() > 1 {
-                println!("component: {:?} ", key);
+                rap_trace!("component: {:?} ", key);
                 for v in value {
                     if let Some(var_node) = self.vars.get(v) {
-                        println!("var: {:?}. {} ", v, var_node.get_range());
+                        rap_trace!("var: {:?}. {} ", v, var_node.get_range());
                     } else {
-                        println!("var: {:?} not found", v);
+                        rap_trace!("var: {:?} not found", v);
                     }
                 }
             }
@@ -111,23 +112,23 @@ where
     }
     fn print_values_branchmap(&self) {
         for (&key, value) in &self.values_branchmap {
-            println!("vbm place: {:?}. {:?}\n ", key, value);
+            rap_trace!("vbm place: {:?}. {:?}\n ", key, value);
         }
     }
     fn print_symbmap(&self) {
         for (&key, value) in &self.symbmap {
             for op in value.iter() {
                 if let Some(op) = self.oprs.get(*op) {
-                    println!("symbmap op: {:?}. {:?}\n ", key, op);
+                    rap_trace!("symbmap op: {:?}. {:?}\n ", key, op);
                 } else {
-                    println!("symbmap op: {:?} not found\n ", op);
+                    rap_trace!("symbmap op: {:?} not found\n ", op);
                 }
             }
         }
     }
     fn print_defmap(&self) {
         for (key, value) in self.defmap.clone() {
-            println!(
+            rap_trace!(
                 "place: {:?} def in stmt:{:?} {:?}",
                 key,
                 self.oprs[value].get_type_name(),
@@ -143,7 +144,7 @@ where
         for (key, value) in comp_use_map.clone() {
             if component.contains(key) {
                 for v in value {
-                    println!(
+                    rap_trace!(
                         "compusemap place: {:?} use in stmt:{:?} {:?}",
                         key,
                         self.oprs[v].get_type_name(),
@@ -156,7 +157,7 @@ where
     fn print_usemap(&self) {
         for (key, value) in self.usemap.clone() {
             for v in value {
-                println!(
+                rap_trace!(
                     "place: {:?} use in stmt:{:?} {:?}",
                     key,
                     self.oprs[v].get_type_name(),
@@ -184,11 +185,11 @@ where
     }
 
     pub fn build_graph(&mut self, body: &'tcx Body<'tcx>) {
-        print!("====Building graph====\n");
+        rap_trace!("====Building graph====\n");
         self.build_value_maps(body);
-        // print!("varnodes{:?}\n", self.vars);
+        // rap_trace!("varnodes{:?}\n", self.vars);
         self.print_values_branchmap();
-        print!("====build_operations====\n");
+        rap_trace!("====build_operations====\n");
 
         for block in body.basic_blocks.indices() {
             let block_data = &body[block];
@@ -202,7 +203,7 @@ where
         // self.print_vars();
         // self.print_defmap();
         // self.print_usemap();
-        // print!("end\n");
+        // rap_trace!("end\n");
     }
 
     pub fn build_value_maps(&mut self, body: &'tcx Body<'tcx>) {
@@ -211,14 +212,14 @@ where
             if let Some(terminator) = &block_data.terminator {
                 match &terminator.kind {
                     TerminatorKind::SwitchInt { discr, targets } => {
-                        print!("SwitchIntblock{:?}\n", bb);
+                        rap_trace!("SwitchIntblock{:?}\n", bb);
                         self.build_value_branch_map(body, discr, targets, block_data);
                     }
                     TerminatorKind::Goto { target } => {
                         // self.build_value_goto_map(block_index, *target);
                     }
                     _ => {
-                        // println!(
+                        // rap_trace!(
                         //     "BasicBlock {:?} has an unsupported terminator: {:?}",
                         //     block_index, terminator.kind
                         // );
@@ -226,8 +227,8 @@ where
                 }
             }
         }
-        // print!("value_branchmap{:?}\n", self.values_branchmap);
-        // print!("varnodes{:?}\n,", self.vars);
+        // rap_trace!("value_branchmap{:?}\n", self.values_branchmap);
+        // rap_trace!("varnodes{:?}\n,", self.vars);
     }
 
     pub fn build_value_branch_map(
@@ -263,22 +264,22 @@ where
                             };
                         }
                         self.add_varnode(variable);
-                        print!("add_vbm_varnode{:?}\n", variable.clone());
+                        rap_trace!("add_vbm_varnode{:?}\n", variable.clone());
 
                         // let value = c.const_.try_to_scalar_int().unwrap();
                         let value = Self::convert_const(&c.const_).unwrap();
                         let const_range =
                             Range::new(value.clone(), value.clone(), RangeType::Unknown);
-                        print!("cmp_op{:?}\n", cmp_op);
-                        print!("const_in_left{:?}\n", const_in_left);
+                        rap_trace!("cmp_op{:?}\n", cmp_op);
+                        rap_trace!("const_in_left{:?}\n", const_in_left);
                         let mut true_range =
                             self.apply_comparison(value.clone(), cmp_op, true, const_in_left);
                         let mut false_range =
                             self.apply_comparison(value.clone(), cmp_op, false, const_in_left);
                         true_range.set_regular();
                         false_range.set_regular();
-                        // print!("true_range{:?}\n", true_range);
-                        // print!("false_range{:?}\n", false_range);
+                        // rap_trace!("true_range{:?}\n", true_range);
+                        // rap_trace!("false_range{:?}\n", false_range);
                         let target_vec = targets.all_targets();
 
                         let vbm = ValueBranchMap::new(
@@ -303,10 +304,10 @@ where
                         };
                         let target_vec = targets.all_targets();
                         self.add_varnode(&p1);
-                        print!("add_vbm_varnode{:?}\n", p1.clone());
+                        rap_trace!("add_vbm_varnode{:?}\n", p1.clone());
 
                         self.add_varnode(&p2);
-                        print!("add_vbm_varnode{:?}\n", p2.clone());
+                        rap_trace!("add_vbm_varnode{:?}\n", p2.clone());
                         let flipped_binop = Self::flipped_binop(cmp_op).unwrap();
                         let STOp1 = IntervalType::Symb(SymbInterval::new(CR.clone(), p2, cmp_op));
                         let SFOp1 = IntervalType::Symb(SymbInterval::new(CR.clone(), p2, cmp_op));
@@ -440,9 +441,10 @@ where
     }
 
     fn build_value_goto_map(&self, block_index: BasicBlock, target: BasicBlock) {
-        println!(
+        rap_trace!(
             "Building value map for Goto in block {:?} targeting block {:?}",
-            block_index, target
+            block_index,
+            target
         );
     }
     pub fn build_varnodes(&mut self) {
@@ -458,11 +460,11 @@ where
                 if let IntervalType::Symb(symbi) = essaop.get_intersect() {
                     let v = symbi.get_bound();
                     self.symbmap.entry(v).or_insert_with(HashSet::new).insert(i);
-                    println!("symbmap insert {:?} {:?}\n", v, essaop);
+                    rap_trace!("symbmap insert {:?} {:?}\n", v, essaop);
                 }
             }
         }
-        // println!("symbmap: {:?}", self.symbmap);
+        // rap_trace!("symbmap: {:?}", self.symbmap);
     }
     pub fn build_use_map(
         &mut self,
@@ -525,11 +527,11 @@ where
                         AggregateKind::Adt(def_id, _, _, _, _) => {
                             if def_id == self.essa {
                                 self.add_essa_op(sink, inst, operends, block);
-                                // println!("Adt{:?}\n", operends);
+                                // rap_trace!("Adt{:?}\n", operends);
                             }
                             if def_id == self.ssa {
                                 self.add_ssa_op(sink, inst, operends);
-                                // println!("Adt{:?}\n", operends);
+                                // rap_trace!("Adt{:?}\n", operends);
                             }
                         }
                         _ => {}
@@ -549,10 +551,10 @@ where
         inst: &'tcx Statement<'tcx>,
         operands: &'tcx IndexVec<FieldIdx, Operand<'tcx>>,
     ) {
-        print!("ssa_op{:?}\n", inst);
+        rap_trace!("ssa_op{:?}\n", inst);
 
         let sink_node = self.add_varnode(sink);
-        println!("addsink_in_ssa_op{:?}\n", sink_node);
+        rap_trace!("addsink_in_ssa_op{:?}\n", sink_node);
 
         let BI: BasicInterval<T> = BasicInterval::new(Range::default(T::min_value()));
         let mut phiop = PhiOp::new(IntervalType::Basic(BI), sink, inst, 0);
@@ -565,7 +567,7 @@ where
             if let Some(source) = source {
                 self.add_varnode(source);
                 phiop.add_source(source);
-                println!("addvar_in_ssa_op{:?}\n", source);
+                rap_trace!("addvar_in_ssa_op{:?}\n", source);
                 self.usemap.entry(source).or_default().insert(bop_index);
             }
         }
@@ -583,10 +585,10 @@ where
         inst: &'tcx Statement<'tcx>,
         op: &'tcx Operand<'tcx>,
     ) {
-        print!("use_op{:?}\n", inst);
+        rap_trace!("use_op{:?}\n", inst);
 
         let sink_node = self.add_varnode(sink);
-        println!("addsink_in_use_op{:?}\n", sink_node);
+        rap_trace!("addsink_in_use_op{:?}\n", sink_node);
 
         let BI: BasicInterval<T> = BasicInterval::new(Range::default(T::min_value()));
         let mut source: Option<&'tcx Place<'tcx>> = None;
@@ -595,7 +597,7 @@ where
             Operand::Copy(place) | Operand::Move(place) => {
                 source = Some(place);
                 if let Some(source) = source {
-                    println!("addvar_in_use_op{:?}\n", source);
+                    rap_trace!("addvar_in_use_op{:?}\n", source);
 
                     let useop = UseOp::new(IntervalType::Basic(BI), sink, inst, source, 0);
                     // Insert the operation in the graph.
@@ -609,9 +611,9 @@ where
                 }
             }
             Operand::Constant(constant) => {
-                print!("add_constant_op{:?}\n", inst);
+                rap_trace!("add_constant_op{:?}\n", inst);
                 let Some(c) = op.constant() else {
-                    println!("add_constant_op: constant is None\n");
+                    rap_trace!("add_constant_op: constant is None\n");
                     return;
                 };
 
@@ -621,8 +623,8 @@ where
                         value.clone(),
                         RangeType::Regular,
                     ));
-                    println!("set_const {:?} value: {:?}\n", sink_node, value);
-                    // println!("sinknoderange: {:?}\n", sink_node.get_range());
+                    rap_trace!("set_const {:?} value: {:?}\n", sink_node, value);
+                    // rap_trace!("sinknoderange: {:?}\n", sink_node.get_range());
                 } else {
                     sink_node.set_range(Range::default(T::min_value()));
                 };
@@ -637,9 +639,9 @@ where
         operands: &'tcx IndexVec<FieldIdx, Operand<'tcx>>,
         block: BasicBlock,
     ) {
-        // print!("essa_op{:?}\n", inst);
+        // rap_trace!("essa_op{:?}\n", inst);
         let sink_node = self.add_varnode(sink);
-        // println!("addsink_in_essa_op {:?}\n", sink_node);
+        // rap_trace!("addsink_in_essa_op {:?}\n", sink_node);
 
         // let BI: BasicInterval<T> = BasicInterval::new(Range::default(T::min_value()));
         let loc_1: usize = 0;
@@ -655,10 +657,10 @@ where
         if let Operand::Constant(c) = op {
             let vbm = self.values_branchmap.get(source1.unwrap()).unwrap();
             if block == *vbm.get_bb_true() {
-                println!("essa_op true branch{:?}\n", block);
+                rap_trace!("essa_op true branch{:?}\n", block);
                 BI = vbm.get_itv_t();
             } else {
-                println!("essa_op false branch{:?}\n", block);
+                rap_trace!("essa_op false branch{:?}\n", block);
                 BI = vbm.get_itv_f();
             }
             self.usemap
@@ -667,7 +669,7 @@ where
                 .insert(bop_index);
 
             let essaop = EssaOp::new(BI, sink, inst, source1.unwrap(), 0, false);
-            println!(
+            rap_trace!(
                 "addvar_in_essa_op {:?} from const {:?}\n",
                 essaop,
                 source1.unwrap()
@@ -686,10 +688,10 @@ where
         } else {
             let vbm = self.values_branchmap.get(source1.unwrap()).unwrap();
             if block == *vbm.get_bb_true() {
-                println!("essa_op true branch{:?}\n", block);
+                rap_trace!("essa_op true branch{:?}\n", block);
                 BI = vbm.get_itv_t();
             } else {
-                println!("essa_op false branch{:?}\n", block);
+                rap_trace!("essa_op false branch{:?}\n", block);
                 BI = vbm.get_itv_f();
             }
             let source2 = match op {
@@ -706,7 +708,7 @@ where
             // .insert(bop_index);
             let essaop = EssaOp::new(BI, sink, inst, source1.unwrap(), 0, true);
             // Insert the operation in the graph.
-            println!(
+            rap_trace!(
                 "addvar_in_essa_op {:?} from {:?}\n",
                 essaop,
                 source1.unwrap()
@@ -728,10 +730,10 @@ where
         inst: &'tcx Statement<'tcx>,
         op: &'tcx Operand<'tcx>,
     ) {
-        print!("unary_op{:?}\n", inst);
+        rap_trace!("unary_op{:?}\n", inst);
 
         let sink_node = self.add_varnode(sink);
-        println!("addsink_in_unary_op{:?}\n", sink_node);
+        rap_trace!("addsink_in_unary_op{:?}\n", sink_node);
 
         let BI: BasicInterval<T> = BasicInterval::new(Range::default(T::min_value()));
         let loc_1: usize = 0;
@@ -739,7 +741,7 @@ where
             Operand::Copy(place) | Operand::Move(place) => Some(place),
             _ => None,
         };
-        println!("addvar_in_unary_op{:?}\n", source.unwrap());
+        rap_trace!("addvar_in_unary_op{:?}\n", source.unwrap());
         self.add_varnode(source.unwrap());
 
         let unaryop = UnaryOp::new(IntervalType::Basic(BI), sink, inst, source.unwrap(), 0);
@@ -759,16 +761,16 @@ where
         op1: &'tcx Operand<'tcx>,
         op2: &'tcx Operand<'tcx>,
     ) {
-        print!("binary_op{:?}\n", inst);
+        rap_trace!("binary_op{:?}\n", inst);
         let sink_node = self.add_varnode(sink);
-        println!("addsink_in_binary_op{:?}\n", sink_node);
+        rap_trace!("addsink_in_binary_op{:?}\n", sink_node);
         let bop_index = self.oprs.len();
         let BI: BasicInterval<T> = BasicInterval::new(Range::default(T::min_value()));
 
         let source1_place = match op1 {
             Operand::Copy(place) | Operand::Move(place) => {
                 self.add_varnode(place);
-                println!("addvar_in_binary_op{:?}\n", place);
+                rap_trace!("addvar_in_binary_op{:?}\n", place);
 
                 Some(place)
             }
@@ -778,7 +780,7 @@ where
         match op2 {
             Operand::Copy(place) | Operand::Move(place) => {
                 self.add_varnode(place);
-                println!("addvar_in_binary_op{:?}\n", place);
+                rap_trace!("addvar_in_binary_op{:?}\n", place);
 
                 let source2_place = Some(place);
                 let BOP = BinaryOp::new(
@@ -821,10 +823,10 @@ where
             }
         };
 
-        // print!("varnodes{:?}\n", self.vars);
-        // print!("defmap{:?}\n", self.defmap);
-        // print!("usemap{:?}\n", self.usemap);
-        // print!("{:?}add_binary_op{:?}\n", inst,sink);
+        // rap_trace!("varnodes{:?}\n", self.vars);
+        // rap_trace!("defmap{:?}\n", self.defmap);
+        // rap_trace!("usemap{:?}\n", self.usemap);
+        // rap_trace!("{:?}add_binary_op{:?}\n", inst,sink);
         // ...
     }
     fn fix_intersects(&mut self, component: &HashSet<&'tcx Place<'tcx>>) {
@@ -881,9 +883,14 @@ where
         };
 
         self.vars.get_mut(sink).unwrap().set_range(updated.clone());
-        println!(
+        rap_trace!(
             "WIDEN in {} set {:?}: E {} U {} {} -> {}",
-            op, sink, estimated_interval, updated, old_interval, updated
+            op,
+            sink,
+            estimated_interval,
+            updated,
+            old_interval,
+            updated
         );
 
         old_interval != updated
@@ -920,15 +927,20 @@ where
             // tightened = Range::new(old_lower.clone(), new_upper.clone(), RangeType::Regular);
             // hasChanged = true;
         }
-        let mut tightened = Range::new(final_lower, final_upper, RangeType::Regular);
+        let tightened = Range::new(final_lower, final_upper, RangeType::Regular);
 
         self.vars
             .get_mut(sink)
             .unwrap()
             .set_range(tightened.clone());
-        println!(
+        rap_trace!(
             "NARROW in {} set {:?}: E {} U {} {} -> {}",
-            op, sink, estimated_interval, tightened, old_interval, tightened
+            op,
+            sink,
+            estimated_interval,
+            tightened,
+            old_interval,
+            tightened
         );
         let hasChanged = old_interval != tightened;
 
@@ -947,8 +959,7 @@ where
                 for &op in op_set {
                     if self.widen(op) {
                         let sink = self.oprs[op].get_sink();
-                        print!("W {:?}\n", sink);
-
+                        rap_trace!("W {:?}\n", sink);
                         // let sink_node = self.vars.get_mut(sink).unwrap();
                         worklist.push(sink);
                     }
@@ -967,7 +978,7 @@ where
         while let Some(place) = worklist.pop() {
             iteration += 1;
             if (iteration > 1000) {
-                print!("Iteration limit reached, breaking out of pos_update\n");
+                rap_trace!("Iteration limit reached, breaking out of pos_update\n");
                 break;
             }
 
@@ -975,7 +986,7 @@ where
                 for &op in op_set {
                     if self.narrow(op) {
                         let sink = self.oprs[op].get_sink();
-                        print!("N {:?}\n", sink);
+                        rap_trace!("N {:?}\n", sink);
 
                         // let sink_node = self.vars.get_mut(sink).unwrap();
                         worklist.push(sink);
@@ -983,7 +994,7 @@ where
                 }
             }
         }
-        print!("pos_update finished after {} iterations\n", iteration);
+        rap_trace!("pos_update finished after {} iterations\n", iteration);
     }
     fn generate_active_vars(
         &mut self,
@@ -1024,7 +1035,7 @@ where
                 if !component.contains(sink) {
                     let new_range = op.eval(&self.vars);
                     let sink_node = self.vars.get_mut(sink).unwrap();
-                    println!(
+                    rap_trace!(
                         "prop component {:?} set {} to {:?} through {:?}\n",
                         component,
                         new_range,
@@ -1065,10 +1076,10 @@ where
                 components.push(component.clone());
             }
         }
-        print!("TOLO:{:?}\n", components);
+        rap_trace!("TOLO:{:?}\n", components);
 
         for component in components {
-            print!("===start component {:?}===\n", component);
+            rap_trace!("===start component {:?}===\n", component);
             if component.len() == 1 {
                 self.numAloneSCCs += 1;
 
@@ -1087,8 +1098,8 @@ where
                 // self.print_vars();
 
                 self.generate_entry_points(&component, &mut entry_points);
-                print!("entry_points {:?}  \n", entry_points);
-                // print!("comp_use_map {:?}  \n ", comp_use_map);
+                rap_trace!("entry_points {:?}  \n", entry_points);
+                // rap_trace!("comp_use_map {:?}  \n ", comp_use_map);
                 self.pre_update(&comp_use_map, &entry_points);
                 self.fix_intersects(&component);
 
@@ -1107,7 +1118,7 @@ where
         }
     }
     pub fn add_control_dependence_edges(&mut self) {
-        print!("====Add control dependence edges====\n");
+        rap_trace!("====Add control dependence edges====\n");
         self.print_symbmap();
         for (&place, opset) in self.symbmap.iter() {
             for &op in opset.iter() {
@@ -1119,7 +1130,7 @@ where
                     opkind.get_instruction(),
                     place,
                 );
-                print!(
+                rap_trace!(
                     "add control_edge {:?} {:?}\n",
                     control_edge,
                     opkind.get_source()
@@ -1130,7 +1141,7 @@ where
         }
     }
     pub fn del_control_dependence_edges(&mut self) {
-        print!("====Delete control dependence edges====\n");
+        rap_trace!("====Delete control dependence edges====\n");
 
         // 从后往前找到第一个不是 ControlDep 的位置
         let mut remove_from = self.oprs.len();
@@ -1138,7 +1149,7 @@ where
             match &self.oprs[remove_from - 1] {
                 BasicOpKind::ControlDep(dep) => {
                     let place = dep.source;
-                    print!(
+                    rap_trace!(
                         "removing control_edge at idx {}: {:?}\n",
                         remove_from - 1,
                         dep
@@ -1159,7 +1170,7 @@ where
     }
 
     pub fn build_nuutila(&mut self, single: bool) {
-        print!("====Building graph====\n");
+        rap_trace!("====Building graph====\n");
         self.print_usemap();
         self.build_symbolic_intersect_map();
 
@@ -1172,10 +1183,10 @@ where
             self.add_control_dependence_edges();
 
             let places: Vec<_> = self.vars.keys().copied().collect();
-            print!("places{:?}\n", places);
+            rap_trace!("places{:?}\n", places);
             for place in places {
                 if self.dfs[&place] < 0 {
-                    print!("start place{:?}\n", place);
+                    rap_trace!("start place{:?}\n", place);
                     let mut stack = Vec::new();
                     self.visit(place, &mut stack);
                 }
@@ -1183,9 +1194,9 @@ where
 
             self.del_control_dependence_edges();
         }
-        print!("components{:?}\n", self.components);
-        print!("worklist{:?}\n", self.worklist);
-        print!("dfs{:?}\n", self.dfs);
+        rap_trace!("components{:?}\n", self.components);
+        rap_trace!("worklist{:?}\n", self.worklist);
+        rap_trace!("dfs{:?}\n", self.dfs);
     }
     pub fn visit(&mut self, place: &'tcx Place<'tcx>, stack: &mut Vec<&'tcx Place<'tcx>>) {
         self.dfs.entry(place).and_modify(|v| *v = self.index);
@@ -1194,7 +1205,7 @@ where
         let uses = self.usemap.get(place).unwrap().clone();
         for op in uses {
             let name = self.oprs[op].get_sink();
-            print!("place {:?} get name{:?}\n", place, name);
+            rap_trace!("place {:?} get name{:?}\n", place, name);
             if self.dfs.get(name).copied().unwrap_or(-1) < 0 {
                 self.visit(name, stack);
             }
