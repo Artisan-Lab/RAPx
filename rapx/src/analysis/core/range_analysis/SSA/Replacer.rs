@@ -503,10 +503,10 @@ impl<'tcx> Replacer<'tcx> {
                             self.replace_rvalue(rvalue, &bb);
                             self.rename_local_def(place, &bb, true);
                         } else {
-                            self.rename_local_def(place, &bb, true);
+                            self.ssa_rename_local_def(place, &bb, true);
                         }
                     } else {
-                        self.rename_local_def(place, &bb, false);
+                        self.ssa_rename_local_def(place, &bb, false);
                     }
                 }
                 // StatementKind::FakeRead(_, place)
@@ -595,6 +595,46 @@ impl<'tcx> Replacer<'tcx> {
         }
     }
 
+    fn ssa_rename_local_def(&mut self, place: &mut Place<'tcx>, bb: &BasicBlock, not_phi: bool) {
+        // let old_local = place.as_local().as_mut().unwrap();
+        self.update_reachinf_def(&place.local, &bb);
+        let Place {
+            local: old_local,
+            projection: _,
+        } = place;
+
+        let new_local = Local::from_u32(self.ssatransformer.local_index);
+        self.ssatransformer.local_index += 1;
+
+        let _old_local = old_local.clone();
+        self.ssatransformer
+            .ssa_locals_map
+            .entry(*old_local)
+            .or_insert_with(HashSet::new)
+            .insert(new_local.clone());
+
+        *place = Place::from(new_local);
+        self.ssatransformer
+            .local_defination_block
+            .insert(new_local.clone(), bb.clone());
+        let old_local_reaching = self
+            .ssatransformer
+            .reaching_def
+            .get(&_old_local.clone())
+            .unwrap();
+
+        self.ssatransformer
+            .reaching_def
+            .insert(new_local.clone(), *old_local_reaching);
+        self.ssatransformer
+            .reaching_def
+            .insert(_old_local.clone(), Some(new_local.clone()));
+
+        // self.reaching_def
+        //     .entry(old_local)
+        //     .or_default()
+        //     .replace(Some(old_local));
+    }
     fn rename_local_def(&mut self, place: &mut Place<'tcx>, bb: &BasicBlock, not_phi: bool) {
         // let old_local = place.as_local().as_mut().unwrap();
         self.update_reachinf_def(&place.local, &bb);
@@ -602,16 +642,26 @@ impl<'tcx> Replacer<'tcx> {
             local: old_local,
             projection: _,
         } = place;
+        //find the original local defination assign statement
         if self.ssatransformer.skipped.contains(&old_local.as_u32()) && not_phi {
             self.ssatransformer.skipped.remove(&old_local.as_u32());
             self.ssatransformer
                 .reaching_def
                 .insert(*old_local, Some(*old_local));
-
+            self.ssatransformer
+                .locals_map
+                .entry(*old_local)
+                .or_insert_with(HashSet::new)
+                .insert(*old_local);
             return;
         }
         let new_local = Local::from_u32(self.ssatransformer.local_index);
         self.ssatransformer.local_index += 1;
+        self.ssatransformer
+            .locals_map
+            .entry(*old_local)
+            .or_insert_with(HashSet::new)
+            .insert(new_local);
 
         let _old_local = old_local.clone();
         *place = Place::from(new_local);
