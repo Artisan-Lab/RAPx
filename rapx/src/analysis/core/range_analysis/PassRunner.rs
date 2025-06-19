@@ -40,7 +40,7 @@ pub fn lvalue_check(mir_string: &str) -> bool {
 
     for (var, count) in counts {
         if count > 1 {
-            rap_warn!("Variable _{} is used {} times", var, count);
+            rap_warn!("Variable _ {} is used {} times", var, count);
         }
     }
 
@@ -88,7 +88,6 @@ impl<'tcx> PassRunner<'tcx> {
         replacer.insert_essa_statement(body);
         replacer.rename_variables(body);
         self.locals_map = replacer.ssatransformer.locals_map.clone();
-
         // print_diff(self.tcx, body);
     }
 }

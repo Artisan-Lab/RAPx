@@ -278,7 +278,7 @@ fn test_ssa_transform() {
 fn test_range_analysis() {
     let output = running_tests_with_arg("range/range_1", "-range");
 
-    let expected_lines = vec![
+    let expected_ranges = vec![
         "var: _11. Regular [1, 99]",
         "var: _6. Regular [0, 99]",
         "var: _1. Regular [0, 0]",
@@ -297,10 +297,10 @@ fn test_range_analysis() {
         "var: _34. Regular [1, 100]",
     ];
 
-    for expected in expected_lines {
+    for expected in expected_ranges {
         assert!(
             output.contains(expected),
-            "Missing expected output line: '{}'\nFull output:\n{}",
+            "Missing expected range: '{}'\nFull output:\n{}",
             expected,
             output
         );
