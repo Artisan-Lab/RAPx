@@ -10,6 +10,7 @@ use crate::rap_info;
 pub mod PassRunner;
 pub mod SSA;
 pub mod domain;
+use crate::analysis::Analysis;
 use domain::ConstraintGraph::ConstraintGraph;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::DefId;
@@ -91,40 +92,12 @@ impl<'tcx> SSATrans<'tcx> {
     }
 }
 
-pub trait RangeAnalysisStrategy<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
+pub trait RangeAnalyzerTool<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     fn start_analysis(&mut self, def_id: Option<LocalDefId>);
-
     fn get_range(&self, local: Local) -> Option<Range<T>>;
 }
-// pub struct RangeAnalysisRunner<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
-//     pub tcx: TyCtxt<'tcx>,
-//     pub debug: bool,
-//     pub strategy: &'tcx mut dyn RangeAnalysisStrategy<'tcx, T>,
-// }
-// impl<'tcx, T> RangeAnalysisRunner<'tcx, T>
-// where
-//     T: IntervalArithmetic + ConstConvert + Debug,
-// {
-//     pub fn new(
-//         tcx: TyCtxt<'tcx>,
-//         debug: bool,
-//         strategy: &'tcx mut dyn RangeAnalysisStrategy<'tcx, T>,
-//     ) -> Self {
-//         Self {
-//             tcx,
-//             debug,
-//              strategy,
-//         }
-//     }
 
-//     pub fn start(&mut self, def_id: Option<LocalDefId>) {
-//         self.strategy.start_analysis(def_id);
-//     }
-//     pub fn get_range(&self, local: Local) -> Option<Range<T>> {
-//         self.strategy.get_range(local)
-//     }
-// }
-pub struct RangeAnalysis<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
+pub struct RangeAnalyzer<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub tcx: TyCtxt<'tcx>,
     pub debug: bool,
     pub ssa_def_id: Option<DefId>,
@@ -132,9 +105,29 @@ pub struct RangeAnalysis<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub final_vars: HashMap<Local, Range<T>>,
     pub ssa_locals_mapping: HashMap<Local, HashSet<Local>>,
 }
-impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> RangeAnalysisStrategy<'tcx, T>
-    for RangeAnalysis<'tcx, T>
+
+impl<'tcx, T> Analysis for RangeAnalyzer<'tcx, T>
+where
+    T: IntervalArithmetic + ConstConvert + Debug,
 {
+    fn name(&self) -> &'static str {
+        "Range Analysis"
+    }
+
+    fn run(&mut self) {
+        rap_info!("Start range analysis on main function.");
+        self.start(None);
+    }
+
+    fn reset(&mut self) {
+        self.final_vars.clear();
+        self.ssa_locals_mapping.clear();
+    }
+}
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> RangeAnalyzerTool<'tcx, T>
+    for RangeAnalyzer<'tcx, T>
+{
+    //start analysis with a specific function definition ID
     fn start_analysis(&mut self, def_id: Option<LocalDefId>) {
         self.start(def_id);
     }
@@ -143,7 +136,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> RangeAnalysisStrategy<'
         self.final_vars.get(&local).cloned()
     }
 }
-impl<'tcx, T> RangeAnalysis<'tcx, T>
+impl<'tcx, T> RangeAnalyzer<'tcx, T>
 where
     T: IntervalArithmetic + ConstConvert + Debug,
 {

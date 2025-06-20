@@ -26,7 +26,7 @@ use analysis::core::api_dep::ApiDep;
 use analysis::core::call_graph::CallGraph;
 use analysis::core::dataflow::DataFlow;
 use analysis::core::heap_item::TypeAnalysis;
-use analysis::core::range_analysis::{RangeAnalysis, SSATrans};
+use analysis::core::range_analysis::{RangeAnalyzer, SSATrans};
 use analysis::opt::Opt;
 use analysis::rcanary::rCanary;
 use analysis::safedrop::SafeDrop;
@@ -342,10 +342,7 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
         SSATrans::new(tcx, false).start();
     }
     if callback.is_range_analysis_enabled() {
-        let mut analysis = RangeAnalysis::<i32>::new(tcx, false);
-        analysis.start(None);
-        // analysis
-        //     .get_range(rustc_middle::mir::Local::from_u32(12))
-        //     .map(|range| println!("Range for local 12: {}", range));
+        let mut analyzer = RangeAnalyzer::<i32>::new(tcx, false);
+        analyzer.run();
     }
 }
