@@ -12,6 +12,7 @@ pub mod SSA;
 pub mod domain;
 use crate::analysis::Analysis;
 use domain::ConstraintGraph::ConstraintGraph;
+use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::DefId;
 use rustc_hir::def_id::LocalDefId;
@@ -93,8 +94,9 @@ impl<'tcx> SSATrans<'tcx> {
 }
 
 pub trait RangeAnalysis<'tcx, T: IntervalArithmetic + ConstConvert + Debug>: Analysis {
-    fn start_analysis(&mut self, def_id: Option<LocalDefId>);
-    fn get_range(&self, local: Local) -> Option<Range<T>>;
+    fn get_fn_range(&self, def_id: DefId) -> Option<HashMap<Local, Range<T>>>;
+    fn get_all_fn_ranges(&self) -> FxHashMap<DefId, HashMap<Local, Range<T>>>;
+    fn get_fn_local_range(&self, def_id: DefId, local: Local) -> Option<Range<T>>;
 }
 
 pub struct DefaultRange<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
@@ -102,11 +104,10 @@ pub struct DefaultRange<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub debug: bool,
     pub ssa_def_id: Option<DefId>,
     pub essa_def_id: Option<DefId>,
-    pub final_vars: HashMap<Local, Range<T>>,
-    pub ssa_locals_mapping: HashMap<Local, HashSet<Local>>,
+    pub final_vars: FxHashMap<DefId, HashMap<Local, Range<T>>>,
+    pub ssa_locals_mapping: FxHashMap<DefId, HashMap<Local, HashSet<Local>>>,
 }
-
-impl<'tcx, T> Analysis for DefaultRange<'tcx, T>
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> Analysis for DefaultRange<'tcx, T>
 where
     T: IntervalArithmetic + ConstConvert + Debug,
 {
@@ -115,8 +116,17 @@ where
     }
 
     fn run(&mut self) {
-        rap_info!("Start range analysis on main function.");
-        self.start(None);
+        for local_def_id in self.tcx.iter_local_def_id() {
+            if matches!(self.tcx.def_kind(local_def_id), DefKind::Fn) {
+                if self.tcx.hir_maybe_body_owned_by(local_def_id).is_some() {
+                    rap_info!(
+                        "Analyzing function: {}",
+                        self.tcx.def_path_str(local_def_id)
+                    );
+                    self.analyze_mir(local_def_id);
+                }
+            }
+        }
     }
 
     fn reset(&mut self) {
@@ -130,15 +140,23 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> RangeAnalysis<'tcx, T>
 where
     T: IntervalArithmetic + ConstConvert + Debug,
 {
-    //start analysis with a specific function definition ID
-    fn start_analysis(&mut self, def_id: Option<LocalDefId>) {
-        self.start(def_id);
+    fn get_fn_range(&self, def_id: DefId) -> Option<HashMap<Local, Range<T>>> {
+        self.final_vars.get(&def_id).cloned()
     }
 
-    fn get_range(&self, local: Local) -> Option<Range<T>> {
-        self.final_vars.get(&local).cloned()
+    fn get_all_fn_ranges(&self) -> FxHashMap<DefId, HashMap<Local, Range<T>>> {
+        // REFACTOR: Using `.clone()` is more explicit that a copy is being returned.
+        self.final_vars.clone()
+    }
+
+    // REFACTOR: This lookup is now much more efficient.
+    fn get_fn_local_range(&self, def_id: DefId, local: Local) -> Option<Range<T>> {
+        self.final_vars
+            .get(&def_id)
+            .and_then(|vars| vars.get(&local).cloned())
     }
 }
+
 impl<'tcx, T> DefaultRange<'tcx, T>
 where
     T: IntervalArithmetic + ConstConvert + Debug,
@@ -177,26 +195,6 @@ where
         }
     }
 
-    pub fn start(&mut self, def_id: Option<LocalDefId>) {
-        if let Some(def_id) = def_id {
-            self.analyze_mir(def_id);
-            return;
-        } else {
-            for local_def_id in self.tcx.iter_local_def_id() {
-                if matches!(self.tcx.def_kind(local_def_id), DefKind::Fn) {
-                    if self.tcx.hir_maybe_body_owned_by(local_def_id).is_some() {
-                        if let Some(def_id) = self
-                            .tcx
-                            .hir_body_owners()
-                            .find(|id| self.tcx.def_path_str(*id) == "main")
-                        {
-                            self.analyze_mir(def_id);
-                        }
-                    }
-                }
-            }
-        }
-    }
     fn analyze_mir(&mut self, def_id: LocalDefId) {
         let mut body = self.tcx.optimized_mir(def_id).clone();
         {
@@ -215,11 +213,15 @@ where
             let (r#final, not_found) = cg.build_final_vars(&passrunner.locals_map);
             cg.rap_print_final_vars();
 
-            self.ssa_locals_mapping = passrunner.locals_map.clone();
+            self.ssa_locals_mapping
+                .insert(def_id.into(), passrunner.locals_map.clone());
+
+            let mut r_final = HashMap::default();
+
             for (&place, varnode) in r#final.iter() {
-                self.final_vars
-                    .insert(place.local, varnode.get_range().clone());
+                r_final.insert(place.local, varnode.get_range().clone());
             }
+            self.final_vars.insert(def_id.into(), r_final);
         }
     }
 }
