@@ -1,6 +1,6 @@
 use super::graph::*;
 use super::types::*;
-use crate::analysis::core::alias::{FnMap, RetAlias};
+use crate::analysis::core::alias::mop::{FnMap, MopAAFact};
 use crate::analysis::utils::intrinsic_id::*;
 use crate::rap_debug;
 use rustc_hir::def_id::DefId;
@@ -229,20 +229,20 @@ impl<'tcx> MopGraph<'tcx> {
     }
 
     //inter-procedure instruction to merge alias.
-    pub fn merge(&mut self, ret_alias: &RetAlias, arg_vec: &[usize]) {
+    pub fn merge(&mut self, ret_alias: &MopAAFact, arg_vec: &[usize]) {
         rap_debug!("{:?}", ret_alias);
-        if ret_alias.left_index >= arg_vec.len() || ret_alias.right_index >= arg_vec.len() {
+        if ret_alias.lhs_no() >= arg_vec.len() || ret_alias.rhs_no() >= arg_vec.len() {
             rap_debug!("Vector error!");
             return;
         }
-        let left_init = arg_vec[ret_alias.left_index];
-        let mut right_init = arg_vec[ret_alias.right_index];
+        let left_init = arg_vec[ret_alias.lhs_no()];
+        let mut right_init = arg_vec[ret_alias.rhs_no()];
         let mut lv = left_init;
         let mut rv = right_init;
-        for index in ret_alias.left_field_seq.iter() {
+        for index in ret_alias.lhs_fields().iter() {
             if !self.values[lv].fields.contains_key(index) {
-                let need_drop = ret_alias.left_need_drop;
-                let may_drop = ret_alias.left_may_drop;
+                let need_drop = ret_alias.lhs_need_drop;
+                let may_drop = ret_alias.lhs_may_drop;
                 let mut node = ValueNode::new(self.values.len(), left_init, need_drop, may_drop);
                 node.kind = TyKind::RawPtr;
                 node.field_id = *index;
@@ -252,13 +252,13 @@ impl<'tcx> MopGraph<'tcx> {
             }
             lv = *self.values[lv].fields.get(index).unwrap();
         }
-        for index in ret_alias.right_field_seq.iter() {
+        for index in ret_alias.rhs_fields().iter() {
             if self.union_is_same(rv, self.alias_set[rv]) {
                 right_init = self.values[rv].local;
             }
             if !self.values[rv].fields.contains_key(index) {
-                let need_drop = ret_alias.right_need_drop;
-                let may_drop = ret_alias.right_may_drop;
+                let need_drop = ret_alias.rhs_need_drop;
+                let may_drop = ret_alias.rhs_may_drop;
                 let mut node = ValueNode::new(self.values.len(), right_init, need_drop, may_drop);
                 node.kind = TyKind::RawPtr;
                 node.field_id = *index;
@@ -327,7 +327,7 @@ impl<'tcx> MopGraph<'tcx> {
                                 };
                             }
                         }
-                        let mut new_alias = RetAlias::new(
+                        let mut new_alias = MopAAFact::new(
                             left_node.local,
                             left_node.may_drop,
                             left_node.need_drop,
@@ -335,9 +335,9 @@ impl<'tcx> MopGraph<'tcx> {
                             right_node.may_drop,
                             right_node.need_drop,
                         );
-                        new_alias.left_field_seq = self.get_field_seq(left_node);
-                        new_alias.right_field_seq = self.get_field_seq(right_node);
-                        if new_alias.left_index == 0 && new_alias.right_index == 0 {
+                        new_alias.fact.lhs_fields = self.get_field_seq(left_node);
+                        new_alias.fact.rhs_fields = self.get_field_seq(right_node);
+                        if new_alias.lhs_no() == 0 && new_alias.rhs_no() == 0 {
                             return;
                         }
                         self.ret_alias.add_alias(new_alias);

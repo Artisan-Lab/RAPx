@@ -1,24 +1,25 @@
 pub mod mop;
-
+use super::super::Analysis;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
 use std::{collections::HashSet, fmt};
 
-//struct to cache the results for analyzed functions.
-pub type FnMap = FxHashMap<DefId, FnRetAlias>;
-
-/*
- * To store the alias relationships among arguments and return values.
- * Each function may have multiple return instructions, leading to different RetAlias.
- */
-#[derive(Debug, Clone)]
-pub struct FnRetAlias {
-    arg_size: usize,
-    alias_set: HashSet<RetAlias>,
+pub trait AliasAnalysis<T>: Analysis {
+    fn get_fn_alias(&mut self, def_id: DefId) -> T;
+    fn get_all_fn_alias(&mut self) -> FxHashMap<DefId, T>;
 }
 
-impl FnRetAlias {
-    pub fn new(arg_size: usize) -> FnRetAlias {
+/// To store the alias relationships among arguments and return values.
+///
+/// Each function may have multiple return instructions, leading to different RetAlias.
+#[derive(Debug, Clone)]
+pub struct AAResult {
+    arg_size: usize,
+    alias_set: HashSet<AAFact>,
+}
+
+impl AAResult {
+    pub fn new(arg_size: usize) -> AAResult {
         Self {
             arg_size,
             alias_set: HashSet::new(),
@@ -29,40 +30,20 @@ impl FnRetAlias {
         self.arg_size
     }
 
-    pub fn aliases(&self) -> &HashSet<RetAlias> {
+    pub fn aliases(&self) -> &HashSet<AAFact> {
         &self.alias_set
     }
 
-    pub fn add_alias(&mut self, alias: RetAlias) {
+    pub fn add_alias(&mut self, alias: AAFact) {
         self.alias_set.insert(alias);
     }
 
     pub fn len(&self) -> usize {
         self.alias_set.len()
     }
-
-    pub fn sort_alias_index(&mut self) {
-        let alias_set = std::mem::take(&mut self.alias_set);
-        let mut new_alias_set = HashSet::with_capacity(alias_set.len());
-
-        for mut ra in alias_set.into_iter() {
-            if ra.left_index >= ra.right_index {
-                Self::swap_ret_alias_fields(&mut ra);
-            }
-            new_alias_set.insert(ra);
-        }
-        self.alias_set = new_alias_set;
-    }
-
-    pub fn swap_ret_alias_fields(ra: &mut RetAlias) {
-        std::mem::swap(&mut ra.left_index, &mut ra.right_index);
-        std::mem::swap(&mut ra.left_field_seq, &mut ra.right_field_seq);
-        std::mem::swap(&mut ra.left_may_drop, &mut ra.right_may_drop);
-        std::mem::swap(&mut ra.left_need_drop, &mut ra.right_need_drop);
-    }
 }
 
-impl fmt::Display for FnRetAlias {
+impl fmt::Display for AAResult {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -76,70 +57,52 @@ impl fmt::Display for FnRetAlias {
     }
 }
 
-/*
- * To store the alias relationships among arguments and return values.
- */
+/// AAFact is used to store the alias relationships between two places.
+/// The result is field-sensitive.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct RetAlias {
-    pub left_index: usize,
-    pub left_field_seq: Vec<usize>,
-    pub left_may_drop: bool,
-    pub left_need_drop: bool,
-    pub right_index: usize,
-    pub right_field_seq: Vec<usize>,
-    pub right_may_drop: bool,
-    pub right_need_drop: bool,
+pub struct AAFact {
+    pub lhs_no: usize,
+    pub lhs_fields: Vec<usize>,
+    pub rhs_no: usize,
+    pub rhs_fields: Vec<usize>,
 }
 
-impl RetAlias {
-    pub fn new(
-        left_index: usize,
-        left_may_drop: bool,
-        left_need_drop: bool,
-        right_index: usize,
-        right_may_drop: bool,
-        right_need_drop: bool,
-    ) -> RetAlias {
-        RetAlias {
-            left_index,
-            left_field_seq: Vec::<usize>::new(),
-            left_may_drop,
-            left_need_drop,
-            right_index,
-            right_field_seq: Vec::<usize>::new(),
-            right_may_drop,
-            right_need_drop,
+impl AAFact {
+    pub fn new(lhs_no: usize, rhs_no: usize) -> AAFact {
+        AAFact {
+            lhs_no,
+            lhs_fields: Vec::<usize>::new(),
+            rhs_no,
+            rhs_fields: Vec::<usize>::new(),
         }
     }
 
-    fn get_index(index: usize, fields: &[usize], field_sensitive: bool) -> String {
-        let mut result = String::new();
-        result.push_str(&index.to_string());
-        if !field_sensitive {
-            return result;
-        }
-        for num in fields.iter() {
-            result.push('.');
-            result.push_str(&num.to_string());
-        }
-        result
-    }
-
-    fn lhs_str(&self, field_sensitive: bool) -> String {
-        Self::get_index(self.left_index, &self.left_field_seq, field_sensitive)
-    }
-
-    fn rhs_str(&self, field_sensitive: bool) -> String {
-        Self::get_index(self.right_index, &self.right_field_seq, field_sensitive)
-    }
-
-    pub fn valuable(&self) -> bool {
-        return self.left_may_drop && self.right_may_drop;
+    pub fn swap(&mut self) {
+        std::mem::swap(&mut self.lhs_no, &mut self.rhs_no);
+        std::mem::swap(&mut self.lhs_fields, &mut self.rhs_fields);
     }
 }
 
-impl fmt::Display for RetAlias {
+fn aa_place_desc_str(no: usize, fields: &[usize], field_sensitive: bool) -> String {
+    let mut result = String::new();
+    result.push_str(&no.to_string());
+    if !field_sensitive {
+        return result;
+    }
+    for num in fields.iter() {
+        result.push('.');
+        result.push_str(&num.to_string());
+    }
+    result
+}
+
+impl fmt::Display for AAFact {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "({},{})", self.lhs_str(true), self.rhs_str(true))
+        write!(
+            f,
+            "({},{})",
+            aa_place_desc_str(self.lhs_no, &self.lhs_fields, true),
+            aa_place_desc_str(self.rhs_no, &self.rhs_fields, true)
+        )
     }
 }

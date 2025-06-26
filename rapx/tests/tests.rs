@@ -277,6 +277,32 @@ fn test_ssa_transform() {
 #[test]
 fn test_range_analysis() {
     let output = running_tests_with_arg("range/range_1", "-range");
-    assert_eq!(output.contains("var: _5. Regular [0, 0]"), true);
-    assert_eq!(output.contains("var: _1. Regular [0, 0]"), true);
+
+    let expected_ranges = vec![
+        "var: _11. Regular [1, 99]",
+        "var: _6. Regular [0, 99]",
+        "var: _1. Regular [0, 0]",
+        "var: _16. Regular [1, 100]",
+        "var: _9. Regular [0, 99]",
+        "var: _35. Regular [Min, Max]",
+        "var: _7. Regular [Min, Max]",
+        "var: _2. Regular [Min, Max]",
+        "var: _31. Regular [0, 98]",
+        "var: _12. Regular [0, 98]",
+        "var: _10. Regular [0, 99]",
+        "var: _30. Regular [1, 99]",
+        "var: _37. Regular [Min, Max]",
+        "var: _5. Regular [0, 0]",
+        "var: _4. Regular [0, 100]",
+        "var: _34. Regular [1, 100]",
+    ];
+
+    for expected in expected_ranges {
+        assert!(
+            output.contains(expected),
+            "Missing expected range: '{}'\nFull output:\n{}",
+            expected,
+            output
+        );
+    }
 }

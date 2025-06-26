@@ -1,6 +1,6 @@
 use super::graph::*;
 use super::types::*;
-use crate::analysis::core::alias::{FnMap, RetAlias};
+use crate::analysis::core::alias::mop::{FnMap, MopAAFact};
 use crate::rap_error;
 use rustc_middle::mir::{Operand, Place, ProjectionElem, TerminatorKind};
 use rustc_middle::ty;
@@ -230,19 +230,19 @@ impl<'tcx> SafeDropGraph<'tcx> {
     }
 
     //inter-procedure instruction to merge alias.
-    pub fn merge(&mut self, ret_alias: &RetAlias, arg_vec: &Vec<usize>) {
-        if ret_alias.left_index >= arg_vec.len() || ret_alias.right_index >= arg_vec.len() {
+    pub fn merge(&mut self, ret_alias: &MopAAFact, arg_vec: &Vec<usize>) {
+        if ret_alias.lhs_no() >= arg_vec.len() || ret_alias.rhs_no() >= arg_vec.len() {
             rap_error!("Vector error!");
             return;
         }
-        let left_init = arg_vec[ret_alias.left_index];
-        let mut right_init = arg_vec[ret_alias.right_index];
+        let left_init = arg_vec[ret_alias.lhs_no()];
+        let mut right_init = arg_vec[ret_alias.rhs_no()];
         let mut lv = left_init;
         let mut rv = right_init;
-        for index in ret_alias.left_field_seq.iter() {
+        for index in ret_alias.lhs_fields().iter() {
             if self.values[lv].fields.contains_key(&index) == false {
-                let need_drop = ret_alias.left_need_drop;
-                let may_drop = ret_alias.left_may_drop;
+                let need_drop = ret_alias.lhs_need_drop;
+                let may_drop = ret_alias.lhs_may_drop;
                 let mut node = ValueNode::new(self.values.len(), left_init, need_drop, may_drop);
                 node.kind = TyKind::RawPtr;
                 node.birth = self.values[lv].birth;
@@ -254,15 +254,15 @@ impl<'tcx> SafeDropGraph<'tcx> {
             }
             lv = *self.values[lv].fields.get(&index).unwrap();
         }
-        for index in ret_alias.right_field_seq.iter() {
+        for index in ret_alias.rhs_fields().iter() {
             // if self.values[rv].alias[0] != rv {
             if self.union_is_same(rv, self.alias_set[rv]) {
                 rv = self.values[rv].index;
                 right_init = self.values[rv].local;
             }
             if !self.values[rv].fields.contains_key(&index) {
-                let need_drop = ret_alias.right_need_drop;
-                let may_drop = ret_alias.right_may_drop;
+                let need_drop = ret_alias.rhs_need_drop;
+                let may_drop = ret_alias.rhs_may_drop;
                 let mut node =
                     ValueNode::new(self.alias_set.len(), right_init, need_drop, may_drop);
                 node.kind = TyKind::RawPtr;

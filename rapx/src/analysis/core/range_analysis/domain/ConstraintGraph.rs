@@ -51,6 +51,7 @@ pub struct ConstraintGraph<'tcx, T: IntervalArithmetic + Debug> {
     pub worklist: VecDeque<&'tcx Place<'tcx>>,
     pub numAloneSCCs: usize,
     pub numSCCs: usize, // Add a stub for pre_update to resolve the missing method error.
+    pub final_vars: VarNodes<'tcx, T>,
 }
 
 impl<'tcx, T> ConstraintGraph<'tcx, T>
@@ -82,12 +83,39 @@ where
             components: HashMap::new(),
             worklist: VecDeque::new(),
             numAloneSCCs: 0,
-            numSCCs: 0, // oprs:oprs
+            numSCCs: 0,
+            final_vars: VarNodes::new(),
+        }
+    }
+    pub fn build_final_vars(
+        &mut self,
+        locals_map: &HashMap<Local, HashSet<Local>>,
+    ) -> (VarNodes<'tcx, T>, Vec<Local>) {
+        let mut final_vars: VarNodes<'tcx, T> = HashMap::new();
+        let mut not_found: Vec<Local> = Vec::new();
+
+        for (_key_local, local_set) in locals_map {
+            for &local in local_set {
+                let found = self.vars.iter().find(|(place, _)| place.local == local);
+
+                if let Some((&place, var_node)) = found {
+                    final_vars.insert(place, var_node.clone());
+                } else {
+                    not_found.push(local);
+                }
+            }
+        }
+        self.final_vars = final_vars.clone();
+        (final_vars, not_found)
+    }
+    pub fn rap_print_final_vars(&self) {
+        for (&key, value) in &self.final_vars {
+            rap_info!("var: {:?}. {} ", key, value.get_range());
         }
     }
     pub fn rap_print_vars(&self) {
         for (&key, value) in &self.vars {
-            rap_info!("var: {:?}. {} ", key, value.get_range());
+            rap_debug!("var: {:?}. {} ", key, value.get_range());
         }
     }
     pub fn print_vars(&self) {

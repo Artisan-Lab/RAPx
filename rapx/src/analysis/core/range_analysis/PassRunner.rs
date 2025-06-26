@@ -1,5 +1,9 @@
 #![allow(unused_imports)]
 #![allow(unused_variables)]
+#![allow(dead_code)]
+#![allow(unused_assignments)]
+#![allow(unused_parens)]
+#![allow(non_snake_case)]
 use crate::{rap_info, rap_warn};
 
 use super::SSA::SSATransformer::SSATransformer;
@@ -18,6 +22,7 @@ use std::io::Cursor;
 use super::SSA::Replacer::*;
 pub struct PassRunner<'tcx> {
     tcx: TyCtxt<'tcx>,
+    pub locals_map: HashMap<Local, HashSet<Local>>,
 }
 pub fn lvalue_check(mir_string: &str) -> bool {
     let re = regex::Regex::new(r"_(\d+)\s*=").unwrap();
@@ -35,7 +40,7 @@ pub fn lvalue_check(mir_string: &str) -> bool {
 
     for (var, count) in counts {
         if count > 1 {
-            rap_warn!("Variable _{} is used {} times", var, count);
+            rap_warn!("Variable _ {} is used {} times", var, count);
         }
     }
 
@@ -57,7 +62,10 @@ pub fn print_diff<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>) {
 }
 impl<'tcx> PassRunner<'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>) -> Self {
-        Self { tcx }
+        Self {
+            tcx,
+            locals_map: HashMap::default(),
+        }
     }
 
     pub fn get_final_ssa_as_string(&self, body: &Body<'tcx>) -> String {
@@ -68,7 +76,7 @@ impl<'tcx> PassRunner<'tcx> {
         after_mir
     }
 
-    pub fn run_pass(&self, body: &mut Body<'tcx>, ssa_def_id: DefId, essa_def_id: DefId) {
+    pub fn run_pass(&mut self, body: &mut Body<'tcx>, ssa_def_id: DefId, essa_def_id: DefId) {
         let ssatransformer = SSATransformer::new(self.tcx, body, ssa_def_id, essa_def_id);
         ssatransformer.print_ssatransformer();
         let mut replacer = Replacer {
@@ -79,6 +87,7 @@ impl<'tcx> PassRunner<'tcx> {
         replacer.insert_phi_statment(body);
         replacer.insert_essa_statement(body);
         replacer.rename_variables(body);
+        self.locals_map = replacer.ssatransformer.locals_map.clone();
         // print_diff(self.tcx, body);
     }
 }

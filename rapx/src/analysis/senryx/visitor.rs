@@ -1,4 +1,4 @@
-use crate::analysis::core::alias::FnMap;
+use crate::analysis::core::alias::mop::FnMap;
 use crate::analysis::safedrop::graph::SafeDropGraph;
 use crate::analysis::utils::fn_info::display_hashmap;
 use crate::analysis::utils::fn_info::get_all_std_unsafe_callees_block_id;
@@ -444,10 +444,10 @@ impl<'tcx> BodyVisitor<'tcx> {
         // If one of the op is ptr, then alias the pointed node with another.
         if let Some(retalias) = fn_map.get(def_id) {
             for alias_set in retalias.aliases() {
-                let (l, r) = (alias_set.left_index, alias_set.right_index);
+                let (l, r) = (alias_set.fact.lhs_no, alias_set.fact.rhs_no);
                 let (l_fields, r_fields) = (
-                    alias_set.left_field_seq.clone(),
-                    alias_set.right_field_seq.clone(),
+                    alias_set.fact.lhs_fields.clone(),
+                    alias_set.fact.rhs_fields.clone(),
                 );
                 let (l_place, r_place) = (
                     if l != 0 {

@@ -21,18 +21,19 @@ extern crate rustc_span;
 extern crate rustc_target;
 extern crate stable_mir;
 
-use crate::analysis::core::heap_item::TypeAnalysis;
 use analysis::core::alias::mop::MopAlias;
 use analysis::core::api_dep::ApiDep;
 use analysis::core::call_graph::CallGraph;
 use analysis::core::dataflow::DataFlow;
-use analysis::core::range_analysis::{RangeAnalysis, SSATrans};
+use analysis::core::heap_item::TypeAnalysis;
+use analysis::core::range_analysis::{DefaultRange, SSATrans};
 use analysis::opt::Opt;
 use analysis::rcanary::rCanary;
 use analysis::safedrop::SafeDrop;
 use analysis::senryx::{CheckLevel, SenryxCheck};
 use analysis::unsafety_isolation::{UigInstruction, UnsafetyIsolationCheck};
 use analysis::utils::show_mir::ShowMir;
+use analysis::Analysis;
 use rustc_driver::{Callbacks, Compilation};
 use rustc_interface::interface::Compiler;
 use rustc_interface::Config;
@@ -278,7 +279,8 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
     };
 
     if callback.is_mop_enabled() {
-        MopAlias::new(tcx).start();
+        let mut alias = MopAlias::new(tcx);
+        alias.run();
     }
 
     if callback.is_safedrop_enabled() {
@@ -340,6 +342,7 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
         SSATrans::new(tcx, false).start();
     }
     if callback.is_range_analysis_enabled() {
-        RangeAnalysis::new(tcx, false).start();
+        let mut analyzer = DefaultRange::<i32>::new(tcx, false);
+        analyzer.run();
     }
 }

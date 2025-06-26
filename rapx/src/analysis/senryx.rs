@@ -24,8 +24,9 @@ use rustc_middle::ty::TyCtxt;
 use std::collections::{HashMap, HashSet};
 use visitor::{BodyVisitor, CheckResult};
 
-use super::core::alias::mop::MopAlias;
-use super::core::alias::FnMap;
+use super::core::alias::mop::{FnMap, MopAlias};
+use super::core::alias::AliasAnalysis;
+use super::Analysis;
 
 macro_rules! cond_print {
     ($cond:expr, $($t:tt)*) => {if $cond {rap_warn!($($t)*)} else {rap_info!($($t)*)}};
@@ -55,7 +56,8 @@ impl<'tcx> SenryxCheck<'tcx> {
     pub fn start(&mut self, check_level: CheckLevel, is_verify: bool) {
         let tcx = self.tcx;
         let mut mop = MopAlias::new(self.tcx);
-        let fn_map = mop.start();
+        mop.run();
+        let fn_map = &mop.get_all_fn_alias();
         let related_items = RelatedFnCollector::collect(tcx);
         for vec in related_items.clone().values() {
             for (body_id, _span) in vec {

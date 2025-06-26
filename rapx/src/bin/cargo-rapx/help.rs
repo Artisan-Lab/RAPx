@@ -9,15 +9,16 @@ Application:
     -M or -mleak    memory leakage detection.
     -O or -opt      automatically detect code optimization chances.
     -I or -infer    (under development) infer the safety properties required by unsafe APIs.
-    -V or -verify    (under development) verify if the safety requirements of unsafe API are satisfied.
+    -V or -verify   (under development) verify if the safety requirements of unsafe API are satisfied.
 
 Analysis:
-    -alias          perform alias analysis (meet-over-paths)
+    -alias          perform alias analysis (meet-over-paths by default)
     -adg            generate API dependency graphs
-    -callgraph      generate callgraphs
-    -dataflow       (not supported yet) generate dataflow graphs
-    -heap           analyze if the type holds a piece of memory on heap
     -audit          (under development) generate unsafe code audit units
+    -callgraph      generate callgraphs
+    -dataflow       generate dataflow graphs
+    -heap           analyze if the type holds a piece of memory on heap
+    -range          perform range analysis
 
 General command: 
     -help:     show help information

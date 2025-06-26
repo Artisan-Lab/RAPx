@@ -10,12 +10,14 @@ pub mod types;
 use rustc_hir::def_id::DefId;
 use rustc_middle::ty::TyCtxt;
 
-use crate::analysis::core::alias::mop::MopAlias;
-use crate::analysis::core::alias::FnMap;
+use crate::analysis::core::alias::mop::{FnMap, MopAlias};
 use crate::analysis::core::heap_item::{AdtOwner, TypeAnalysis};
 use crate::analysis::rcanary::rCanary;
 use graph::SafeDropGraph;
 use safedrop::*;
+
+use super::core::alias::AliasAnalysis;
+use super::Analysis;
 
 pub struct SafeDrop<'tcx> {
     pub tcx: TyCtxt<'tcx>,
@@ -27,7 +29,8 @@ impl<'tcx> SafeDrop<'tcx> {
     }
     pub fn start(&self) {
         let mut mop = MopAlias::new(self.tcx);
-        let fn_map = mop.start();
+        mop.run();
+        let fn_map = mop.get_all_fn_alias();
 
         let rcx_boxed = Box::new(rCanary::new(self.tcx));
         let rcx = Box::leak(rcx_boxed);
@@ -37,7 +40,7 @@ impl<'tcx> SafeDrop<'tcx> {
         for local_def_id in mir_keys {
             query_safedrop(
                 self.tcx,
-                fn_map,
+                &fn_map,
                 local_def_id.to_def_id(),
                 rcx.adt_owner().clone(),
             );

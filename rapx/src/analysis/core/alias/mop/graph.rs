@@ -1,5 +1,5 @@
 use super::types::*;
-use crate::analysis::core::alias::FnRetAlias;
+use crate::analysis::core::alias::mop::MopAAResult;
 use crate::rap_debug;
 use crate::utils::source::*;
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
@@ -146,7 +146,7 @@ pub struct MopGraph<'tcx> {
     // record the constant value during safedrop checking, i.e., which id has what value.
     pub constant: FxHashMap<usize, usize>,
     // contains the return results for inter-procedure analysis.
-    pub ret_alias: FnRetAlias,
+    pub ret_alias: MopAAResult,
     // a threhold to avoid path explosion.
     pub visit_times: usize,
     pub alias_set: Vec<usize>,
@@ -452,7 +452,7 @@ impl<'tcx> MopGraph<'tcx> {
             scc_indices,
             alias_set: alias,
             constant: FxHashMap::default(),
-            ret_alias: FnRetAlias::new(arg_size),
+            ret_alias: MopAAResult::new(arg_size),
             visit_times: 0,
             child_scc: FxHashMap::default(),
             disc_map,
