@@ -21,7 +21,7 @@ extern crate rustc_span;
 extern crate rustc_target;
 extern crate stable_mir;
 
-use analysis::core::alias::mop::MopAlias;
+use analysis::core::alias::default::DefaultAlias;
 use analysis::core::api_dep::ApiDep;
 use analysis::core::call_graph::CallGraph;
 use analysis::core::dataflow::DataFlow;
@@ -56,7 +56,7 @@ pub struct RapCallback {
     verify: bool,
     infer: bool,
     unsafety_isolation: usize,
-    mop: bool,
+    alias: bool,
     callgraph: bool,
     api_dep: bool,
     show_mir: bool,
@@ -76,7 +76,7 @@ impl Default for RapCallback {
             verify: false,
             infer: false,
             unsafety_isolation: 0,
-            mop: false,
+            alias: false,
             callgraph: false,
             api_dep: false,
             show_mir: false,
@@ -122,8 +122,8 @@ impl RapCallback {
         self.rcanary
     }
 
-    pub fn enable_mop(&mut self, arg: String) {
-        self.mop = true;
+    pub fn enable_alias(&mut self, arg: String) {
+        self.alias = true;
         match arg.as_str() {
             "-alias" => {
                 env::set_var("MOP", "1");
@@ -141,8 +141,8 @@ impl RapCallback {
         }
     }
 
-    pub fn is_mop_enabled(&self) -> bool {
-        self.mop
+    pub fn is_alias_enabled(&self) -> bool {
+        self.alias
     }
 
     pub fn enable_safedrop(&mut self, arg: String) {
@@ -278,8 +278,8 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
         None
     };
 
-    if callback.is_mop_enabled() {
-        let mut alias = MopAlias::new(tcx);
+    if callback.is_alias_enabled() {
+        let mut alias = DefaultAlias::new(tcx);
         alias.run();
     }
 

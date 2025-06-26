@@ -1,3 +1,4 @@
+pub mod default;
 pub mod mop;
 use super::super::Analysis;
 use rustc_data_structures::fx::FxHashMap;
@@ -41,6 +42,19 @@ impl AAResult {
     pub fn len(&self) -> usize {
         self.alias_set.len()
     }
+
+    pub fn sort_alias_index(&mut self) {
+        let alias_set = std::mem::take(&mut self.alias_set);
+        let mut new_alias_set = HashSet::with_capacity(alias_set.len());
+
+        for mut ra in alias_set.into_iter() {
+            if ra.lhs_no() >= ra.rhs_no() {
+                ra.swap();
+            }
+            new_alias_set.insert(ra);
+        }
+        self.alias_set = new_alias_set;
+    }
 }
 
 impl fmt::Display for AAResult {
@@ -80,6 +94,22 @@ impl AAFact {
     pub fn swap(&mut self) {
         std::mem::swap(&mut self.lhs_no, &mut self.rhs_no);
         std::mem::swap(&mut self.lhs_fields, &mut self.rhs_fields);
+    }
+
+    pub fn lhs_no(&self) -> usize {
+        self.lhs_no
+    }
+
+    pub fn rhs_no(&self) -> usize {
+        self.rhs_no
+    }
+
+    pub fn lhs_fields(&self) -> &[usize] {
+        &self.lhs_fields
+    }
+
+    pub fn rhs_fields(&self) -> &[usize] {
+        &self.rhs_fields
     }
 }
 

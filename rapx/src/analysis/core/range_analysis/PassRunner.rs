@@ -88,6 +88,6 @@ impl<'tcx> PassRunner<'tcx> {
         replacer.insert_essa_statement(body);
         replacer.rename_variables(body);
         self.locals_map = replacer.ssatransformer.locals_map.clone();
-        // print_diff(self.tcx, body);
+        print_diff(self.tcx, body);
     }
 }
