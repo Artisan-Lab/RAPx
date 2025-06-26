@@ -643,6 +643,9 @@ impl<'tcx> Replacer<'tcx> {
             projection: _,
         } = place;
         //find the original local defination assign statement
+        if old_local.as_u32() == 0 {
+            return;
+        }
         if self.ssatransformer.skipped.contains(&old_local.as_u32()) && not_phi {
             self.ssatransformer.skipped.remove(&old_local.as_u32());
             self.ssatransformer

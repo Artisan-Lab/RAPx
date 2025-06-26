@@ -204,7 +204,7 @@ where
             let body_mut_ref: &mut Body<'tcx> = unsafe { &mut *(&mut body as *mut Body<'tcx>) };
             let mut passrunner = PassRunner::PassRunner::new(self.tcx);
             passrunner.run_pass(body_mut_ref, ssa_def_id, essa_def_id);
-            // print_diff(tcx, body_mut_ref);
+            PassRunner::print_diff(self.tcx, body_mut_ref, def_id.into());
             let mut cg: ConstraintGraph<'tcx, T> = ConstraintGraph::new(essa_def_id, ssa_def_id);
             cg.build_graph(body_mut_ref);
             cg.build_nuutila(false);
