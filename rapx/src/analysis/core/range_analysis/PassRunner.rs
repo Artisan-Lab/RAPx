@@ -46,12 +46,13 @@ pub fn lvalue_check(mir_string: &str) -> bool {
 
     !has_duplicate
 }
-pub fn print_diff<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>) {
+pub fn print_diff<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>, def_id: DefId) {
     let dir_path = "passrunner_mir";
     fs::create_dir_all(dir_path).unwrap();
     // PassRunner::new(self.tcx);
+    let name = tcx.def_path_str(def_id);
     let mir_file_path = format!("{}/origin_mir.txt", dir_path);
-    let phi_mir_file_path = format!("{}/after_rename_mir.txt", dir_path);
+    let phi_mir_file_path = format!("{}/{}_after_rename_mir.txt", dir_path, name);
     let mut file = File::create(&mir_file_path).unwrap();
     let mut w = io::BufWriter::new(&mut file);
     write_mir_pretty(tcx, None, &mut w).unwrap();
@@ -88,6 +89,5 @@ impl<'tcx> PassRunner<'tcx> {
         replacer.insert_essa_statement(body);
         replacer.rename_variables(body);
         self.locals_map = replacer.ssatransformer.locals_map.clone();
-        print_diff(self.tcx, body);
     }
 }
