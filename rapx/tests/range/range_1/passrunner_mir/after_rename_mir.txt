@@ -64,7 +64,7 @@ fn main() -> () {
         _27 = SSAstmt;
         StorageLive(_8);
         StorageLive(_9);
-        _9 = copy _26;
+        _9 = copy _25;
         StorageLive(_10);
         _10 = copy _27;
         _8 = Lt(move _9, move _10);
