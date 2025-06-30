@@ -34,20 +34,3 @@ fn foo() ->i32{
 fn main(){
     foo();
 }
-// fn main() {
-//     let mut x = 0;
-//     let mut y = 0;
-//     while x < 100 {
-//         y += 2;
-//         x+=1;
-//     }
-// }
-
-// fn foo1()  {
-//     let mut x = 0;
-//     let mut y = 0;
-//     while x < 100 {
-//         y += 2;
-//         x+=1;
-//     }
-// }

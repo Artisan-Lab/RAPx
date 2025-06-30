@@ -11,7 +11,7 @@ use rustc_middle::ty::TyCtxt;
 
 pub struct CallGraph<'tcx> {
     pub tcx: TyCtxt<'tcx>,
-    pub graph: CallGraphInfo,
+    pub graph: CallGraphInfo<'tcx>,
 }
 
 impl<'tcx> CallGraph<'tcx> {

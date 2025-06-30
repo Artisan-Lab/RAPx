@@ -7,6 +7,7 @@ use std::{default, fmt};
 use bounds::Bound;
 use intervals::*;
 use num_traits::{Bounded, Num, Zero};
+use rustc_middle::mir::{BinOp, UnOp};
 use z3::ast::Int;
 // use std::ops::Range;
 use std::ops::{Add, Mul, Sub};

@@ -35,16 +35,16 @@ pub struct SSATransformer<'tcx> {
     pub df: HashMap<BasicBlock, HashSet<BasicBlock>>,
     pub local_assign_blocks: HashMap<Local, HashSet<BasicBlock>>,
     pub reaching_def: HashMap<Local, Option<Local>>,
-    pub local_index: u32,
+    pub local_index: usize,
     pub local_defination_block: HashMap<Local, BasicBlock>,
-    pub skipped: HashSet<u32>,
+    pub skipped: HashSet<usize>,
     pub phi_index: HashMap<*const Statement<'tcx>, usize>,
     pub phi_statements: HashMap<*const Statement<'tcx>, bool>,
     pub essa_statements: HashMap<*const Statement<'tcx>, bool>,
     pub phi_def_id: DefId,
     pub essa_def_id: DefId,
-    pub locals_map: HashMap<Local, HashSet<Local>>,
-    pub ssa_locals_map: HashMap<Local, HashSet<Local>>,
+    pub locals_map: HashMap<Place<'tcx>, HashSet<Place<'tcx>>>,
+    pub ssa_locals_map: HashMap<Place<'tcx>, HashSet<Place<'tcx>>>,
 }
 
 impl<'tcx> SSATransformer<'tcx> {
@@ -92,6 +92,7 @@ impl<'tcx> SSATransformer<'tcx> {
         body: &Body<'tcx>,
         ssa_def_id: DefId,
         essa_def_id: DefId,
+        arg_count: usize,
     ) -> Self {
         let cfg: HashMap<BasicBlock, Vec<BasicBlock>> = Self::extract_cfg_from_predecessors(&body);
 
@@ -106,10 +107,10 @@ impl<'tcx> SSATransformer<'tcx> {
             Self::map_locals_to_assign_blocks(&body);
         let local_defination_block: HashMap<Local, BasicBlock> =
             Self::map_locals_to_definition_block(&body);
-        let len = body.local_decls.len() as u32;
+        let len = body.local_decls.len() as usize;
         let mut skipped = HashSet::new();
         if len > 0 {
-            skipped.extend(1..len + 1);
+            skipped.extend(arg_count + 1..len + 1);
         }
         // let phi_def_id = tcx.type_of(tcx.local_def_id_to_hir_id(def_id).owner.to_def_id());
         // print!("phi_def_id: {:?}\n", def_id);
@@ -134,7 +135,7 @@ impl<'tcx> SSATransformer<'tcx> {
             df,
             local_assign_blocks,
             reaching_def: HashMap::default(),
-            local_index: len as u32,
+            local_index: len,
             local_defination_block: local_defination_block,
             skipped: skipped,
             phi_index: HashMap::default(),

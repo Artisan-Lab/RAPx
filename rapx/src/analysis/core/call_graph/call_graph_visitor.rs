@@ -8,7 +8,7 @@ pub struct CallGraphVisitor<'b, 'tcx> {
     tcx: TyCtxt<'tcx>,
     def_id: DefId,
     body: &'tcx mir::Body<'tcx>,
-    call_graph_info: &'b mut CallGraphInfo,
+    call_graph_info: &'b mut CallGraphInfo<'tcx>,
 }
 
 impl<'b, 'tcx> CallGraphVisitor<'b, 'tcx> {
@@ -16,7 +16,7 @@ impl<'b, 'tcx> CallGraphVisitor<'b, 'tcx> {
         tcx: TyCtxt<'tcx>,
         def_id: DefId,
         body: &'tcx mir::Body<'tcx>,
-        call_graph_info: &'b mut CallGraphInfo,
+        call_graph_info: &'b mut CallGraphInfo<'tcx>,
     ) -> Self {
         Self {
             tcx: tcx,
@@ -31,17 +31,18 @@ impl<'b, 'tcx> CallGraphVisitor<'b, 'tcx> {
         caller_def_path: &String,
         callee_def_id: DefId,
         callee_def_path: &String,
+        terminator: &'tcx mir::Terminator<'tcx>,
     ) {
         if let Some(caller_id) = self.call_graph_info.get_noed_by_path(caller_def_path) {
             if let Some(callee_id) = self.call_graph_info.get_noed_by_path(callee_def_path) {
                 self.call_graph_info
-                    .add_funciton_call_edge(caller_id, callee_id);
+                    .add_funciton_call_edge(caller_id, callee_id, terminator);
             } else {
                 self.call_graph_info
                     .add_node(callee_def_id, callee_def_path);
                 if let Some(callee_id) = self.call_graph_info.get_noed_by_path(callee_def_path) {
                     self.call_graph_info
-                        .add_funciton_call_edge(caller_id, callee_id);
+                        .add_funciton_call_edge(caller_id, callee_id, terminator);
                 }
             }
         }
@@ -56,7 +57,12 @@ impl<'b, 'tcx> CallGraphVisitor<'b, 'tcx> {
         }
     }
 
-    fn add_to_call_graph(&mut self, callee_def_id: DefId, is_virtual: Option<bool>) {
+    fn add_to_call_graph(
+        &mut self,
+        callee_def_id: DefId,
+        is_virtual: Option<bool>,
+        terminator: &'tcx mir::Terminator<'tcx>,
+    ) {
         let caller_def_path = self.tcx.def_path_str(self.def_id);
         let mut callee_def_path = self.tcx.def_path_str(callee_def_id);
         if let Some(judge) = is_virtual {
@@ -74,10 +80,15 @@ impl<'b, 'tcx> CallGraphVisitor<'b, 'tcx> {
             // Recursion
             println!("Warning! Find a recursion function which may cause stackoverflow!")
         }
-        self.add_in_call_graph(&caller_def_path, callee_def_id, &callee_def_path);
+        self.add_in_call_graph(
+            &caller_def_path,
+            callee_def_id,
+            &callee_def_path,
+            terminator,
+        );
     }
 
-    fn visit_terminator(&mut self, terminator: &mir::Terminator<'tcx>) {
+    fn visit_terminator(&mut self, terminator: &'tcx mir::Terminator<'tcx>) {
         if let mir::TerminatorKind::Call { func, .. } = &terminator.kind {
             if let mir::Operand::Constant(constant) = func {
                 if let FnDef(callee_def_id, callee_substs) = constant.const_.ty().kind() {
@@ -117,11 +128,11 @@ impl<'b, 'tcx> CallGraphVisitor<'b, 'tcx> {
                             _ => todo!(),
                         };
                         if let Some(instance_def_id) = instance_def_id {
-                            self.add_to_call_graph(instance_def_id, Some(is_virtual));
+                            self.add_to_call_graph(instance_def_id, Some(is_virtual), terminator);
                         }
                     } else {
                         // Although failing to get specific type, callee is still useful.
-                        self.add_to_call_graph(*callee_def_id, None);
+                        self.add_to_call_graph(*callee_def_id, None, terminator);
                     }
                 }
             }

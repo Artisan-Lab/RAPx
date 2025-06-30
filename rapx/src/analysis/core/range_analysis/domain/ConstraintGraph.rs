@@ -89,19 +89,19 @@ where
     }
     pub fn build_final_vars(
         &mut self,
-        locals_map: &HashMap<Local, HashSet<Local>>,
-    ) -> (VarNodes<'tcx, T>, Vec<Local>) {
+        places_map: &HashMap<Place<'tcx>, HashSet<Place<'tcx>>>,
+    ) -> (VarNodes<'tcx, T>, Vec<Place<'tcx>>) {
         let mut final_vars: VarNodes<'tcx, T> = HashMap::new();
-        let mut not_found: Vec<Local> = Vec::new();
+        let mut not_found: Vec<Place<'tcx>> = Vec::new();
 
-        for (_key_local, local_set) in locals_map {
-            for &local in local_set {
-                let found = self.vars.iter().find(|(place, _)| place.local == local);
+        for (&_key_place, place_set) in places_map {
+            for &place in place_set {
+                let found = self.vars.iter().find(|(&p, _)| *p == place);
 
-                if let Some((&place, var_node)) = found {
-                    final_vars.insert(place, var_node.clone());
+                if let Some((&found_place, var_node)) = found {
+                    final_vars.insert(found_place, var_node.clone());
                 } else {
-                    not_found.push(local);
+                    not_found.push(place);
                 }
             }
         }
@@ -575,7 +575,6 @@ where
     fn add_ssa_op(
         &mut self,
         sink: &'tcx Place<'tcx>,
-
         inst: &'tcx Statement<'tcx>,
         operands: &'tcx IndexVec<FieldIdx, Operand<'tcx>>,
     ) {
@@ -1171,7 +1170,6 @@ where
     pub fn del_control_dependence_edges(&mut self) {
         rap_trace!("====Delete control dependence edges====\n");
 
-        // 从后往前找到第一个不是 ControlDep 的位置
         let mut remove_from = self.oprs.len();
         while remove_from > 0 {
             match &self.oprs[remove_from - 1] {

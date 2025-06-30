@@ -22,7 +22,7 @@ use std::io::Cursor;
 use super::SSA::Replacer::*;
 pub struct PassRunner<'tcx> {
     tcx: TyCtxt<'tcx>,
-    pub locals_map: HashMap<Local, HashSet<Local>>,
+    pub places_map: HashMap<Place<'tcx>, HashSet<Place<'tcx>>>,
 }
 pub fn lvalue_check(mir_string: &str) -> bool {
     let re = regex::Regex::new(r"_(\d+)\s*=").unwrap();
@@ -65,7 +65,7 @@ impl<'tcx> PassRunner<'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>) -> Self {
         Self {
             tcx,
-            locals_map: HashMap::default(),
+            places_map: HashMap::default(),
         }
     }
 
@@ -78,7 +78,9 @@ impl<'tcx> PassRunner<'tcx> {
     }
 
     pub fn run_pass(&mut self, body: &mut Body<'tcx>, ssa_def_id: DefId, essa_def_id: DefId) {
-        let ssatransformer = SSATransformer::new(self.tcx, body, ssa_def_id, essa_def_id);
+        let arg_count = body.arg_count;
+        let ssatransformer =
+            SSATransformer::new(self.tcx, body, ssa_def_id, essa_def_id, arg_count);
         ssatransformer.print_ssatransformer();
         let mut replacer = Replacer {
             tcx: self.tcx,
@@ -88,6 +90,6 @@ impl<'tcx> PassRunner<'tcx> {
         replacer.insert_phi_statment(body);
         replacer.insert_essa_statement(body);
         replacer.rename_variables(body);
-        self.locals_map = replacer.ssatransformer.locals_map.clone();
+        self.places_map = replacer.ssatransformer.locals_map.clone();
     }
 }

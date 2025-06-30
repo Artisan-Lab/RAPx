@@ -35,19 +35,34 @@ enum Selector {
 }
 
 //Expected alias analysis result: (1,0)
-fn foo<'a>(x: &'a i32, y: &'a i32, choice: Selector) -> &'a i32 {
-    let a = match choice {
-        Selector::First => x,
-        Selector::Second => y,
-    };
-    match choice {
-        Selector::First => a,
-        Selector::Second => x,
-    }
-}
+// fn foo<'a>(x: &'a i32, y: &'a i32, choice: Selector) -> &'a i32 {
+//     let a = match choice {
+//         Selector::First => x,
+//         Selector::Second => y,
+//     };
+//     match choice {
+//         Selector::First => a,
+//         Selector::Second => x,
+//     }
+// }
 
 fn main() {
-    let a = 1;
-    let b = 2;
-    let _result = foo(&a, &b, Selector::First);
+    let mut x = 0;
+    foo(&mut x);
+    x+= 1;
+    // let mut y = 0;
+    // foo(&mut y);
+
+}
+fn  foo(x_ref: &mut i32)  {
+    *x_ref += 1;
+
+}
+fn  foo1(a:i32,b:i32,c:i32,d:i32) -> i32 {
+    let mut x = a + b;
+    x += c + d;
+    x
+
+    
+
 }
