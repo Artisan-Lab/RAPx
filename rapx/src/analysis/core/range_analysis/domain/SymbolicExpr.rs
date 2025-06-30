@@ -102,20 +102,15 @@ pub enum SymbolicExpr<'tcx> {
         index: Box<SymbolicExpr<'tcx>>,
     },
 
-    /// 获取一个枚举的判别式（discriminant）。
-    /// 对应 `Rvalue::Discriminant`。
+
     Discriminant(Box<SymbolicExpr<'tcx>>),
 
-    // --- 其他特殊操作 ---
-    /// 无操作数的操作，如 `size_of`。
-    /// 对应 `Rvalue::NullaryOp`。
+
     NullaryOp(NullOp<'tcx>, Ty<'tcx>),
 
-    /// 线程局部变量的引用。
-    /// 对应 `Rvalue::ThreadLocalRef`。
+
     ThreadLocalRef(DefId),
 
-    /// 未知或无法分析的情况。
     Unknown(UnknownReason),
 }
 
