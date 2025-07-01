@@ -5,20 +5,20 @@
 #![allow(unused_parens)]
 #![allow(non_snake_case)]
 
-use crate::rap_trace;
-
 use super::range::{Range, RangeType};
+use crate::rap_trace;
 use num_traits::{Bounded, CheckedAdd, CheckedSub, One, ToPrimitive, Zero};
 use rustc_abi::Size;
 use rustc_middle::mir::coverage::Op;
 use rustc_middle::mir::{
-    BasicBlock, BinOp, Const, Local, LocalDecl, Place, Rvalue, Statement, StatementKind,
+    BasicBlock, BinOp, Const, Local, LocalDecl, Place, Rvalue, Statement, StatementKind, UnOp,
 };
 use rustc_middle::ty::ScalarInt;
 use rustc_span::sym::no_default_passes;
 use std::cmp::PartialEq;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::ops::{Add, Mul, Sub};
 pub trait ConstConvert: Sized {
@@ -69,6 +69,7 @@ pub trait IntervalArithmetic:
     + Clone
     + Bounded
     + Zero
+    + Copy
     + One
     + CheckedAdd
     + CheckedSub
@@ -85,6 +86,7 @@ impl<T> IntervalArithmetic for T where
         + Bounded
         + Zero
         + One
+        + Copy
         + CheckedAdd
         + CheckedSub
         + Add<Output = T>
@@ -94,13 +96,13 @@ impl<T> IntervalArithmetic for T where
 {
 }
 #[derive(Debug, Clone, PartialEq)]
-pub enum IntervalType<'tcx, T: IntervalArithmetic> {
+pub enum IntervalType<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     Basic(BasicInterval<T>),
     Symb(SymbInterval<'tcx, T>), // Using 'static for simplicity, adjust lifetime as needed
 }
-impl<'tcx, T: IntervalArithmetic> fmt::Display for IntervalType<'tcx, T>
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> fmt::Display for IntervalType<'tcx, T>
 where
-    T: IntervalArithmetic,
+    T: IntervalArithmetic + ConstConvert + Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -109,12 +111,14 @@ where
         }
     }
 }
-pub trait IntervalTypeTrait<T: IntervalArithmetic> {
+pub trait IntervalTypeTrait<T: IntervalArithmetic + ConstConvert + Debug> {
     // fn get_value_id(&self) -> IntervalId;
     fn get_range(&self) -> &Range<T>;
     fn set_range(&mut self, new_range: Range<T>);
 }
-impl<'tcx, T: IntervalArithmetic> IntervalTypeTrait<T> for IntervalType<'tcx, T> {
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<T>
+    for IntervalType<'tcx, T>
+{
     fn get_range(&self) -> &Range<T> {
         match self {
             IntervalType::Basic(b) => b.get_range(),
@@ -130,11 +134,11 @@ impl<'tcx, T: IntervalArithmetic> IntervalTypeTrait<T> for IntervalType<'tcx, T>
     }
 }
 #[derive(Debug, Clone, PartialEq)]
-pub struct BasicInterval<T: IntervalArithmetic> {
+pub struct BasicInterval<T: IntervalArithmetic + ConstConvert + Debug> {
     range: Range<T>,
 }
 
-impl<T: IntervalArithmetic> BasicInterval<T> {
+impl<T: IntervalArithmetic + ConstConvert + Debug> BasicInterval<T> {
     pub fn new(range: Range<T>) -> Self {
         Self { range }
     }
@@ -145,7 +149,7 @@ impl<T: IntervalArithmetic> BasicInterval<T> {
     }
 }
 
-impl<T: IntervalArithmetic> IntervalTypeTrait<T> for BasicInterval<T> {
+impl<T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<T> for BasicInterval<T> {
     // fn get_value_id(&self) -> IntervalId {
     //     IntervalId::BasicIntervalId
     // }
@@ -164,13 +168,13 @@ impl<T: IntervalArithmetic> IntervalTypeTrait<T> for BasicInterval<T> {
 
 #[derive(Debug, Clone, PartialEq)]
 
-pub struct SymbInterval<'tcx, T: IntervalArithmetic> {
+pub struct SymbInterval<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     range: Range<T>,
     symbound: &'tcx Place<'tcx>,
     predicate: BinOp,
 }
 
-impl<'tcx, T: IntervalArithmetic> SymbInterval<'tcx, T> {
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> SymbInterval<'tcx, T> {
     pub fn new(range: Range<T>, symbound: &'tcx Place<'tcx>, predicate: BinOp) -> Self {
         Self {
             range: range,
@@ -236,7 +240,9 @@ impl<'tcx, T: IntervalArithmetic> SymbInterval<'tcx, T> {
     }
 }
 
-impl<'tcx, T: IntervalArithmetic> IntervalTypeTrait<T> for SymbInterval<'tcx, T> {
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<T>
+    for SymbInterval<'tcx, T>
+{
     // fn get_value_id(&self) -> IntervalId {
     //     IntervalId::SymbIntervalId
     // }
@@ -251,20 +257,20 @@ impl<'tcx, T: IntervalArithmetic> IntervalTypeTrait<T> for SymbInterval<'tcx, T>
 }
 
 // Define the basic operation trait
-pub trait Operation<T: IntervalArithmetic> {
+pub trait Operation<T: IntervalArithmetic + ConstConvert + Debug> {
     fn get_value_id(&self) -> u32; // Placeholder for an operation identifier
     fn eval(&self) -> Range<T>; // Method to evaluate the result of the operation
     fn print(&self, os: &mut dyn fmt::Write);
 }
 
 // #[derive(Debug, Clone)]
-// pub struct BasicOp<'tcx, T: IntervalArithmetic> {
+// pub struct BasicOp<'tcx, T:  IntervalArithmetic + ConstConvert + Debug> {
 //     pub intersect: BasicInterval<T>,
 //     pub sink: Place<'tcx>,
 //     pub inst: &'tcx Statement<'tcx>,
 // }
 
-// impl<'tcx, T: IntervalArithmetic> BasicOp<'tcx, T> {
+// impl<'tcx, T:  IntervalArithmetic + ConstConvert + Debug> BasicOp<'tcx, T> {
 //     // Constructor for creating a new BasicOp
 //     pub fn new(
 //         intersect: BasicInterval<T>,
@@ -297,7 +303,7 @@ pub trait Operation<T: IntervalArithmetic> {
 // }
 
 // // Implement the Operation trait for BasicOp
-// impl<'tcx, T: IntervalArithmetic> Operation<T> for BasicOp<'tcx, T> {
+// impl<'tcx, T:  IntervalArithmetic + ConstConvert + Debug> Operation<T> for BasicOp<'tcx, T> {
 //     fn get_value_id(&self) -> u32 {
 //         0 // Placeholder implementation
 //     }
@@ -310,7 +316,7 @@ pub trait Operation<T: IntervalArithmetic> {
 //     fn print(&self, os: &mut dyn fmt::Write) {}
 // }
 #[derive(Debug)]
-pub enum BasicOpKind<'tcx, T: IntervalArithmetic> {
+pub enum BasicOpKind<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     Unary(UnaryOp<'tcx, T>),
     Binary(BinaryOp<'tcx, T>),
     Essa(EssaOp<'tcx, T>),
@@ -319,7 +325,7 @@ pub enum BasicOpKind<'tcx, T: IntervalArithmetic> {
     Use(UseOp<'tcx, T>),
 }
 
-impl<'tcx, T: IntervalArithmetic> fmt::Display for BasicOpKind<'tcx, T> {
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> fmt::Display for BasicOpKind<'tcx, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             BasicOpKind::Unary(op) => write!(f, "UnaryOp: intersect {} sink:{:?} source:{:?} inst:{:?} ",op.intersect,op.sink,op.source,op.inst),
@@ -331,7 +337,7 @@ impl<'tcx, T: IntervalArithmetic> fmt::Display for BasicOpKind<'tcx, T> {
         }
     }
 }
-impl<'tcx, T: IntervalArithmetic> BasicOpKind<'tcx, T> {
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> BasicOpKind<'tcx, T> {
     pub fn eval(&self, vars: &VarNodes<'tcx, T>) -> Range<T> {
         match self {
             BasicOpKind::Unary(op) => op.eval(),
@@ -424,7 +430,7 @@ impl<'tcx, T: IntervalArithmetic> BasicOpKind<'tcx, T> {
             BasicOpKind::Essa(op) => op.source,
             BasicOpKind::ControlDep(op) => op.source,
             BasicOpKind::Phi(op) => op.sources[0],
-            BasicOpKind::Use(op) => op.source,
+            BasicOpKind::Use(op) => op.source.unwrap(),
         }
     }
     // pub fn eval(&self) -> Range<T> {
@@ -439,64 +445,69 @@ impl<'tcx, T: IntervalArithmetic> BasicOpKind<'tcx, T> {
     // }
 }
 #[derive(Debug)]
-pub struct UseOp<'tcx, T: IntervalArithmetic> {
+pub struct UseOp<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub intersect: IntervalType<'tcx, T>,
     pub sink: &'tcx Place<'tcx>,
     pub inst: &'tcx Statement<'tcx>,
-    pub source: &'tcx Place<'tcx>,
-    pub opcode: u32,
+    pub source: Option<&'tcx Place<'tcx>>,
+    pub const_value: Option<Const<'tcx>>,
 }
 
-impl<'tcx, T: IntervalArithmetic> UseOp<'tcx, T> {
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> UseOp<'tcx, T> {
     pub fn new(
         intersect: IntervalType<'tcx, T>,
         sink: &'tcx Place<'tcx>,
         inst: &'tcx Statement<'tcx>,
-        source: &'tcx Place<'tcx>,
-        opcode: u32,
+        source: Option<&'tcx Place<'tcx>>,
+        const_value: Option<Const<'tcx>>,
     ) -> Self {
         Self {
             intersect,
             sink,
             inst,
             source,
-            opcode,
+            const_value,
         }
     }
 
     pub fn eval(&self, vars: &VarNodes<'tcx, T>) -> Range<T> {
-        let range = vars[self.source].get_range().clone();
-        let mut result = Range::default(T::min_value());
-        if range.is_regular() {
-            result = range
+        if let Some(source) = self.source {
+            let range = vars[source].get_range().clone();
+            let mut result = Range::default(T::min_value());
+            if range.is_regular() {
+                result = range
+            } else {
+            }
+            result
         } else {
+            // If no source is provided, return the intersect range
+            self.intersect.get_range().clone()
         }
-        result
     }
 }
 #[derive(Debug)]
-pub struct UnaryOp<'tcx, T: IntervalArithmetic> {
+pub struct UnaryOp<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub intersect: IntervalType<'tcx, T>,
     pub sink: &'tcx Place<'tcx>,
     pub inst: &'tcx Statement<'tcx>,
     pub source: &'tcx Place<'tcx>,
-    pub opcode: u32,
+    pub op: UnOp,
 }
 
-impl<'tcx, T: IntervalArithmetic> UnaryOp<'tcx, T> {
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> UnaryOp<'tcx, T> {
     pub fn new(
         intersect: IntervalType<'tcx, T>,
         sink: &'tcx Place<'tcx>,
         inst: &'tcx Statement<'tcx>,
         source: &'tcx Place<'tcx>,
-        opcode: u32,
+        op: UnOp,
     ) -> Self {
         Self {
             intersect,
             sink,
             inst,
             source,
-            opcode,
+            op,
         }
     }
 
@@ -506,7 +517,7 @@ impl<'tcx, T: IntervalArithmetic> UnaryOp<'tcx, T> {
 }
 #[derive(Debug)]
 
-pub struct EssaOp<'tcx, T: IntervalArithmetic> {
+pub struct EssaOp<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub intersect: IntervalType<'tcx, T>,
     pub sink: &'tcx Place<'tcx>,
     pub inst: &'tcx Statement<'tcx>,
@@ -515,7 +526,7 @@ pub struct EssaOp<'tcx, T: IntervalArithmetic> {
     pub unresolved: bool,
 }
 
-impl<'tcx, T: IntervalArithmetic> EssaOp<'tcx, T> {
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> EssaOp<'tcx, T> {
     pub fn new(
         intersect: IntervalType<'tcx, T>,
         sink: &'tcx Place<'tcx>,
@@ -572,25 +583,29 @@ impl<'tcx, T: IntervalArithmetic> EssaOp<'tcx, T> {
 }
 #[derive(Debug)]
 
-pub struct BinaryOp<'tcx, T: IntervalArithmetic> {
+pub struct BinaryOp<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub intersect: IntervalType<'tcx, T>,
     pub sink: &'tcx Place<'tcx>,
     pub inst: &'tcx Statement<'tcx>,
     pub source1: Option<&'tcx Place<'tcx>>,
     pub source2: Option<&'tcx Place<'tcx>>,
-    pub const_value: Option<T>,
-    pub opcode: u32,
+    pub const_value: Option<Const<'tcx>>,
+    pub op: BinOp,
 }
 
-impl<'tcx, T: IntervalArithmetic> BinaryOp<'tcx, T> {
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> BinaryOp<'tcx, T> {
+    pub fn convert_const(c: &Const) -> Option<T> {
+        T::from_const(c)
+    }
     pub fn new(
         intersect: IntervalType<'tcx, T>,
         sink: &'tcx Place<'tcx>,
         inst: &'tcx Statement<'tcx>,
         source1: Option<&'tcx Place<'tcx>>,
         source2: Option<&'tcx Place<'tcx>>,
-        opcode: u32,
-        const_value: Option<T>,
+        const_value: Option<Const<'tcx>>,
+
+        op: BinOp,
     ) -> Self {
         Self {
             intersect,
@@ -599,7 +614,7 @@ impl<'tcx, T: IntervalArithmetic> BinaryOp<'tcx, T> {
             source1,
             source2,
             const_value, // Default value, can be set later
-            opcode,
+            op,
         }
     }
 
@@ -608,7 +623,8 @@ impl<'tcx, T: IntervalArithmetic> BinaryOp<'tcx, T> {
         let mut op2 = Range::default(T::min_value());
         if let Some(const_value) = &self.const_value {
             // If const_value is provided, use it as the second operand
-            op2 = Range::new(const_value.clone(), const_value.clone(), RangeType::Regular);
+            let value = Self::convert_const(const_value).unwrap();
+            op2 = Range::new(value, value, RangeType::Regular);
         } else {
             op2 = vars[self.source2.unwrap()].get_range().clone();
         }
@@ -641,7 +657,7 @@ impl<'tcx, T: IntervalArithmetic> BinaryOp<'tcx, T> {
 }
 #[derive(Debug)]
 
-pub struct PhiOp<'tcx, T: IntervalArithmetic> {
+pub struct PhiOp<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub intersect: IntervalType<'tcx, T>,
     pub sink: &'tcx Place<'tcx>,
     pub inst: &'tcx Statement<'tcx>,
@@ -649,7 +665,7 @@ pub struct PhiOp<'tcx, T: IntervalArithmetic> {
     pub opcode: u32,
 }
 
-impl<'tcx, T: IntervalArithmetic> PhiOp<'tcx, T> {
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> PhiOp<'tcx, T> {
     pub fn new(
         intersect: IntervalType<'tcx, T>,
         sink: &'tcx Place<'tcx>,
@@ -683,17 +699,20 @@ impl<'tcx, T: IntervalArithmetic> PhiOp<'tcx, T> {
         }
         result
     }
+    pub fn get_sources(&self) -> &[&'tcx Place<'tcx>] {
+        &self.sources
+    }
 }
 #[derive(Debug)]
 
-pub struct ControlDep<'tcx, T: IntervalArithmetic> {
+pub struct ControlDep<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub intersect: IntervalType<'tcx, T>,
     pub sink: &'tcx Place<'tcx>,
     pub inst: &'tcx Statement<'tcx>,
     pub source: &'tcx Place<'tcx>,
 }
 
-impl<'tcx, T: IntervalArithmetic> ControlDep<'tcx, T> {
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> ControlDep<'tcx, T> {
     pub fn new(
         intersect: IntervalType<'tcx, T>,
         sink: &'tcx Place<'tcx>,
@@ -714,7 +733,7 @@ impl<'tcx, T: IntervalArithmetic> ControlDep<'tcx, T> {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct VarNode<'tcx, T: IntervalArithmetic> {
+pub struct VarNode<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     // The program variable which is represented.
     pub v: &'tcx Place<'tcx>,
     // A Range associated to the variable.
@@ -722,7 +741,7 @@ pub struct VarNode<'tcx, T: IntervalArithmetic> {
     // Used by the crop meet operator.
     pub abstract_state: char,
 }
-impl<'tcx, T: IntervalArithmetic> VarNode<'tcx, T> {
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> VarNode<'tcx, T> {
     pub fn new(v: &'tcx Place<'tcx>) -> Self {
         Self {
             v,
@@ -793,14 +812,14 @@ impl<'tcx, T: IntervalArithmetic> VarNode<'tcx, T> {
     }
 }
 #[derive(Debug)]
-pub struct ValueBranchMap<'tcx, T: IntervalArithmetic> {
+pub struct ValueBranchMap<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     v: &'tcx Place<'tcx>,         // The value associated with the branch
     bb_true: &'tcx BasicBlock,    // True side of the branch
     bb_false: &'tcx BasicBlock,   // False side of the branch
     itv_t: IntervalType<'tcx, T>, // Interval for the true side
     itv_f: IntervalType<'tcx, T>,
 }
-impl<'tcx, T: IntervalArithmetic> ValueBranchMap<'tcx, T> {
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> ValueBranchMap<'tcx, T> {
     pub fn new(
         v: &'tcx Place<'tcx>,
         bb_false: &'tcx BasicBlock,

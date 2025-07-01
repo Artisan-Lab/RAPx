@@ -11,9 +11,7 @@ pub struct ESSAstmt;
 #[used]
 static _SSAstmt: Option<SSAstmt> = None;
 static _ESSAstmt: Option<ESSAstmt> = None;
-fn foo() ->i32{
-    let mut k = 0;
-
+fn foo(mut k:  i32) -> i32{
     while k < 100 {
         let mut i = 0;
         let mut j = k;
@@ -21,16 +19,11 @@ fn foo() ->i32{
         while i < j {
             i += 1;
             j -= 1;
-        }
-        if i<=j{
-            k += 1;
-            return i;
-        }
-        k += 1;
-        
+        } 
+        k+=1;
     }
     return k+1;
 }
 fn main(){
-    foo();
+    foo(0);
 }

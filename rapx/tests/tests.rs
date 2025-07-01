@@ -291,7 +291,6 @@ fn test_range_analysis() {
         "var: _12. Regular [0, 98]",
         "var: _10. Regular [0, 99]",
         "var: _30. Regular [1, 99]",
-        "var: _37. Regular [Min, Max]",
         "var: _5. Regular [0, 0]",
         "var: _4. Regular [0, 100]",
         "var: _34. Regular [1, 100]",

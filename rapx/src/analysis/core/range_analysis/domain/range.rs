@@ -331,7 +331,7 @@ where
 pub struct Meet;
 
 impl Meet {
-    pub fn widen<'tcx, T: IntervalArithmetic + fmt::Debug>(
+    pub fn widen<'tcx, T: IntervalArithmetic + ConstConvert + fmt::Debug>(
         op: &mut BasicOpKind<'tcx, T>,
         constant_vector: &[T],
         vars: &mut VarNodes<'tcx, T>,
@@ -390,7 +390,7 @@ impl Meet {
 
         old_interval != new_sink_interval
     }
-    pub fn narrow<'tcx, T: IntervalArithmetic + Clone + PartialOrd + std::fmt::Debug>(
+    pub fn narrow<'tcx, T: IntervalArithmetic + ConstConvert + fmt::Debug>(
         op: &mut BasicOpKind<'tcx, T>,
         vars: &mut VarNodes<'tcx, T>,
     ) -> bool {

@@ -19,7 +19,6 @@ use rustc_hir::def::DefKind;
 use rustc_hir::def_id::DefId;
 use rustc_hir::def_id::LocalDefId;
 use rustc_middle::mir::Body;
-use rustc_middle::mir::Local;
 use rustc_middle::mir::Place;
 use rustc_middle::ty::TyCtxt;
 use std::{
@@ -201,9 +200,9 @@ where
         cg.build_graph(body_mut_ref);
         cg.build_nuutila(false);
         cg.find_intervals();
-        cg.rap_print_vars();
+        cg.build_final_vars(&self.ssa_places_mapping[&def_id]);
         cg.rap_print_final_vars();
-
+        cg.test_and_print_all_symbolic_expressions();
         let mut r_final: HashMap<Place<'tcx>, Range<T>> = HashMap::default();
         let (r#final, not_found) = cg.build_final_vars(&self.ssa_places_mapping[&def_id]);
 
@@ -225,7 +224,6 @@ where
                         "Analyzing function: {}",
                         self.tcx.def_path_str(local_def_id)
                     );
-                    let mut body = self.tcx.optimized_mir(def_id).clone();
                     let def_kind = self.tcx.def_kind(def_id);
                     let mut body = match def_kind {
                         DefKind::Const | DefKind::Static { .. } => {
@@ -246,7 +244,7 @@ where
                         self.ssa_places_mapping
                             .insert(def_id.into(), passrunner.places_map.clone());
 
-                        // self.build_constraintgraph(body_mut_ref, def_id.into());
+                        self.build_constraintgraph(body_mut_ref, def_id.into());
 
                         let mut call_graph_visitor = CallGraphVisitor::new(
                             self.tcx,
