@@ -1,0 +1,10 @@
+digraph MIR {
+  node [shape=box];
+  0 [label="bb0:\lStorageLive(_1)\l"];
+  0 -> 1;
+  1 [label="bb1:\lStorageDead(_1)\lStorageLive(_2)\l"];
+  1 -> 2;
+  2 [label="bb2:\lStorageLive(_3)\l_3 = const 0_i32\lStorageLive(_4)\lStorageLive(_5)\l_5 = copy _2\lStorageLive(_6)\lStorageLive(_7)\l_7 = &mut _3\l_6 = &mut (*_7)\l"];
+  2 -> 3;
+  3 [label="bb3:\lStorageDead(_6)\lStorageDead(_5)\l_2 = move _4\lStorageDead(_4)\lStorageDead(_7)\l_8 = const ()\lStorageDead(_3)\lStorageDead(_2)\l"];
+}

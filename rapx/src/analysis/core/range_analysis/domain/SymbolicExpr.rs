@@ -31,8 +31,6 @@ pub enum UnknownReason {
     Unsupported,
 }
 
-/// 重新设计的符号表达式树，紧密映射 MIR Rvalue 的语义
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VarorConst<'tcx> {
     Place(Place<'tcx>),
@@ -197,7 +195,6 @@ impl<'tcx> fmt::Display for SymbolicExpr<'tcx> {
     }
 }
 
-// VarorConst 的 Display 实现，方便打印
 impl<'tcx> fmt::Display for VarorConst<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

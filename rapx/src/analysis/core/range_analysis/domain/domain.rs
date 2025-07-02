@@ -315,7 +315,7 @@ pub trait Operation<T: IntervalArithmetic + ConstConvert + Debug> {
 
 //     fn print(&self, os: &mut dyn fmt::Write) {}
 // }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BasicOpKind<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     Unary(UnaryOp<'tcx, T>),
     Binary(BinaryOp<'tcx, T>),
@@ -444,7 +444,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> BasicOpKind<'tcx, T> {
     //     }
     // }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UseOp<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub intersect: IntervalType<'tcx, T>,
     pub sink: &'tcx Place<'tcx>,
@@ -485,7 +485,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> UseOp<'tcx, T> {
         }
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UnaryOp<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub intersect: IntervalType<'tcx, T>,
     pub sink: &'tcx Place<'tcx>,
@@ -515,7 +515,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> UnaryOp<'tcx, T> {
         Range::default(T::min_value())
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 
 pub struct EssaOp<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub intersect: IntervalType<'tcx, T>,
@@ -581,8 +581,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> EssaOp<'tcx, T> {
         &self.intersect
     }
 }
-#[derive(Debug)]
-
+#[derive(Debug, Clone)]
 pub struct BinaryOp<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub intersect: IntervalType<'tcx, T>,
     pub sink: &'tcx Place<'tcx>,
@@ -655,7 +654,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> BinaryOp<'tcx, T> {
         result
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 
 pub struct PhiOp<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub intersect: IntervalType<'tcx, T>,
@@ -703,7 +702,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> PhiOp<'tcx, T> {
         &self.sources
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 
 pub struct ControlDep<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub intersect: IntervalType<'tcx, T>,
@@ -811,7 +810,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> VarNode<'tcx, T> {
         // Implementation of storing the abstract state.
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ValueBranchMap<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     v: &'tcx Place<'tcx>,         // The value associated with the branch
     bb_true: &'tcx BasicBlock,    // True side of the branch

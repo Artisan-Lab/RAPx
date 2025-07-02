@@ -27,16 +27,18 @@ use std::{
     default,
     fmt::Debug,
 };
+#[derive(Debug, Clone)]
+
 pub struct ConstraintGraph<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     // Protected fields
     pub vars: VarNodes<'tcx, T>, // The variables of the source program
-    pub oprs: GenOprs<'tcx, T>,  // The operations of the source program
+    pub oprs: Vec<BasicOpKind<'tcx, T>>, // The operations of the source program
 
     // func: Option<Function>,             // Save the last Function analyzed
     pub defmap: DefMap<'tcx>, // Map from variables to the operations that define them
     pub usemap: UseMap<'tcx>, // Map from variables to operations where variables are used
     pub symbmap: SymbMap<'tcx>, // Map from variables to operations where they appear as bounds
-    pub values_branchmap: ValuesBranchMap<'tcx, T>, // Store intervals, basic blocks, and branches
+    pub values_branchmap: HashMap<&'tcx Place<'tcx>, ValueBranchMap<'tcx, T>>, // Store intervals, basic blocks, and branches
     // values_switchmap: ValuesSwitchMap<'tcx, T>, // Store intervals for switch branches
     constant_vector: Vec<T>, // Vector for constants from an SCC
 
@@ -53,6 +55,7 @@ pub struct ConstraintGraph<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub numAloneSCCs: usize,
     pub numSCCs: usize, // Add a stub for pre_update to resolve the missing method error.
     pub final_vars: VarNodes<'tcx, T>,
+    pub arg_count: usize,
 }
 
 impl<'tcx, T> ConstraintGraph<'tcx, T>
@@ -86,6 +89,7 @@ where
             numAloneSCCs: 0,
             numSCCs: 0,
             final_vars: VarNodes::new(),
+            arg_count: 0,
         }
     }
     pub fn build_final_vars(
@@ -233,6 +237,8 @@ where
     //     self.inst_rand_place_set.push(place);
     //     place
     // }
+    pub fn set_args_value(&mut self) {}
+
     pub fn add_varnode(&mut self, v: &'tcx Place<'tcx>) -> &mut VarNode<'tcx, T> {
         let node = VarNode::new(v);
         let node_ref: &mut VarNode<'tcx, T> = self.vars.entry(v).or_insert(node);
@@ -243,6 +249,7 @@ where
 
     pub fn build_graph(&mut self, body: &'tcx Body<'tcx>) {
         rap_info!("====Building graph====\n");
+        self.arg_count = body.arg_count;
         self.build_value_maps(body);
         // rap_trace!("varnodes{:?}\n", self.vars);
         rap_info!("====build_operations====\n");
@@ -614,7 +621,10 @@ where
         let bop_index = self.oprs.len();
         for i in 0..operands.len() {
             let source = match &operands[FieldIdx::from_usize(i)] {
-                Operand::Copy(place) | Operand::Move(place) => Some(place),
+                Operand::Copy(place) | Operand::Move(place) => {
+                    self.add_varnode(place);
+                    Some(place)
+                }
                 _ => None,
             };
             if let Some(source) = source {
@@ -645,6 +655,7 @@ where
 
         match op {
             Operand::Copy(place) | Operand::Move(place) => {
+                self.add_varnode(place);
                 source = Some(place);
                 if let Some(source) = source {
                     rap_trace!("addvar_in_use_op{:?}\n", source);
@@ -707,7 +718,10 @@ where
         let loc_1: usize = 0;
         let loc_2: usize = 1;
         let source1 = match &operands[FieldIdx::from_usize(loc_1)] {
-            Operand::Copy(place) | Operand::Move(place) => Some(place),
+            Operand::Copy(place) | Operand::Move(place) => {
+                self.add_varnode(place);
+                Some(place)
+            }
             _ => None,
         };
         let op = &operands[FieldIdx::from_usize(loc_2)];
@@ -755,7 +769,10 @@ where
                 BI = vbm.get_itv_f();
             }
             let source2 = match op {
-                Operand::Copy(place) | Operand::Move(place) => Some(place),
+                Operand::Copy(place) | Operand::Move(place) => {
+                    self.add_varnode(place);
+                    Some(place)
+                }
                 _ => None,
             };
             self.usemap
@@ -798,10 +815,15 @@ where
 
         let BI: BasicInterval<T> = BasicInterval::new(Range::default(T::min_value()));
         let loc_1: usize = 0;
+
         let source = match operand {
-            Operand::Copy(place) | Operand::Move(place) => Some(place),
+            Operand::Copy(place) | Operand::Move(place) => {
+                self.add_varnode(place);
+                Some(place)
+            }
             _ => None,
         };
+
         rap_trace!("addvar_in_unary_op{:?}\n", source.unwrap());
         self.add_varnode(&source.unwrap());
 

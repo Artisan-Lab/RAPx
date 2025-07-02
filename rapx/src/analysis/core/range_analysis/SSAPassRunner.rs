@@ -18,6 +18,8 @@ use std::fs;
 use std::fs::File;
 use std::io;
 use std::io::Cursor;
+use std::io::Write;
+use std::path::PathBuf;
 
 use super::SSA::Replacer::*;
 pub struct PassRunner<'tcx> {
@@ -60,6 +62,47 @@ pub fn print_diff<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>, def_id: DefId) {
     let mut w2 = io::BufWriter::new(&mut file2);
     let options = PrettyPrintMirOptions::from_cli(tcx);
     write_mir_fn(tcx, body, &mut |_, _| Ok(()), &mut w2, options).unwrap();
+}
+pub fn print_mir_graph<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>, def_id: DefId) {
+    let dir_path = PathBuf::from("passrunner_mir_dot");
+    fs::create_dir_all(dir_path.clone()).unwrap();
+
+    let dot_graph = mir_to_dot(tcx, body);
+    let function_name = tcx.def_path_str(def_id);
+    let safe_filename = format!("{}_after_rename_mir.dot", function_name);
+    let output_path = dir_path.join(format!("{}", safe_filename));
+
+    let mut file = File::create(&output_path).expect("cannot create file");
+    let _ = file.write_all(dot_graph.as_bytes());
+}
+fn mir_to_dot<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>) -> String {
+    let mut dot = String::new();
+    dot.push_str("digraph MIR {\n");
+    dot.push_str("  node [shape=box];\n");
+
+    for (bb, bb_data) in body.basic_blocks.iter_enumerated() {
+        let statements_str = bb_data
+            .statements
+            .iter()
+            .map(|stmt| format!("{:?}", stmt).replace('\n', " "))
+            .collect::<Vec<_>>()
+            .join("\\l");
+
+        dot.push_str(&format!(
+            "  {} [label=\"{:?}:\\l{}\\l\"];\n",
+            bb.index(),
+            bb,
+            statements_str
+        ));
+        if let Some(terminator) = &bb_data.terminator {
+            for successor in terminator.successors() {
+                dot.push_str(&format!("  {} -> {};\n", bb.index(), successor.index()));
+            }
+        }
+    }
+
+    dot.push_str("}\n");
+    dot
 }
 impl<'tcx> PassRunner<'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>) -> Self {

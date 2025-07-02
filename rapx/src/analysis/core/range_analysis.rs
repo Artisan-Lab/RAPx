@@ -111,6 +111,7 @@ pub struct DefaultRange<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub fn_ConstraintGraph_mapping: FxHashMap<DefId, ConstraintGraph<'tcx, T>>,
     pub callgraph: CallGraphInfo<'tcx>,
     pub body_map: FxHashMap<DefId, Body<'tcx>>,
+    pub cg_map: FxHashMap<DefId, ConstraintGraph<'tcx, T>>,
 }
 impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> Analysis for DefaultRange<'tcx, T>
 where
@@ -121,7 +122,7 @@ where
     }
 
     fn run(&mut self) {
-        self.analyze_mir();
+        self.start();
     }
 
     fn reset(&mut self) {
@@ -190,6 +191,7 @@ where
             fn_ConstraintGraph_mapping: FxHashMap::default(),
             callgraph: CallGraphInfo::new(),
             body_map: FxHashMap::default(),
+            cg_map: FxHashMap::default(),
         }
     }
 
@@ -199,19 +201,22 @@ where
         let mut cg: ConstraintGraph<'tcx, T> = ConstraintGraph::new(essa_def_id, ssa_def_id);
         cg.build_graph(body_mut_ref);
         cg.build_nuutila(false);
-        cg.find_intervals();
-        cg.build_final_vars(&self.ssa_places_mapping[&def_id]);
-        cg.rap_print_final_vars();
-        cg.test_and_print_all_symbolic_expressions();
-        let mut r_final: HashMap<Place<'tcx>, Range<T>> = HashMap::default();
-        let (r#final, not_found) = cg.build_final_vars(&self.ssa_places_mapping[&def_id]);
+        self.cg_map.insert(def_id, cg.clone());
+        cg.rap_print_vars();
+        // cg.find_intervals();
+        // cg.build_final_vars(&self.ssa_places_mapping[&def_id]);
+        // cg.rap_print_final_vars();
+        // cg.test_and_print_all_symbolic_expressions();
 
-        for (&place, varnode) in r#final.iter() {
-            r_final.insert(*place, varnode.get_range().clone());
-        }
-        self.final_vars.insert(def_id.into(), r_final);
+        // let mut r_final: HashMap<Place<'tcx>, Range<T>> = HashMap::default();
+        // let (r#final, not_found) = cg.build_final_vars(&self.ssa_places_mapping[&def_id]);
+
+        // for (&place, varnode) in r#final.iter() {
+        //     r_final.insert(*place, varnode.get_range().clone());
+        // }
+        // self.final_vars.insert(def_id.into(), r_final);
     }
-    fn analyze_mir(&mut self) {
+    fn start(&mut self) {
         let ssa_def_id = self.ssa_def_id.expect("SSA definition ID is not set");
         let essa_def_id = self.essa_def_id.expect("ESSA definition ID is not set");
 
@@ -240,7 +245,7 @@ where
                         self.body_map.insert(def_id.into(), body);
 
                         SSAPassRunner::print_diff(self.tcx, body_mut_ref, def_id.into());
-
+                        SSAPassRunner::print_mir_graph(self.tcx, body_mut_ref, def_id.into());
                         self.ssa_places_mapping
                             .insert(def_id.into(), passrunner.places_map.clone());
 
@@ -257,8 +262,9 @@ where
                 }
             }
         }
-        print!("{:?}", self.callgraph.get_callers_map());
-        // print!("{:?}", self.body_map);
-        self.callgraph.print_call_graph();
+        // print!("{:?}", self.callgraph.get_callers_map());
+        // self.callgraph.print_call_graph();
     }
+
+    fn only_caller_analyzer_mir(&mut self) {}
 }
