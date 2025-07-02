@@ -203,7 +203,7 @@ where
         cg.build_nuutila(false);
         self.cg_map.insert(def_id, cg.clone());
         cg.rap_print_vars();
-        // cg.find_intervals();
+        cg.find_intervals();
         // cg.build_final_vars(&self.ssa_places_mapping[&def_id]);
         // cg.rap_print_final_vars();
         // cg.test_and_print_all_symbolic_expressions();

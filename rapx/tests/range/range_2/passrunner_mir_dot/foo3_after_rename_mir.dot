@@ -7,7 +7,7 @@ digraph MIR {
   1 -> 2;
   2 [label="bb2:\l_29 = ESSAstmt\lStorageDead(_7)\lStorageLive(_8)\l_8 = const 0_i32\lStorageLive(_9)\l_9 = copy _29\lStorageLive(_10)\l"];
   2 -> 3;
-  3 [label="bb3:\l_30 = SSAstmt\l_31 = SSAstmt\l_32 = SSAstmt\lStorageLive(_11)\lStorageLive(_12)\l_12 = copy _31\lStorageLive(_13)\l_13 = copy _32\l_11 = Lt(move _12, move _13)\l"];
+  3 [label="bb3:\l_30 = SSAstmt\l_31 = SSAstmt\l_32 = SSAstmt\lStorageLive(_11)\lStorageLive(_12)\l_12 = copy _30\lStorageLive(_13)\l_13 = copy _32\l_11 = Lt(move _12, move _13)\l"];
   3 -> 7;
   3 -> 4;
   4 [label="bb4:\l_33 = ESSAstmt\l_34 = ESSAstmt\lStorageDead(_13)\lStorageDead(_12)\l_14 = AddWithOverflow(copy _33, const 1_i32)\l"];

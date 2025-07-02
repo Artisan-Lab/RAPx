@@ -20,6 +20,7 @@ use rustc_middle::{
     mir::*,
     ty::{self, print, ScalarInt, TyCtxt},
 };
+use rustc_span::source_map::Spanned;
 use rustc_span::sym::var;
 
 use std::{
@@ -261,6 +262,7 @@ where
             for statement in block_data.statements.iter() {
                 self.build_operations(statement, block);
             }
+            self.build_terminator(block, block_data.terminator.as_ref().unwrap());
         }
 
         // self.print_vars();
@@ -550,60 +552,182 @@ where
         self.print_compusemap(component, &comp_use_map);
         comp_use_map
     }
+    pub fn build_terminator(&mut self, block: BasicBlock, terminator: &'tcx Terminator<'tcx>) {
+        match &terminator.kind {
+            TerminatorKind::Call {
+                func,
+                args,
+                destination,
+                target: _,
+                unwind: _,
+                fn_span: _,
+                call_source,
+            } => {
+                rap_trace!(
+                    "TerminatorKind::Call in block {:?} with function {:?} and args {:?}\n",
+                    block,
+                    func,
+                    args
+                );
+                // Handle the call operation
+                self.add_call_op(destination, args, terminator, func, block);
+            }
+            TerminatorKind::Return => {
+                rap_trace!("TerminatorKind::Return in block {:?}\n", block);
+            }
+            TerminatorKind::Goto { target } => {
+                rap_trace!(
+                    "TerminatorKind::Goto in block {:?} targeting block {:?}\n",
+                    block,
+                    target
+                );
+            }
+            TerminatorKind::SwitchInt { discr, targets } => {
+                rap_trace!(
+                    "TerminatorKind::SwitchInt in block {:?} with discr {:?} and targets {:?}\n",
+                    block,
+                    discr,
+                    targets
+                );
+            }
+            _ => {
+                rap_trace!(
+                    "Unsupported terminator kind in block {:?}: {:?}",
+                    block,
+                    terminator.kind
+                );
+            }
+        }
+    }
     pub fn build_operations(&mut self, inst: &'tcx Statement<'tcx>, block: BasicBlock) {
-        if let StatementKind::Assign(box (sink, rvalue)) = &inst.kind {
-            match rvalue {
-                Rvalue::BinaryOp(op, box (op1, op2)) => match op {
-                    BinOp::Add
-                    | BinOp::Sub
-                    | BinOp::Mul
-                    | BinOp::Div
-                    | BinOp::Rem
-                    | BinOp::AddUnchecked => {
-                        self.add_binary_op(sink, inst, op1, op2, *op);
-                    }
-                    BinOp::AddWithOverflow => {
-                        self.add_binary_op(sink, inst, op1, op2, *op);
-                    }
-                    BinOp::SubUnchecked => {
-                        self.add_binary_op(sink, inst, op1, op2, *op);
-                    }
-                    BinOp::SubWithOverflow => {
-                        self.add_binary_op(sink, inst, op1, op2, *op);
-                    }
-                    BinOp::MulUnchecked => {
-                        self.add_binary_op(sink, inst, op1, op2, *op);
-                    }
-                    BinOp::MulWithOverflow => {
-                        self.add_binary_op(sink, inst, op1, op2, *op);
-                    }
-
-                    _ => {}
-                },
-                Rvalue::UnaryOp(unop, operand) => {
-                    self.add_unary_op(sink, inst, operand, *unop);
-                }
-                Rvalue::Aggregate(kind, operends) => {
-                    match **kind {
-                        AggregateKind::Adt(def_id, _, _, _, _) => {
-                            if def_id == self.essa {
-                                self.add_essa_op(sink, inst, operends, block);
-                                // rap_trace!("Adt{:?}\n", operends);
-                            }
-                            if def_id == self.ssa {
-                                self.add_ssa_op(sink, inst, operends);
-                                // rap_trace!("Adt{:?}\n", operends);
-                            }
+        match &inst.kind {
+            StatementKind::Assign(box (sink, rvalue)) => {
+                match rvalue {
+                    Rvalue::BinaryOp(op, box (op1, op2)) => match op {
+                        BinOp::Add
+                        | BinOp::Sub
+                        | BinOp::Mul
+                        | BinOp::Div
+                        | BinOp::Rem
+                        | BinOp::AddUnchecked => {
+                            self.add_binary_op(sink, inst, op1, op2, *op);
                         }
+                        BinOp::AddWithOverflow => {
+                            self.add_binary_op(sink, inst, op1, op2, *op);
+                        }
+                        BinOp::SubUnchecked => {
+                            self.add_binary_op(sink, inst, op1, op2, *op);
+                        }
+                        BinOp::SubWithOverflow => {
+                            self.add_binary_op(sink, inst, op1, op2, *op);
+                        }
+                        BinOp::MulUnchecked => {
+                            self.add_binary_op(sink, inst, op1, op2, *op);
+                        }
+                        BinOp::MulWithOverflow => {
+                            self.add_binary_op(sink, inst, op1, op2, *op);
+                        }
+
                         _ => {}
+                    },
+                    Rvalue::UnaryOp(unop, operand) => {
+                        self.add_unary_op(sink, inst, operand, *unop);
                     }
+                    Rvalue::Aggregate(kind, operends) => {
+                        match **kind {
+                            AggregateKind::Adt(def_id, _, _, _, _) => {
+                                if def_id == self.essa {
+                                    self.add_essa_op(sink, inst, operends, block);
+                                    // rap_trace!("Adt{:?}\n", operends);
+                                }
+                                if def_id == self.ssa {
+                                    self.add_ssa_op(sink, inst, operends);
+                                    // rap_trace!("Adt{:?}\n", operends);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    Rvalue::Use(operend) => {
+                        self.add_use_op(sink, inst, operend);
+                    }
+                    _ => {}
                 }
-                Rvalue::Use(operend) => {
-                    self.add_use_op(sink, inst, operend);
+            }
+            _ => {}
+        }
+    }
+    // ... inside your struct impl ...
+
+    /// Adds a function call operation to the graph.
+    fn add_call_op(
+        &mut self,
+        sink: &'tcx Place<'tcx>,
+        args: &'tcx Box<[Spanned<Operand<'tcx>>]>,
+        terminator: &'tcx Terminator<'tcx>,
+        func: &'tcx Operand<'tcx>,
+        block: BasicBlock,
+    ) {
+        rap_trace!("add_call_op for sink: {:?}\n", sink);
+        let sink_node = self.add_varnode(&sink);
+        rap_trace!("addsink_in_call_op{:?}\n", sink_node);
+
+        // Convert Operand arguments to Place arguments.
+        // An Operand can be a Constant or a moved/copied Place.
+        // We only care about Places for our analysis.
+        let mut func_def_id = None;
+        if let Operand::Constant(box const_operand) = func {
+            let fn_ty = const_operand.ty();
+            if let ty::TyKind::FnDef(def_id, _substs) = fn_ty.kind() {
+                // Found the DefId for a direct function call!
+                func_def_id = Some(def_id);
+            }
+        }
+
+        if let Some(def_id) = func_def_id {
+            rap_debug!(
+                "TerminatorKind::Call in block {:?} with DefId {:?}\n",
+                block,
+                def_id
+            );
+            // You can now use the def_id
+        } else {
+            rap_trace!(
+                "TerminatorKind::Call in block {:?} is an indirect call (e.g., function pointer)\n",
+                block
+            );
+            // This handles cases where the call is not a direct one,
+            // such as calling a function pointer stored in a variable.
+        }
+
+        let mut arg_places: Vec<&'tcx Place<'tcx>> = Vec::new();
+        for op in args.iter() {
+            match &op.node {
+                Operand::Copy(place) | Operand::Move(place) => {
+                    arg_places.push(place);
+                    self.add_varnode(place);
                 }
+
                 _ => {}
             }
         }
+        let bi = BasicInterval::new(Range::default(T::min_value()));
+
+        let call_op = CallOp::new(
+            IntervalType::Basic(bi),
+            &sink,
+            terminator, // Pass the allocated dummy statement
+            arg_places,
+            *func_def_id.unwrap(), // Use the DefId if available
+        );
+
+        let bop_index = self.oprs.len();
+
+        // Insert the operation into the graph.
+        self.oprs.push(BasicOpKind::Call(call_op));
+
+        // Insert this definition in defmap
+        self.defmap.insert(&sink, bop_index);
     }
     fn add_ssa_op(
         &mut self,
@@ -1211,7 +1335,7 @@ where
                 let control_edge = ControlDep::new(
                     IntervalType::Basic(BasicInterval::default()),
                     opkind.get_sink(),
-                    opkind.get_instruction(),
+                    opkind.get_instruction().unwrap(),
                     place,
                 );
                 rap_trace!(
@@ -1417,8 +1541,6 @@ where
                         return Some(SymbolicExpr::Unknown(UnknownReason::CyclicDependency));
                     }
                     PlaceElem::Index(index_place) => {
-                        // 索引访问 (e.g., `_3[k]`)
-                        // 递归解析索引表达式
                         // let index_expr = match self.get_symbolic_expression_recursive(index_place, memo, in_progress) {
                         //     Some(e) => e,
                         //     None => {
@@ -1439,11 +1561,6 @@ where
                         min_length,
                         from_end,
                     } => {
-                        // 常量索引 (e.g., `_3[0]`)
-                        // `SymbolicExpr::Constant` 需要 `Const<'tcx>`。
-                        // 从 `usize` 偏移量构造 `Const<'tcx>` 需要 `TyCtxt<'tcx>`，
-                        // 而 `ConstraintGraph` 不直接持有 `TyCtxt`。
-                        // 因此，目前无法精确表示，返回 Unknown。
                         rap_trace!("Unsupported PlaceElem::ConstantIndex at {:?}. Requires TyCtxt to create Const<'tcx>. Returning Unknown.", place);
                         in_progress.remove(place);
                         memo.insert(
@@ -1452,8 +1569,7 @@ where
                         );
                         return Some(SymbolicExpr::Unknown(UnknownReason::CyclicDependency));
                     }
-                    // 其他 MIR 投影类型，例如 `Subslice` 和 `Downcast`，
-                    // 也无法直接映射到当前的 `SymbolicExpr`。
+
                     _ => {
                         rap_trace!("Unsupported PlaceElem kind at {:?}. Cannot convert to SymbolicExpr. Returning Unknown.", place);
                         in_progress.remove(place);
@@ -1468,13 +1584,11 @@ where
             Some(current_expr)
         };
 
-        // 4. 将结果存入记忆化缓存，并从 `in_progress` 集合中移除当前 Place
         in_progress.remove(place);
         memo.insert(place, result.clone());
         result
     }
 
-    /// 辅助函数，将 `BasicOpKind` 转换为 `SymbolicExpr`。
     fn op_kind_to_symbolic_expr(
         &self,
         op_kind: &BasicOpKind<'tcx, T>,
@@ -1620,6 +1734,7 @@ where
                 rap_trace!("Encountered unexpected ControlDep operation defining a place. Returning Unknown.");
                 Some(SymbolicExpr::Unknown(UnknownReason::CannotParse))
             }
+            BasicOpKind::Call(call_op) => todo!(),
         }
     }
 }

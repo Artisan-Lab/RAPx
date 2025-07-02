@@ -9,9 +9,11 @@ use super::range::{Range, RangeType};
 use crate::rap_trace;
 use num_traits::{Bounded, CheckedAdd, CheckedSub, One, ToPrimitive, Zero};
 use rustc_abi::Size;
+use rustc_hir::def_id::DefId;
 use rustc_middle::mir::coverage::Op;
 use rustc_middle::mir::{
-    BasicBlock, BinOp, Const, Local, LocalDecl, Place, Rvalue, Statement, StatementKind, UnOp,
+    BasicBlock, BinOp, Const, Local, LocalDecl, Place, Rvalue, Statement, StatementKind,
+    Terminator, UnOp,
 };
 use rustc_middle::ty::ScalarInt;
 use rustc_span::sym::no_default_passes;
@@ -323,6 +325,7 @@ pub enum BasicOpKind<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     ControlDep(ControlDep<'tcx, T>),
     Phi(PhiOp<'tcx, T>),
     Use(UseOp<'tcx, T>),
+    Call(CallOp<'tcx, T>),
 }
 
 impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> fmt::Display for BasicOpKind<'tcx, T> {
@@ -334,6 +337,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> fmt::Display for BasicO
             BasicOpKind::ControlDep(op) => write!(f, "ControlDep: intersect {} sink:{:?} source:{:?} inst:{:?}  ",op.intersect,op.sink,op.source,op.inst),
             BasicOpKind::Phi(op) => write!(f, "PhiOp: intersect {} sink:{:?} source:{:?} inst:{:?}  ",op.intersect,op.sink,op.sources,op.inst),
             BasicOpKind::Use(op) => write!(f, "UseOp: intersect {} sink:{:?} source:{:?} inst:{:?} ",op.intersect,op.sink,op.source,op.inst ),
+            BasicOpKind::Call(op) => write!(f, "CallOp: intersect {} sink:{:?} args:{:?} inst:{:?}", op.intersect, op.sink, op.args, op.inst),
         }
     }
 }
@@ -346,6 +350,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> BasicOpKind<'tcx, T> {
             BasicOpKind::ControlDep(op) => op.eval(),
             BasicOpKind::Phi(op) => op.eval(vars),
             BasicOpKind::Use(op) => op.eval(vars),
+            BasicOpKind::Call(op) => op.eval(vars),
         }
     }
     pub fn get_type_name(&self) -> &'static str {
@@ -356,6 +361,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> BasicOpKind<'tcx, T> {
             BasicOpKind::ControlDep(_) => "ControlDep",
             BasicOpKind::Phi(_) => "Phi",
             BasicOpKind::Use(_) => "Use",
+            BasicOpKind::Call(_) => "Call",
         }
     }
     pub fn get_sink(&self) -> &'tcx Place<'tcx> {
@@ -366,16 +372,18 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> BasicOpKind<'tcx, T> {
             BasicOpKind::ControlDep(op) => op.sink,
             BasicOpKind::Phi(op) => op.sink,
             BasicOpKind::Use(op) => op.sink,
+            BasicOpKind::Call(op) => op.sink,
         }
     }
-    pub fn get_instruction(&self) -> &'tcx Statement<'tcx> {
+    pub fn get_instruction(&self) -> Option<&'tcx Statement<'tcx>> {
         match self {
-            BasicOpKind::Unary(op) => op.inst,
-            BasicOpKind::Binary(op) => op.inst,
-            BasicOpKind::Essa(op) => op.inst,
-            BasicOpKind::ControlDep(op) => op.inst,
-            BasicOpKind::Phi(op) => op.inst,
-            BasicOpKind::Use(op) => op.inst,
+            BasicOpKind::Unary(op) => Some(op.inst),
+            BasicOpKind::Binary(op) => Some(op.inst),
+            BasicOpKind::Essa(op) => Some(op.inst),
+            BasicOpKind::ControlDep(op) => Some(op.inst),
+            BasicOpKind::Phi(op) => Some(op.inst),
+            BasicOpKind::Use(op) => Some(op.inst),
+            BasicOpKind::Call(op) => None,
         }
     }
     pub fn get_intersect(&self) -> &IntervalType<'tcx, T> {
@@ -386,6 +394,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> BasicOpKind<'tcx, T> {
             BasicOpKind::ControlDep(op) => &op.intersect,
             BasicOpKind::Phi(op) => &op.intersect,
             BasicOpKind::Use(op) => &op.intersect,
+            BasicOpKind::Call(op) => &op.intersect,
         }
     }
     pub fn op_fix_intersects(&mut self, v: &VarNode<'tcx, T>, sink: &VarNode<'tcx, T>) {
@@ -411,6 +420,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> BasicOpKind<'tcx, T> {
             BasicOpKind::ControlDep(op) => op.intersect.set_range(new_intersect),
             BasicOpKind::Phi(op) => op.intersect.set_range(new_intersect),
             BasicOpKind::Use(op) => op.intersect.set_range(new_intersect),
+            BasicOpKind::Call(op) => op.intersect.set_range(new_intersect),
         }
     }
     pub fn get_intersect_mut(&mut self) -> &mut IntervalType<'tcx, T> {
@@ -421,6 +431,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> BasicOpKind<'tcx, T> {
             BasicOpKind::ControlDep(op) => &mut op.intersect,
             BasicOpKind::Phi(op) => &mut op.intersect,
             BasicOpKind::Use(op) => &mut op.intersect,
+            BasicOpKind::Call(op) => &mut op.intersect,
         }
     }
     pub fn get_source(&self) -> &'tcx Place<'tcx> {
@@ -431,6 +442,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> BasicOpKind<'tcx, T> {
             BasicOpKind::ControlDep(op) => op.source,
             BasicOpKind::Phi(op) => op.sources[0],
             BasicOpKind::Use(op) => op.source.unwrap(),
+            BasicOpKind::Call(op) => op.args[0],
         }
     }
     // pub fn eval(&self) -> Range<T> {
@@ -443,6 +455,39 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> BasicOpKind<'tcx, T> {
     //         BasicOpKind::Use(op) => op.eval(),
     //     }
     // }
+}
+#[derive(Debug, Clone)]
+pub struct CallOp<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
+    pub intersect: IntervalType<'tcx, T>,
+    pub sink: &'tcx Place<'tcx>,
+    pub inst: &'tcx Terminator<'tcx>,
+    pub args: Vec<&'tcx Place<'tcx>>,
+    pub def_id: DefId,
+}
+
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> CallOp<'tcx, T> {
+    pub fn new(
+        intersect: IntervalType<'tcx, T>,
+        sink: &'tcx Place<'tcx>,
+        inst: &'tcx Terminator<'tcx>,
+        args: Vec<&'tcx Place<'tcx>>,
+        def_id: DefId,
+    ) -> Self {
+        Self {
+            intersect,
+            sink,
+            inst,
+            args,
+            def_id,
+        }
+    }
+
+    pub fn eval(&self, _vars: &VarNodes<'tcx, T>) -> Range<T> {
+        // A conservative evaluation of a function call returns the widest possible range,
+        // as the function's behavior is not analyzed here.
+
+        Range::default(T::min_value())
+    }
 }
 #[derive(Debug, Clone)]
 pub struct UseOp<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
