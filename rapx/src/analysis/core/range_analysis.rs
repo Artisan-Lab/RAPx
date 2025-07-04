@@ -4,10 +4,12 @@
 
 use crate::analysis::{
     core::{
-        call_graph::{call_graph_helper::CallGraphInfo, call_graph_visitor::CallGraphVisitor}, ownedheap_analysis::OHAResult, range_analysis::domain::{
+        call_graph::{call_graph_helper::CallGraphInfo, call_graph_visitor::CallGraphVisitor},
+        ownedheap_analysis::OHAResult,
+        range_analysis::domain::{
             domain::{ConstConvert, IntervalArithmetic},
             range::Range,
-        }
+        },
     },
     safedrop::graph::SafeDropGraph,
 };
@@ -388,7 +390,7 @@ where
                     rap_info!("  No final variables tracked for this function.");
                 } else {
                     for (place, range) in var_map {
-                        rap_info!("  Var: {:?},  Range: {}", place, range);
+                        rap_info!("Var: {:?}, {}", place, range);
                     }
                 }
             }

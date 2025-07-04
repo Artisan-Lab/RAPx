@@ -279,21 +279,45 @@ fn test_range_analysis() {
     let output = running_tests_with_arg("range/range_1", "-range");
 
     let expected_ranges = vec![
-        "var: _11. Regular [1, 99]",
-        "var: _6. Regular [0, 99]",
-        "var: _1. Regular [0, 0]",
-        "var: _16. Regular [1, 100]",
-        "var: _9. Regular [0, 99]",
-        "var: _35. Regular [Min, Max]",
-        "var: _7. Regular [Min, Max]",
-        "var: _2. Regular [Min, Max]",
-        "var: _31. Regular [0, 98]",
-        "var: _12. Regular [0, 98]",
-        "var: _10. Regular [0, 99]",
-        "var: _30. Regular [1, 99]",
-        "var: _5. Regular [0, 0]",
-        "var: _4. Regular [0, 100]",
-        "var: _34. Regular [1, 100]",
+        "Var: _11, Regular [1, 99]",
+        "Var: _6, Regular [0, 99]",
+        "Var: _1, Regular [0, 0]",
+        "Var: _16, Regular [1, 100]",
+        "Var: _9, Regular [0, 99]",
+        "Var: _35, Regular [Min, Max]",
+        "Var: _7, Regular [Min, Max]",
+        "Var: _2, Regular [Min, Max]",
+        "Var: _31, Regular [0, 98]",
+        "Var: _12, Regular [0, 98]",
+        "Var: _10, Regular [0, 99]",
+        "Var: _30, Regular [1, 99]",
+        "Var: _5, Regular [0, 0]",
+        "Var: _4, Regular [0, 100]",
+        "Var: _34, Regular [1, 100]",
+    ];
+
+    for expected in expected_ranges {
+        assert!(
+            output.contains(expected),
+            "Missing expected range: '{}'\nFull output:\n{}",
+            expected,
+            output
+        );
+    }
+}
+#[test]
+
+fn test_interprocedual_range_analysis() {
+    let output = running_tests_with_arg("range/range_2", "-range");
+
+    let expected_ranges = vec![
+        "Var: _5, Regular [101, 101]",
+        "Var: _3, Regular [42, 42]",
+        "Var: _1, Regular [42, 42]",
+        "Var: _4, Regular [52, 52]",
+        "Var: _6, Regular [52, 52]",
+        "Var: _2, Regular [Min, Max]",
+        "Var: _7, Regular [0, 0]",
     ];
 
     for expected in expected_ranges {

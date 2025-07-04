@@ -107,7 +107,7 @@ impl<'tcx> DefaultOwnedHeapAnalysis<'tcx> {
         format!("({}, [{}])", heap, vec_str)
     }
 
-     pub fn output(&mut self) {
+    pub fn output(&mut self) {
         for elem in self.adt_heap() {
             let name = format!("{:?}", EarlyBinder::skip_binder(self.tcx.type_of(*elem.0)));
             let owning = elem

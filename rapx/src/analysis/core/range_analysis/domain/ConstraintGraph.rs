@@ -140,17 +140,17 @@ where
     }
     pub fn rap_print_final_vars(&self) {
         for (&key, value) in &self.final_vars {
-            rap_debug!("var: {:?}. {} ", key, value.get_range());
+            rap_debug!("Var: {:?}, {} ", key, value.get_range());
         }
     }
     pub fn rap_print_vars(&self) {
         for (&key, value) in &self.vars {
-            rap_trace!("var: {:?}. {} ", key, value.get_range());
+            rap_trace!("Var: {:?}. {} ", key, value.get_range());
         }
     }
     pub fn print_vars(&self) {
         for (&key, value) in &self.vars {
-            rap_trace!("var: {:?}. {} ", key, value.get_range());
+            rap_trace!("Var: {:?}. {} ", key, value.get_range());
         }
     }
     pub fn print_conponent_vars(&self) {
@@ -160,9 +160,9 @@ where
                 rap_trace!("component: {:?} ", key);
                 for v in value {
                     if let Some(var_node) = self.vars.get(v) {
-                        rap_trace!("var: {:?}. {} ", v, var_node.get_range());
+                        rap_trace!("Var: {:?}. {} ", v, var_node.get_range());
                     } else {
-                        rap_trace!("var: {:?} not found", v);
+                        rap_trace!("Var: {:?} not found", v);
                     }
                 }
             }
@@ -1810,8 +1810,7 @@ where
         &self,
         body: &'tcx Body<'tcx>,
         all_paths_indices: &[Vec<usize>],
-    ) -> HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>> 
-    {
+    ) -> HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>> {
         let mut all_path_results: HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>> =
             HashMap::with_capacity(all_paths_indices.len());
 
