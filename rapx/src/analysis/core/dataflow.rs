@@ -8,18 +8,52 @@ use std::process::Command;
 
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::DefId;
-use rustc_middle::mir::Body;
+use rustc_middle::mir::{Body, Local};
 use rustc_middle::ty::TyCtxt;
 
+use crate::Analysis;
 use graph::Graph;
+use std::collections::HashSet;
 
-pub struct DataFlow<'tcx> {
+pub trait DataFlowAnalysis: Analysis {
+    fn has_flow_between(&self, def_id: DefId, local1: Local, local2: Local) -> bool;
+
+    fn collect_equivalent_locals(&self, def_id: DefId, local: Local) -> HashSet<Local>;
+}
+
+pub struct DataFlowAnalyzer<'tcx> {
     pub tcx: TyCtxt<'tcx>,
     pub graphs: HashMap<DefId, Graph>,
     pub debug: bool,
 }
 
-impl<'tcx> DataFlow<'tcx> {
+impl<'tcx> DataFlowAnalysis for DataFlowAnalyzer<'tcx> {
+    fn has_flow_between(&self, def_id: DefId, local1: Local, local2: Local) -> bool {
+        let graph = self.graphs.get(&def_id).unwrap();
+        graph.is_connected(local1, local2)
+    }
+
+    fn collect_equivalent_locals(&self, def_id: DefId, local: Local) -> HashSet<Local> {
+        let graph = self.graphs.get(&def_id).unwrap();
+        graph.collect_equivalent_locals(local, true)
+    }
+}
+
+impl<'tcx> Analysis for DataFlowAnalyzer<'tcx> {
+    fn name(&self) -> &'static str {
+        "DataFlow Analysis"
+    }
+
+    fn run(&mut self) {
+        self.build_graphs();
+    }
+
+    fn reset(&mut self) {
+        self.graphs.clear();
+    }
+}
+
+impl<'tcx> DataFlowAnalyzer<'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>, debug: bool) -> Self {
         Self {
             tcx: tcx,

@@ -472,7 +472,7 @@ dependencies = [
 
 [[package]]
 name = "rapx"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "annotate-snippets",
  "cargo_metadata",

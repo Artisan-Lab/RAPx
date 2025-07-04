@@ -8,7 +8,7 @@ use rustc_middle::ty::TyCtxt;
 use crate::rap_warn;
 use crate::utils::log::span_to_source_code;
 
-use super::core::dataflow::{graph::Graph, DataFlow};
+use super::core::dataflow::{graph::Graph, DataFlowAnalyzer};
 use checking::bounds_checking::BoundsCheck;
 use checking::encoding_checking::EncodingCheck;
 use data_collection::initialization::InitializationCheck;
@@ -52,7 +52,7 @@ impl<'tcx> Opt<'tcx> {
     }
 
     pub fn start(&mut self) {
-        let mut dataflow = DataFlow::new(self.tcx, false);
+        let mut dataflow = DataFlowAnalyzer::new(self.tcx, false);
         dataflow.build_graphs();
         {
             let mut no_std = NO_STD.lock().unwrap();

@@ -26,7 +26,7 @@ use analysis::{
         alias_analysis::default::AliasAnalyzer,
         api_dep::ApiDep,
         callgraph::default::CallGraphAnalyzer,
-        dataflow::DataFlow,
+        dataflow::DataFlowAnalyzer,
         ownedheap_analysis::{default::OwnedHeapAnalyzer, OwnedHeapAnalysis},
         range_analysis::RangeAnalyzer,
         ssa_pass_runner::SSATrans,
@@ -327,8 +327,8 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
     }
 
     match callback.is_dataflow_enabled() {
-        1 => DataFlow::new(tcx, false).start(),
-        2 => DataFlow::new(tcx, true).start(),
+        1 => DataFlowAnalyzer::new(tcx, false).run(),
+        2 => DataFlowAnalyzer::new(tcx, true).run(),
         _ => {}
     }
 
