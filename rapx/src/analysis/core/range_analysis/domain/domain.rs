@@ -6,17 +6,20 @@
 #![allow(non_snake_case)]
 
 use super::range::{Range, RangeType};
-use crate::rap_trace;
+use crate::analysis::core::range_analysis::domain::ConstraintGraph::ConstraintGraph;
+use crate::{rap_debug, rap_trace};
 use num_traits::{Bounded, CheckedAdd, CheckedSub, One, ToPrimitive, Zero};
 use rustc_abi::Size;
+use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::coverage::Op;
 use rustc_middle::mir::{
-    BasicBlock, BinOp, Const, Local, LocalDecl, Place, Rvalue, Statement, StatementKind,
+    BasicBlock, BinOp, Const, Local, LocalDecl, Operand, Place, Rvalue, Statement, StatementKind,
     Terminator, UnOp,
 };
 use rustc_middle::ty::ScalarInt;
 use rustc_span::sym::no_default_passes;
+use std::cell::RefCell;
 use std::cmp::PartialEq;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -30,7 +33,7 @@ pub trait ConstConvert: Sized {
 impl ConstConvert for u32 {
     fn from_const(c: &Const) -> Option<Self> {
         if let Some(scalar) = c.try_to_scalar_int() {
-            Some(scalar.to_u32())
+            Some(scalar.to_bits(scalar.size()) as u32)
         } else {
             None
         }
@@ -38,10 +41,8 @@ impl ConstConvert for u32 {
 }
 impl ConstConvert for usize {
     fn from_const(c: &Const) -> Option<Self> {
-        let size = Size::from_bits(32);
-        // let size = Size::from_bits(std::mem::size_of::<usize>() as u64 * 8);
-        if let Some(scalar) = c.try_to_bits(size) {
-            Some(scalar.to_usize().unwrap())
+        if let Some(scalar) = c.try_to_scalar_int() {
+            Some(scalar.to_bits(scalar.size()) as usize)
         } else {
             None
         }
@@ -50,7 +51,7 @@ impl ConstConvert for usize {
 impl ConstConvert for i32 {
     fn from_const(c: &Const) -> Option<Self> {
         if let Some(scalar) = c.try_to_scalar_int() {
-            Some(scalar.to_i32())
+            Some(scalar.to_bits(scalar.size()) as i32)
         } else {
             None
         }
@@ -60,7 +61,16 @@ impl ConstConvert for i32 {
 impl ConstConvert for i64 {
     fn from_const(c: &Const) -> Option<Self> {
         if let Some(scalar) = c.try_to_scalar_int() {
-            Some(scalar.to_i64())
+            Some(scalar.to_bits(scalar.size()) as i64)
+        } else {
+            None
+        }
+    }
+}
+impl ConstConvert for i128 {
+    fn from_const(c: &Const) -> Option<Self> {
+        if let Some(scalar) = c.try_to_scalar_int() {
+            Some(scalar.to_bits(scalar.size()) as i128)
         } else {
             None
         }
@@ -265,58 +275,6 @@ pub trait Operation<T: IntervalArithmetic + ConstConvert + Debug> {
     fn print(&self, os: &mut dyn fmt::Write);
 }
 
-// #[derive(Debug, Clone)]
-// pub struct BasicOp<'tcx, T:  IntervalArithmetic + ConstConvert + Debug> {
-//     pub intersect: BasicInterval<T>,
-//     pub sink: Place<'tcx>,
-//     pub inst: &'tcx Statement<'tcx>,
-// }
-
-// impl<'tcx, T:  IntervalArithmetic + ConstConvert + Debug> BasicOp<'tcx, T> {
-//     // Constructor for creating a new BasicOp
-//     pub fn new(
-//         intersect: BasicInterval<T>,
-//         sink: Place<'tcx>,
-//         inst: &'tcx Statement<'tcx>,
-//     ) -> Self {
-//         BasicOp {
-//             intersect,
-//             sink,
-//             inst,
-//         }
-//     }
-
-//     pub fn get_instruction(&self) -> Option<&Statement<'tcx>> {
-//         Some(self.inst)
-//     }
-
-//     pub fn fix_intersects(&mut self, _v: &VarNode<T>) {}
-
-//     pub fn set_intersect(&mut self, new_intersect: Range<T>) {
-//         self.intersect.set_range(new_intersect);
-//     }
-
-//     pub fn get_sink(&self) -> Place<'tcx> {
-//         self.sink
-//     }
-//     // Returns the instruction that originated this operation
-
-//     // Returns the target of the operation (sink), mutable version
-// }
-
-// // Implement the Operation trait for BasicOp
-// impl<'tcx, T:  IntervalArithmetic + ConstConvert + Debug> Operation<T> for BasicOp<'tcx, T> {
-//     fn get_value_id(&self) -> u32 {
-//         0 // Placeholder implementation
-//     }
-
-//     fn eval(&self) -> Range<T> {
-//         // Placeholder for evaluating the range
-//         Range::default(T::min_value()) // Assuming Range<T> implements Default
-//     }
-
-//     fn print(&self, os: &mut dyn fmt::Write) {}
-// }
 #[derive(Debug, Clone)]
 pub enum BasicOpKind<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     Unary(UnaryOp<'tcx, T>),
@@ -434,43 +392,25 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> BasicOpKind<'tcx, T> {
             BasicOpKind::Call(op) => &mut op.intersect,
         }
     }
-    pub fn get_source(&self) -> &'tcx Place<'tcx> {
-        match self {
-            BasicOpKind::Unary(op) => op.source,
-            BasicOpKind::Binary(op) => op.source1.unwrap(),
-            BasicOpKind::Essa(op) => op.source,
-            BasicOpKind::ControlDep(op) => op.source,
-            BasicOpKind::Phi(op) => op.sources[0],
-            BasicOpKind::Use(op) => op.source.unwrap(),
-            BasicOpKind::Call(op) => op.args[0],
-        }
-    }
-    // pub fn eval(&self) -> Range<T> {
-    //     match self {
-    //         BasicOpKind::Unary(op) => op.eval(),
-    //         BasicOpKind::Binary(op) => op.eval(),
-    //         BasicOpKind::Essa(op) => op.eval(),
-    //         BasicOpKind::ControlDep(op) => op.eval(),
-    //         BasicOpKind::Phi(op) => op.eval(),
-    //         BasicOpKind::Use(op) => op.eval(),
-    //     }
-    // }
 }
 #[derive(Debug, Clone)]
 pub struct CallOp<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub intersect: IntervalType<'tcx, T>,
     pub sink: &'tcx Place<'tcx>,
     pub inst: &'tcx Terminator<'tcx>,
-    pub args: Vec<&'tcx Place<'tcx>>,
+    pub args: Vec<Operand<'tcx>>,
     pub def_id: DefId,
 }
 
 impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> CallOp<'tcx, T> {
+    pub fn convert_const(c: &Const) -> Option<T> {
+        T::from_const(c)
+    }
     pub fn new(
         intersect: IntervalType<'tcx, T>,
         sink: &'tcx Place<'tcx>,
         inst: &'tcx Terminator<'tcx>,
-        args: Vec<&'tcx Place<'tcx>>,
+        args: Vec<Operand<'tcx>>,
         def_id: DefId,
     ) -> Self {
         Self {
@@ -482,11 +422,130 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> CallOp<'tcx, T> {
         }
     }
 
-    pub fn eval(&self, _vars: &VarNodes<'tcx, T>) -> Range<T> {
-        // A conservative evaluation of a function call returns the widest possible range,
-        // as the function's behavior is not analyzed here.
+    pub fn eval(&self, caller_vars: &VarNodes<'tcx, T>) -> Range<T> {
+        return Range::default(T::min_value());
+    }
+    pub fn eval_call(
+        &self,
+        caller_vars: &VarNodes<'tcx, T>,
+        all_cgs: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+    ) -> Range<T> {
+        // 1. Find the callee's ConstraintGraph in the map.
+        if let Some(callee_cg_cell) = all_cgs.get(&self.def_id) {
+            rap_debug!(
+                "Evaluating call to {:?} with args {:?}",
+                self.def_id,
+                self.args
+            );
+            // 2. Try to get a mutable borrow of the callee's graph.
+            //    Using `try_borrow_mut` is safer than `borrow_mut` to avoid panicking on recursive calls.
+            if let Ok(mut callee_cg) = callee_cg_cell.try_borrow_mut() {
+                // 3. Pass arguments from caller to callee.
+                //    This assumes arguments are in order and `_1`, `_2`, ... in the callee MIR.
+                for (i, caller_arg_operand) in self.args.iter().enumerate() {
+                    rap_debug!(
+                        "Processing argument {}: {:?} to callee {:?}",
+                        i,
+                        caller_arg_operand,
+                        self.def_id
+                    );
+                    match caller_arg_operand {
+                        Operand::Copy(caller_arg_place) | Operand::Move(caller_arg_place) => {
+                            // Add the variable node for the caller's argument.
+                            // Callee arguments are typically `_1`, `_2`, ...
+                            let callee_arg_local = rustc_middle::mir::Local::from_usize(i + 1);
 
-        Range::default(T::min_value())
+                            // Find the corresponding Place and VarNode in the callee.
+                            if let Some(callee_arg_node) = callee_cg.vars.values_mut().find(|v| {
+                                v.v.local == callee_arg_local && v.v.projection.is_empty()
+                            }) {
+                                // Get the range from the caller's variable and set it for the callee's argument.
+                                if let Some(caller_arg_node) = caller_vars.get(&caller_arg_place) {
+                                    let arg_range = caller_arg_node.get_range().clone();
+                                    callee_arg_node.set_range(arg_range);
+                                    rap_debug!(
+                                                    "Passing argument from {:?} to callee {:?} : {:?} {:?} -> {:?}",
+                                                    caller_arg_place,
+                                                    self.def_id,
+                                                    callee_arg_node.get_value(),
+                                                    caller_arg_node.get_range(),
+                                                    callee_arg_node.get_range()
+                                                );
+                                }
+                            }
+                        }
+                        Operand::Constant(const_operand) => {
+                            rap_debug!(
+                                "constant argument {:?} to callee {:?}",
+                                const_operand,
+                                self.def_id
+                            );
+                            let callee_arg_local = rustc_middle::mir::Local::from_usize(i + 1);
+                            if let Some(const_value) = Self::convert_const(&const_operand.const_) {
+                                if let Some(callee_arg_node) =
+                                    callee_cg.vars.values_mut().find(|v| {
+                                        v.v.local == callee_arg_local && v.v.projection.is_empty()
+                                    })
+                                {
+                                    // Get the range from the caller's variable and set it for the callee's argument.
+
+                                    let arg_range = Range::new(
+                                        const_value.clone(),
+                                        const_value.clone(),
+                                        RangeType::Regular,
+                                    );
+                                    callee_arg_node.set_range(arg_range.clone());
+                                    rap_debug!(
+                                                    "Passing argument from {:?} to callee {:?} : {:?} {:?} -> {:?}",
+                                                    const_value,
+                                                    self.def_id,
+                                                    callee_arg_node.get_value(),
+                                                    arg_range,
+                                                    callee_arg_node.get_range()
+                                                );
+                                }
+                            }
+                            // Find the corresponding Place and VarNode in the callee.
+                        }
+                    }
+                }
+
+                // 4. Run analysis on the callee.
+                //    NOTE: This is a simplification. A full implementation would use memoization
+                //    or a bottom-up analysis order to avoid re-analyzing functions repeatedly.
+                //    For now, we re-run it to ensure argument values are propagated.
+                callee_cg.find_intervals(all_cgs);
+
+                // 5. Retrieve the return value.
+                //    The return value is stored in `_0` (RETURN_PLACE).
+                let return_place_local = 0 as usize; // `_0` is typically the first local.
+                let mut return_range = Range::default(T::min_value());
+
+                // Find all variables that contribute to the return value.
+                // The `rerurn_places` set in the callee's graph tracks these.
+                if let Some(return_node) = callee_cg.vars.get_mut(&Place::return_place()) {
+                    return_range = return_node.get_range().clone();
+                    rap_debug!(" final return range {} ", return_range);
+                    return return_range;
+                }
+            } else {
+                // Recursive call detected or graph is already borrowed.
+                // Conservatively return a full range.
+                rap_trace!(
+                    "Recursive call or existing borrow for {:?}, returning top.",
+                    self.def_id
+                );
+                return Range::new(T::min_value(), T::max_value(), RangeType::Regular);
+            }
+        }
+
+        // Callee not found (e.g., external library function, function pointer).
+        // Return a conservative full range.
+        rap_trace!(
+            "Callee ConstraintGraph for {:?} not found, returning top.",
+            self.def_id
+        );
+        Range::new(T::min_value(), T::max_value(), RangeType::Regular)
     }
 }
 #[derive(Debug, Clone)]
@@ -797,24 +856,6 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> VarNode<'tcx, T> {
     /// Initializes the value of the node.
     pub fn init(&mut self, outside: bool) {
         let value = self.get_value();
-
-        // if let Some(ci) = value.as_constant_int() {
-        //     let tmp = ci.get_value();
-        //     if tmp.bits() < MAX_BIT_INT {
-        //         self.set_range(Range::new(
-        //             tmp.extend_bits(MAX_BIT_INT),
-        //             tmp.extend_bits(MAX_BIT_INT),
-        //         ));
-        //     } else {
-        //         self.set_range(Range::new(tmp, tmp));
-        //     }
-        // } else {
-        //     if !outside {
-        //         self.set_range(Range::new(MIN, MAX));
-        //     } else {
-        //         self.set_range(Range::new(MIN, MAX));
-        //     }
-        // }
     }
 
     /// Returns the range of the variable represented by this node.
@@ -830,12 +871,6 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> VarNode<'tcx, T> {
     /// Changes the status of the variable represented by this node.
     pub fn set_range(&mut self, new_interval: Range<T>) {
         self.interval = new_interval;
-
-        // Check if lower bound is greater than upper bound. If it is,
-        // set range to empty.
-        // if self.interval.get_lower().sgt(self.interval.get_upper()) {
-        //     self.interval.set_empty();
-        // }
     }
 
     /// Pretty print.

@@ -133,6 +133,6 @@ impl<'tcx> PassRunner<'tcx> {
         replacer.insert_phi_statment(body);
         replacer.insert_essa_statement(body);
         replacer.rename_variables(body);
-        self.places_map = replacer.ssatransformer.locals_map.clone();
+        self.places_map = replacer.ssatransformer.places_map.clone();
     }
 }

@@ -4,6 +4,7 @@
 
 use rustc_data_structures::graph::dominators::Dominators;
 use rustc_data_structures::graph::{dominators, Predecessors};
+use rustc_driver::args;
 use rustc_hir::def_id::DefId;
 use rustc_hir::def_id::{CrateNum, DefIndex, LocalDefId, CRATE_DEF_INDEX, LOCAL_CRATE};
 use rustc_middle::mir::*;
@@ -43,7 +44,7 @@ pub struct SSATransformer<'tcx> {
     pub essa_statements: HashMap<*const Statement<'tcx>, bool>,
     pub phi_def_id: DefId,
     pub essa_def_id: DefId,
-    pub locals_map: HashMap<Place<'tcx>, HashSet<Place<'tcx>>>,
+    pub places_map: HashMap<Place<'tcx>, HashSet<Place<'tcx>>>,
     pub ssa_locals_map: HashMap<Place<'tcx>, HashSet<Place<'tcx>>>,
 }
 
@@ -111,6 +112,7 @@ impl<'tcx> SSATransformer<'tcx> {
         let mut skipped = HashSet::new();
         if len > 0 {
             skipped.extend(arg_count + 1..len + 1);
+            skipped.insert(0); // Skip the return place
         }
         // let phi_def_id = tcx.type_of(tcx.local_def_id_to_hir_id(def_id).owner.to_def_id());
         // print!("phi_def_id: {:?}\n", def_id);
@@ -143,7 +145,7 @@ impl<'tcx> SSATransformer<'tcx> {
             essa_statements: HashMap::default(),
             phi_def_id: ssa_def_id,
             essa_def_id: essa_def_id,
-            locals_map: HashMap::default(),
+            places_map: HashMap::default(),
             ssa_locals_map: HashMap::default(),
         }
     }
@@ -267,7 +269,12 @@ impl<'tcx> SSATransformer<'tcx> {
                 }
             }
         }
-
+        for arg in body.args_iter() {
+            local_to_blocks
+                .entry(arg)
+                .or_insert_with(HashSet::new)
+                .insert(BasicBlock::from_u32(0)); // Assuming arg block is 0
+        }
         local_to_blocks
     }
     fn construct_dominance_tree(body: &Body<'_>) -> HashMap<BasicBlock, Vec<BasicBlock>> {

@@ -532,12 +532,15 @@ impl<'tcx> Replacer<'tcx> {
             TerminatorKind::Call {
                 args, destination, ..
             } => {
-                // for operand in args {
-                //     self.replace_operand(operand);
-                // }
-                // if let Some((place, _)) = destination {
-                //     self.rename_def(place);
-                // }
+                for op in args.iter_mut() {
+                    match &mut op.node {
+                        Operand::Copy(place) | Operand::Move(place) => {
+                            self.replace_place(place, &bb);
+                        }
+                        Operand::Constant(const_operand) => {}
+                    }
+                }
+                self.rename_local_def(destination, &bb, true);
             }
             TerminatorKind::Assert { cond, .. } => {
                 self.replace_operand(cond, &bb);
@@ -653,7 +656,7 @@ impl<'tcx> Replacer<'tcx> {
                 .reaching_def
                 .insert(old_local, Some(old_local));
             self.ssatransformer
-                .locals_map
+                .places_map
                 .entry(old_place)
                 .or_insert_with(HashSet::new)
                 .insert(old_place);
@@ -671,7 +674,7 @@ impl<'tcx> Replacer<'tcx> {
 
         self.ssatransformer.local_index += 1;
         self.ssatransformer
-            .locals_map
+            .places_map
             .entry(old_place)
             .or_insert_with(HashSet::new)
             .insert(new_place);

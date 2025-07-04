@@ -342,7 +342,8 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
         SSATrans::new(tcx, false).start();
     }
     if callback.is_range_analysis_enabled() {
-        let mut analyzer = DefaultRange::<i32>::new(tcx, false);
+        let mut analyzer = DefaultRange::<i128>::new(tcx, false);
         analyzer.run();
+        analyzer.using_path_constraints_analysis();
     }
 }

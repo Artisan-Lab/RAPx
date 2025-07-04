@@ -3,3 +3,5 @@
 target/
 **/*.txt
 tests/**/Cargo.lock
+**/*.dot
+**/*.png

@@ -124,4 +124,54 @@ impl<'tcx> CallGraphInfo<'tcx> {
             }
         }
     }
+    pub fn get_reverse_post_order(&self) -> Vec<DefId> {
+        let mut visited = HashSet::new();
+        let mut post_order_ids = Vec::new(); // Will store the post-order traversal of `usize` IDs
+
+        // Iterate over all functions defined in the graph to handle disconnected components
+        for &node_id in self.functions.keys() {
+            if !visited.contains(&node_id) {
+                self.dfs_post_order(node_id, &mut visited, &mut post_order_ids);
+            }
+        }
+
+        // Map the ordered `usize` IDs back to `DefId`s for the analysis pipeline
+        let mut analysis_order: Vec<DefId> = post_order_ids
+            .into_iter()
+            .map(|id| {
+                self.functions
+                    .get(&id)
+                    .expect("Node ID must exist in functions map")
+                    .def_id
+            })
+            .collect();
+
+        // Reversing the post-order gives a topological sort (bottom-up)
+        analysis_order.reverse();
+
+        analysis_order
+    }
+
+    /// Helper function to perform a recursive depth-first search.
+    fn dfs_post_order(
+        &self,
+        node_id: usize,
+        visited: &mut HashSet<usize>,
+        post_order_ids: &mut Vec<usize>,
+    ) {
+        // Mark the current node as visited
+        visited.insert(node_id);
+
+        // Visit all callees (children) of the current node
+        if let Some(callees) = self.function_calls.get(&node_id) {
+            for (callee_id, _terminator) in callees {
+                if !visited.contains(callee_id) {
+                    self.dfs_post_order(*callee_id, visited, post_order_ids);
+                }
+            }
+        }
+
+        // After visiting all children, add the current node to the post-order list
+        post_order_ids.push(node_id);
+    }
 }
