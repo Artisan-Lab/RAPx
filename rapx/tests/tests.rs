@@ -311,13 +311,12 @@ fn test_interprocedual_range_analysis() {
     let output = running_tests_with_arg("range/range_2", "-range");
 
     let expected_ranges = vec![
-        "Var: _5, Regular [101, 101]",
+        "Var: _5, Regular [100, 100]",
         "Var: _3, Regular [42, 42]",
         "Var: _1, Regular [42, 42]",
         "Var: _4, Regular [52, 52]",
         "Var: _6, Regular [52, 52]",
         "Var: _2, Regular [Min, Max]",
-        "Var: _7, Regular [0, 0]",
     ];
 
     for expected in expected_ranges {

@@ -9,22 +9,19 @@ use crate::analysis::{
         range_analysis::domain::{
             domain::{ConstConvert, IntervalArithmetic},
             range::Range,
+            ConstraintGraph::ConstraintGraph,
         },
+        ssa_pass_runner::{ PassRunner},
     },
     safedrop::graph::SafeDropGraph,
 };
 use crate::rap_info;
 
-pub mod SSA;
-pub mod SSAPassRunner;
 pub mod domain;
 use crate::analysis::Analysis;
-
-use domain::ConstraintGraph::ConstraintGraph;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::DefId;
-use rustc_hir::def_id::LocalDefId;
 use rustc_middle::mir::Body;
 use rustc_middle::mir::Place;
 use rustc_middle::ty::TyCtxt;
@@ -33,75 +30,6 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
 };
-use SSAPassRunner::*;
-pub struct SSATrans<'tcx> {
-    pub tcx: TyCtxt<'tcx>,
-    pub debug: bool,
-}
-
-impl<'tcx> SSATrans<'tcx> {
-    pub fn new(tcx: TyCtxt<'tcx>, debug: bool) -> Self {
-        Self { tcx: tcx, debug }
-    }
-
-    pub fn start(&mut self) {
-        for local_def_id in self.tcx.iter_local_def_id() {
-            if matches!(self.tcx.def_kind(local_def_id), DefKind::Fn) {
-                if self.tcx.hir_maybe_body_owned_by(local_def_id).is_some() {
-                    if let Some(def_id) = self
-                        .tcx
-                        .hir_body_owners()
-                        .find(|id| self.tcx.def_path_str(*id) == "main")
-                    {
-                        if let Some(ssa_def_id) =
-                            self.tcx.hir_crate_items(()).free_items().find(|id| {
-                                let hir_id = id.hir_id();
-                                if let Some(ident_name) = self.tcx.hir_opt_name(hir_id) {
-                                    ident_name.to_string() == "SSAstmt"
-                                } else {
-                                    false
-                                }
-                            })
-                        {
-                            let ssa_def_id = ssa_def_id.owner_id.to_def_id();
-                            if let Some(essa_def_id) =
-                                self.tcx.hir_crate_items(()).free_items().find(|id| {
-                                    let hir_id = id.hir_id();
-                                    if let Some(ident_name) = self.tcx.hir_opt_name(hir_id) {
-                                        ident_name.to_string() == "ESSAstmt"
-                                    } else {
-                                        false
-                                    }
-                                })
-                            {
-                                let essa_def_id = essa_def_id.owner_id.to_def_id();
-                                self.analyze_mir(self.tcx, def_id, ssa_def_id, essa_def_id);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    fn analyze_mir(
-        &mut self,
-        tcx: TyCtxt<'tcx>,
-        def_id: LocalDefId,
-        ssa_def_id: DefId,
-        essa_def_id: DefId,
-    ) {
-        let mut body = tcx.optimized_mir(def_id).clone();
-        {
-            let body_mut_ref: &mut Body<'tcx> = unsafe { &mut *(&mut body as *mut Body<'tcx>) };
-            let mut passrunner = PassRunner::new(tcx);
-            passrunner.run_pass(body_mut_ref, ssa_def_id, essa_def_id);
-            // passrunner.print_diff(body_mut_ref);
-            let essa_mir_string = passrunner.get_final_ssa_as_string(body_mut_ref);
-            // rap_info!("final SSA {:?}\n", &essa_mir_string);
-            rap_info!("ssa lvalue check {:?}", lvalue_check(&essa_mir_string));
-        }
-    }
-}
 
 pub trait RangeAnalysis<'tcx, T: IntervalArithmetic + ConstConvert + Debug>: Analysis {
     fn get_fn_range(&self, def_id: DefId) -> Option<HashMap<Place<'tcx>, Range<T>>>;
@@ -131,7 +59,7 @@ where
 
     fn run(&mut self) {
         // self.start();
-        self.only_caller_analyzer_mir();
+        self.only_caller_range_analysis();
     }
 
     fn reset(&mut self) {
@@ -210,8 +138,8 @@ where
         let mut cg: ConstraintGraph<'tcx, T> = ConstraintGraph::new(essa_def_id, ssa_def_id);
         cg.build_graph(body_mut_ref);
         cg.build_nuutila(false);
-        cg.rap_print_vars();
-        cg.rap_print_final_vars();
+        // cg.rap_print_vars();
+        // cg.rap_print_final_vars();
 
         self.cg_map.insert(def_id, RefCell::new(cg));
     }
@@ -243,8 +171,8 @@ where
                         passrunner.run_pass(body_mut_ref, ssa_def_id, essa_def_id);
                         self.body_map.insert(def_id.into(), body);
 
-                        SSAPassRunner::print_diff(self.tcx, body_mut_ref, def_id.into());
-                        SSAPassRunner::print_mir_graph(self.tcx, body_mut_ref, def_id.into());
+                        // SSAPassRunner::print_diff(self.tcx, body_mut_ref, def_id.into());
+                        // SSAPassRunner::print_mir_graph(self.tcx, body_mut_ref, def_id.into());
                         self.ssa_places_mapping
                             .insert(def_id.into(), passrunner.places_map.clone());
                         self.build_constraintgraph(body_mut_ref, def_id.into());
@@ -264,10 +192,9 @@ where
         // self.callgraph.print_call_graph();
     }
 
-    fn only_caller_analyzer_mir(&mut self) {
+    fn only_caller_range_analysis(&mut self) {
         let ssa_def_id = self.ssa_def_id.expect("SSA definition ID is not set");
         let essa_def_id = self.essa_def_id.expect("ESSA definition ID is not set");
-
         // ====================================================================
         // PHASE 1: Build all ConstraintGraphs and the complete CallGraph first.
         // ====================================================================
@@ -279,23 +206,18 @@ where
                 if self.tcx.is_mir_available(def_id) {
                     let mut body = self.tcx.optimized_mir(def_id).clone();
                     let body_mut_ref = unsafe { &mut *(&mut body as *mut Body<'tcx>) };
-
                     // Run SSA/ESSA passes
                     let mut passrunner = PassRunner::new(self.tcx);
                     passrunner.run_pass(body_mut_ref, ssa_def_id, essa_def_id);
-
                     self.body_map.insert(def_id, body);
                     // Print the MIR after SSA/ESSA passes
-                    SSAPassRunner::print_diff(self.tcx, body_mut_ref, def_id.into());
-                    SSAPassRunner::print_mir_graph(self.tcx, body_mut_ref, def_id.into());
-
+                    // SSAPassRunner::print_diff(self.tcx, body_mut_ref, def_id.into());
+                    // SSAPassRunner::print_mir_graph(self.tcx, body_mut_ref, def_id.into());
                     self.ssa_places_mapping
                         .insert(def_id, passrunner.places_map.clone());
-                    rap_info!("ssa_places_mapping: {:?}", self.ssa_places_mapping);
-
-                    // Bu ld and store the constraint graph
+                    // rap_info!("ssa_places_mapping: {:?}", self.ssa_places_mapping);
+                    // Build and store the constraint graph
                     self.build_constraintgraph(body_mut_ref, def_id);
-
                     // Visit for call graph construction
                     let mut call_graph_visitor =
                         CallGraphVisitor::new(self.tcx, def_id, body_mut_ref, &mut self.callgraph);
@@ -395,7 +317,6 @@ where
                 }
             }
         }
-        rap_info!("\n==============================================");
     }
     pub fn using_path_constraints_analysis(&self) {
         let ssa_def_id = self.ssa_def_id.expect("SSA definition ID is not set");

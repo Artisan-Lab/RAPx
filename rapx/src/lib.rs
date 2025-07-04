@@ -28,7 +28,8 @@ use analysis::{
         call_graph::CallGraph,
         dataflow::DataFlow,
         ownedheap_analysis::{default::DefaultOwnedHeapAnalysis, OwnedHeapAnalysis},
-        range_analysis::{DefaultRange, SSATrans},
+        range_analysis::DefaultRange,
+        ssa_pass_runner::SSATrans,
     },
     opt::Opt,
     rcanary::rCanary,
@@ -347,6 +348,6 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
     if callback.is_range_analysis_enabled() {
         let mut analyzer = DefaultRange::<i128>::new(tcx, false);
         analyzer.run();
-        analyzer.using_path_constraints_analysis();
+        // analyzer.using_path_constraints_analysis();
     }
 }

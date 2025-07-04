@@ -58,7 +58,7 @@ pub trait OwnedHeapAnalysis: Analysis {
     fn is_heapowner<'tcx>(hares: OHAResult, ty: Ty<'tcx>) -> Result<bool, &'static str> {
         match ty.kind() {
             TyKind::Adt(adtdef, ..) => {
-                let heapinfo = hares.get(&adtdef.0.0.did).unwrap();
+                let heapinfo = hares.get(&adtdef.0 .0.did).unwrap();
                 for item in heapinfo {
                     if item.0 == OwnedHeap::True {
                         return Ok(true);
@@ -72,7 +72,7 @@ pub trait OwnedHeapAnalysis: Analysis {
     fn maybe_heapowner<'tcx>(hares: OHAResult, ty: Ty<'tcx>) -> Result<bool, &'static str> {
         match ty.kind() {
             TyKind::Adt(adtdef, ..) => {
-                let heapinfo = hares.get(&adtdef.0.0.did).unwrap();
+                let heapinfo = hares.get(&adtdef.0 .0.did).unwrap();
                 for item in heapinfo {
                     if item.0 == OwnedHeap::False && item.1.contains(&true) {
                         return Ok(true);
