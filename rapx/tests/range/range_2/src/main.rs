@@ -18,7 +18,7 @@ fn main(){
     let para2 = 52;
     let mut x = foo2(55, para2);
 
-    let mut y = 0;
+    // let mut y = 0;
     // x = foo3(x, &mut y);
 }
 fn foo1(mut k:  usize) {

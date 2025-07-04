@@ -1,8 +1,0 @@
-digraph MIR {
-  node [shape=box];
-  0 [label="bb0:\lStorageLive(_1)\l_1 = const 42_usize\lStorageLive(_2)\lStorageLive(_3)\l_3 = copy _1\l"];
-  0 -> 1;
-  1 [label="bb1:\lStorageDead(_3)\lStorageDead(_2)\lStorageLive(_4)\l_4 = const 52_usize\lStorageLive(_5)\lStorageLive(_6)\l_6 = copy _4\l"];
-  1 -> 2;
-  2 [label="bb2:\lStorageDead(_6)\lStorageLive(_7)\l_7 = const 0_i32\l_0 = const ()\lStorageDead(_7)\lStorageDead(_5)\lStorageDead(_4)\lStorageDead(_1)\l"];
-}

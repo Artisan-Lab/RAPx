@@ -49,21 +49,7 @@ pub struct SSATransformer<'tcx> {
 }
 
 impl<'tcx> SSATransformer<'tcx> {
-    pub fn print_ssatransformer(&self) {
-        // println!("SSATransformer:");
-        // println!("cfg: {:?}", self.cfg);
-        // println!("dominators: {:?}", self.dominators);
-        // println!("dom_tree: {:?}", self.dom_tree);
-        // println!("df: {:?}", self.df);
-        // println!("local_assign_blocks: {:?}", self.local_assign_blocks);
-        // println!("reaching_def: {:?}", self.reaching_def);
-        // println!("local_index: {:?}", self.local_index);
-        // println!("local_defination_block: {:?}", self.local_defination_block);
-        // println!("skipped: {:?}", self.skipped);
-        // println!("phi_index: {:?}", self.phi_index);
-        // println!("phi_statements: {:?}", self.phi_statements);
-        // println!("essa_statements: {:?}", self.essa_statements);
-    }
+    pub fn print_ssatransformer(&self) {}
     fn find_phi_placeholder(tcx: TyCtxt<'_>, crate_name: &str) -> Option<DefId> {
         let sym_crate = Symbol::intern(crate_name);
         let krate = tcx

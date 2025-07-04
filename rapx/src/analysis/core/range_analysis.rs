@@ -131,7 +131,7 @@ where
 
     fn run(&mut self) {
         // self.start();
-        self.only_caller_analyzer_mir();
+        self.only_caller_range_analysis();
     }
 
     fn reset(&mut self) {
@@ -210,8 +210,8 @@ where
         let mut cg: ConstraintGraph<'tcx, T> = ConstraintGraph::new(essa_def_id, ssa_def_id);
         cg.build_graph(body_mut_ref);
         cg.build_nuutila(false);
-        cg.rap_print_vars();
-        cg.rap_print_final_vars();
+        // cg.rap_print_vars();
+        // cg.rap_print_final_vars();
 
         self.cg_map.insert(def_id, RefCell::new(cg));
     }
@@ -243,8 +243,8 @@ where
                         passrunner.run_pass(body_mut_ref, ssa_def_id, essa_def_id);
                         self.body_map.insert(def_id.into(), body);
 
-                        SSAPassRunner::print_diff(self.tcx, body_mut_ref, def_id.into());
-                        SSAPassRunner::print_mir_graph(self.tcx, body_mut_ref, def_id.into());
+                        // SSAPassRunner::print_diff(self.tcx, body_mut_ref, def_id.into());
+                        // SSAPassRunner::print_mir_graph(self.tcx, body_mut_ref, def_id.into());
                         self.ssa_places_mapping
                             .insert(def_id.into(), passrunner.places_map.clone());
                         self.build_constraintgraph(body_mut_ref, def_id.into());
@@ -264,7 +264,7 @@ where
         // self.callgraph.print_call_graph();
     }
 
-    fn only_caller_analyzer_mir(&mut self) {
+    fn only_caller_range_analysis(&mut self) {
         let ssa_def_id = self.ssa_def_id.expect("SSA definition ID is not set");
         let essa_def_id = self.essa_def_id.expect("ESSA definition ID is not set");
 
@@ -286,12 +286,12 @@ where
 
                     self.body_map.insert(def_id, body);
                     // Print the MIR after SSA/ESSA passes
-                    SSAPassRunner::print_diff(self.tcx, body_mut_ref, def_id.into());
-                    SSAPassRunner::print_mir_graph(self.tcx, body_mut_ref, def_id.into());
+                    // SSAPassRunner::print_diff(self.tcx, body_mut_ref, def_id.into());
+                    // SSAPassRunner::print_mir_graph(self.tcx, body_mut_ref, def_id.into());
 
                     self.ssa_places_mapping
                         .insert(def_id, passrunner.places_map.clone());
-                    rap_info!("ssa_places_mapping: {:?}", self.ssa_places_mapping);
+                    // rap_info!("ssa_places_mapping: {:?}", self.ssa_places_mapping);
 
                     // Bu ld and store the constraint graph
                     self.build_constraintgraph(body_mut_ref, def_id);
@@ -395,7 +395,6 @@ where
                 }
             }
         }
-        rap_info!("\n==============================================");
     }
     pub fn using_path_constraints_analysis(&self) {
         let ssa_def_id = self.ssa_def_id.expect("SSA definition ID is not set");

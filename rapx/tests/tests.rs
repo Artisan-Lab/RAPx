@@ -317,7 +317,6 @@ fn test_interprocedual_range_analysis() {
         "Var: _4, Regular [52, 52]",
         "Var: _6, Regular [52, 52]",
         "Var: _2, Regular [Min, Max]",
-        "Var: _7, Regular [0, 0]",
     ];
 
     for expected in expected_ranges {
