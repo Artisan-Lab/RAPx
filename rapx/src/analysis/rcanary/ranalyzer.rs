@@ -4,19 +4,19 @@ pub mod order;
 pub mod ownership;
 
 use rustc_middle::mir::{Body, Terminator};
-use rustc_middle::ty::TyCtxt;
+use rustc_middle::ty::{InstanceKind::Item, TyCtxt};
 use rustc_span::def_id::DefId;
 
 use super::{rCanary, IcxMut, IcxSliceMut, Rcx, RcxMut};
-use crate::analysis::core::heap_item::{
-    mir_body, type_visitor::TyWithIndex, AdtOwner, OwnershipLayout, Unique,
-};
-use crate::Elapsed;
+use crate::analysis::core::ownedheap_analysis::OwnedHeap;
+use crate::analysis::core::ownedheap_analysis::{default::TyWithIndex, OHAResult};
 use ownership::{IntraVar, Taint};
 
-use std::collections::{HashMap, HashSet};
-use std::env;
-use std::fmt::{Debug, Formatter};
+use std::{
+    collections::{HashMap, HashSet},
+    env,
+    fmt::{Debug, Formatter},
+};
 
 pub type MirGraph = HashMap<DefId, Graph>;
 pub type ToPo = Vec<usize>;
@@ -75,7 +75,7 @@ impl Graph {
 
 pub struct FlowAnalysis<'tcx, 'a> {
     rcx: &'a mut rCanary<'tcx>,
-    fn_set: Unique,
+    fn_set: HashSet<DefId>,
 }
 
 impl<'tcx, 'a> FlowAnalysis<'tcx, 'a> {
@@ -86,11 +86,11 @@ impl<'tcx, 'a> FlowAnalysis<'tcx, 'a> {
         }
     }
 
-    pub fn fn_set(&self) -> &Unique {
+    pub fn fn_set(&self) -> &HashSet<DefId> {
         &self.fn_set
     }
 
-    pub fn fn_set_mut(&mut self) -> &mut Unique {
+    pub fn fn_set_mut(&mut self) -> &mut HashSet<DefId> {
         &mut self.fn_set
     }
 
@@ -109,9 +109,6 @@ impl<'tcx, 'a> FlowAnalysis<'tcx, 'a> {
         // this phase will generate the Intra procedural visitor for us to visit the block
         // note that the inter procedural part is inside in this function but cod in module inter_visitor
         self.intra_run();
-
-        // rap_info!("@@@@@@@@@@@@@Build Analysis:{:?}", self.rcx().get_time_build());
-        // rap_info!("@@@@@@@@@@@@@Solve Analysis:{:?}", self.rcx().get_time_solve());
     }
 }
 
@@ -164,13 +161,12 @@ impl<'tcx> NodeOrder<'tcx> {
 }
 
 struct IntraFlowAnalysis<'tcx, 'ctx, 'a> {
-    rcx: &'a rCanary<'tcx>,
+    pub rcx: &'a rCanary<'tcx>,
     icx: IntraFlowContext<'tcx, 'ctx>,
     icx_slice: IcxSliceFroBlock<'tcx, 'ctx>,
-    did: DefId,
-    body: &'a Body<'tcx>,
-    graph: &'a Graph,
-    elasped: Elapsed,
+    pub def_id: DefId,
+    pub body: &'a Body<'tcx>,
+    pub graph: &'a Graph,
     taint_flag: bool,
     taint_source: Vec<Terminator<'tcx>>,
 }
@@ -178,50 +174,28 @@ struct IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
     pub fn new(
         rcx: &'a rCanary<'tcx>,
-        did: DefId,
-        //unique: &'a mut Unique,
+        def_id: DefId,
+        //unique: &'a mut HashSet<DefId>,
     ) -> Self {
-        let body = mir_body(rcx.tcx(), did);
+        let body = rcx.tcx.instance_mir(Item(def_id));
         let v_len = body.local_decls.len();
         let b_len = body.basic_blocks.len();
-        let graph = rcx.mir_graph().get(&did).unwrap();
+        let graph = rcx.mir_graph().get(&def_id).unwrap();
 
         Self {
             rcx,
             icx: IntraFlowContext::new(b_len, v_len),
             icx_slice: IcxSliceFroBlock::new_for_block_0(v_len),
-            did,
+            def_id,
             body,
             graph,
-            elasped: (0, 0),
             taint_flag: false,
             taint_source: Vec::default(),
         }
     }
 
-    #[allow(dead_code)]
-    pub fn did(&self) -> DefId {
-        self.did
-    }
-
-    pub fn body(&self) -> &'a Body<'tcx> {
-        self.body
-    }
-
-    pub fn owner(&self) -> &AdtOwner {
-        self.rcx().adt_owner()
-    }
-
-    pub fn graph(&self) -> &Graph {
-        self.graph
-    }
-
-    pub fn get_time_build(&self) -> i64 {
-        self.elasped.0
-    }
-
-    pub fn get_time_solve(&self) -> i64 {
-        self.elasped.1
+    pub fn owner(&self) -> &OHAResult {
+        self.rcx.adt_owner()
     }
 
     pub fn add_taint(&mut self, terminator: Terminator<'tcx>) {
@@ -273,7 +247,7 @@ pub struct IntraFlowContext<'tcx, 'ctx> {
     // the ty in icx is the Rust ownership layout of the pointing instance
     // Note: the ty is not the exact ty of the local
     ty: IOPairForGraph<TyWithIndex<'tcx>>,
-    layout: IOPairForGraph<OwnershipLayout>,
+    layout: IOPairForGraph<Vec<OwnedHeap>>,
 }
 
 impl<'tcx, 'ctx, 'icx> IntraFlowContext<'tcx, 'ctx> {
@@ -319,11 +293,11 @@ impl<'tcx, 'ctx, 'icx> IntraFlowContext<'tcx, 'ctx> {
         &mut self.ty
     }
 
-    pub fn layout(&self) -> &IOPairForGraph<OwnershipLayout> {
+    pub fn layout(&self) -> &IOPairForGraph<Vec<OwnedHeap>> {
         &self.layout
     }
 
-    pub fn layout_mut(&mut self) -> &mut IOPairForGraph<OwnershipLayout> {
+    pub fn layout_mut(&mut self) -> &mut IOPairForGraph<Vec<OwnedHeap>> {
         &mut self.layout
     }
 
@@ -432,7 +406,7 @@ pub struct IcxSliceFroBlock<'tcx, 'ctx> {
     // the ty in icx is the Rust ownership layout of the pointing instance
     // Note: the ty is not the exact ty of the local
     ty: Vec<TyWithIndex<'tcx>>,
-    layout: Vec<OwnershipLayout>,
+    layout: Vec<Vec<OwnedHeap>>,
 }
 
 impl<'tcx, 'ctx> IcxSliceFroBlock<'tcx, 'ctx> {
@@ -498,11 +472,11 @@ impl<'tcx, 'ctx> IcxSliceFroBlock<'tcx, 'ctx> {
         &mut self.ty
     }
 
-    pub fn layout(&self) -> &Vec<OwnershipLayout> {
+    pub fn layout(&self) -> &Vec<Vec<OwnedHeap>> {
         &self.layout
     }
 
-    pub fn layout_mut(&mut self) -> &mut Vec<OwnershipLayout> {
+    pub fn layout_mut(&mut self) -> &mut Vec<Vec<OwnedHeap>> {
         &mut self.layout
     }
 

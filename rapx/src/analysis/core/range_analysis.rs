@@ -4,12 +4,10 @@
 
 use crate::analysis::{
     core::{
-        call_graph::{call_graph_helper::CallGraphInfo, call_graph_visitor::CallGraphVisitor},
-        heap_item::AdtOwner,
-        range_analysis::domain::{
+        call_graph::{call_graph_helper::CallGraphInfo, call_graph_visitor::CallGraphVisitor}, ownedheap_analysis::OHAResult, range_analysis::domain::{
             domain::{ConstConvert, IntervalArithmetic},
             range::Range,
-        },
+        }
     },
     safedrop::graph::SafeDropGraph,
 };
@@ -19,6 +17,7 @@ pub mod SSA;
 pub mod SSAPassRunner;
 pub mod domain;
 use crate::analysis::Analysis;
+
 use domain::ConstraintGraph::ConstraintGraph;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def::DefKind;
@@ -410,7 +409,7 @@ where
                     let mut cg: ConstraintGraph<'tcx, T> =
                         ConstraintGraph::new(essa_def_id, ssa_def_id);
                     let mut safedrop_graph =
-                        SafeDropGraph::new(&body, self.tcx, def_id, AdtOwner::default());
+                        SafeDropGraph::new(&body, self.tcx, def_id, OHAResult::default());
                     safedrop_graph.solve_scc();
                     let paths: Vec<Vec<usize>> = safedrop_graph.get_paths();
                     let result = cg.start_analyze_path_constraints(body_mut_ref, &paths);

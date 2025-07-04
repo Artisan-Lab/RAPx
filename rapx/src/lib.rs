@@ -21,24 +21,26 @@ extern crate rustc_span;
 extern crate rustc_target;
 extern crate stable_mir;
 
-use analysis::core::alias::default::DefaultAlias;
-use analysis::core::api_dep::ApiDep;
-use analysis::core::call_graph::CallGraph;
-use analysis::core::dataflow::DataFlow;
-use analysis::core::heap_item::TypeAnalysis;
-use analysis::core::range_analysis::{DefaultRange, SSATrans};
-use analysis::opt::Opt;
-use analysis::rcanary::rCanary;
-use analysis::safedrop::SafeDrop;
-use analysis::senryx::{CheckLevel, SenryxCheck};
-use analysis::unsafety_isolation::{UigInstruction, UnsafetyIsolationCheck};
-use analysis::utils::show_mir::ShowMir;
-use analysis::Analysis;
+use analysis::{
+    core::{
+        alias_analysis::default::DefaultAlias,
+        api_dep::ApiDep,
+        call_graph::CallGraph,
+        dataflow::DataFlow,
+        ownedheap_analysis::{default::DefaultOwnedHeapAnalysis, OwnedHeapAnalysis},
+        range_analysis::{DefaultRange, SSATrans},
+    },
+    opt::Opt,
+    rcanary::rCanary,
+    safedrop::SafeDrop,
+    senryx::{CheckLevel, SenryxCheck},
+    unsafety_isolation::{UigInstruction, UnsafetyIsolationCheck},
+    utils::show_mir::ShowMir,
+    Analysis,
+};
 use rustc_driver::{Callbacks, Compilation};
-use rustc_interface::interface::Compiler;
-use rustc_interface::Config;
-use rustc_middle::ty::TyCtxt;
-use rustc_middle::util::Providers;
+use rustc_interface::{interface::Compiler, Config};
+use rustc_middle::{ty::TyCtxt, util::Providers};
 use rustc_session::search_paths::PathKind;
 use std::path::PathBuf;
 use std::{env, sync::Arc};
@@ -62,7 +64,7 @@ pub struct RapCallback {
     show_mir: bool,
     dataflow: usize,
     opt: usize,
-    heap_item: bool,
+    ownedheap: bool,
     ssa: bool,
     range: bool,
 }
@@ -82,7 +84,7 @@ impl Default for RapCallback {
             show_mir: false,
             dataflow: 0,
             opt: usize::MAX,
-            heap_item: false,
+            ownedheap: false,
             ssa: false,
             range: false,
         }
@@ -126,16 +128,16 @@ impl RapCallback {
         self.alias = true;
         match arg.as_str() {
             "-alias" => {
-                env::set_var("MOP", "1");
+                env::set_var("ALIAS", "1");
             }
             "-alias0" => {
-                env::set_var("MOP", "0");
+                env::set_var("ALIAS", "0");
             }
             "-alias1" => {
-                env::set_var("MOP", "1");
+                env::set_var("ALIAS", "1");
             }
             "-alias2" => {
-                env::set_var("MOP", "2");
+                env::set_var("ALIAS", "2");
             }
             _ => {}
         }
@@ -240,12 +242,12 @@ impl RapCallback {
         self.opt
     }
 
-    pub fn enable_heap_item(&mut self) {
-        self.heap_item = true;
+    pub fn enable_ownedheap(&mut self) {
+        self.ownedheap = true;
     }
 
-    pub fn is_heap_item_enabled(self) -> bool {
-        self.heap_item
+    pub fn is_ownedheap_enabled(self) -> bool {
+        self.ownedheap
     }
     pub fn enable_ssa_transform(&mut self) {
         self.ssa = true;
@@ -271,7 +273,10 @@ pub enum RapPhase {
 
 pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
     let _rcanary: Option<rCanary> = if callback.is_rcanary_enabled() {
-        let mut rcx = rCanary::new(tcx);
+        let mut heap = DefaultOwnedHeapAnalysis::new(tcx);
+        heap.run();
+        let adt_owner = heap.get_all_items();
+        let mut rcx = rCanary::new(tcx, adt_owner);
         rcx.start();
         Some(rcx)
     } else {
@@ -287,12 +292,10 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
         SafeDrop::new(tcx).start();
     }
 
-    if callback.is_heap_item_enabled() {
-        let rcx_boxed = Box::new(rCanary::new(tcx));
-        let rcx = Box::leak(rcx_boxed);
-        let mut type_analysis = TypeAnalysis::new(rcx);
-        type_analysis.start();
-        type_analysis.output();
+    if callback.is_ownedheap_enabled() {
+        let mut analysis = DefaultOwnedHeapAnalysis::new(tcx);
+        analysis.run();
+        analysis.output();
     }
 
     let x = callback.is_unsafety_isolation_enabled();

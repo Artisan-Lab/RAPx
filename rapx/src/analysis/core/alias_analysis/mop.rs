@@ -3,21 +3,22 @@ pub mod graph;
 pub mod mop;
 pub mod types;
 
-use crate::analysis::core::alias::AAFact;
-use crate::analysis::core::alias::{AAResult, AliasAnalysis};
-use crate::analysis::utils::intrinsic_id::{
-    COPY_FROM, COPY_FROM_NONOVERLAPPING, COPY_TO, COPY_TO_NONOVERLAPPING,
+use super::{AAFact, AAResult, AliasAnalysis};
+use crate::{
+    analysis::{
+        utils::intrinsic_id::{
+            COPY_FROM, COPY_FROM_NONOVERLAPPING, COPY_TO, COPY_TO_NONOVERLAPPING,
+        },
+        Analysis,
+    },
+    rap_debug, rap_trace,
+    utils::source::*,
 };
-use crate::analysis::Analysis;
-use crate::utils::source::*;
-use crate::{rap_debug, rap_info, rap_trace};
 use graph::MopGraph;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
 use rustc_middle::ty::TyCtxt;
-use std::collections::HashSet;
-use std::convert::From;
-use std::fmt;
+use std::{collections::HashSet, convert::From, fmt};
 
 pub const VISIT_LIMIT: usize = 1000;
 
@@ -166,7 +167,7 @@ impl<'tcx> Analysis for MopAlias<'tcx> {
             let fn_name = get_fn_name(self.tcx, *fn_id);
             fn_alias.sort_alias_index();
             if fn_alias.len() > 0 {
-                rap_info!("Alias found in {:?}: {}", fn_name, fn_alias);
+                rap_debug!("Alias found in {:?}: {}", fn_name, fn_alias);
             }
         }
         self.handle_conor_cases();
@@ -239,7 +240,7 @@ impl<'tcx> MopAlias<'tcx> {
             }
             self.fn_map.insert(def_id, mop_graph.ret_alias);
         } else {
-            rap_trace!("mir is not available at {}", self.tcx.def_path_str(def_id));
+            rap_trace!("Mir is not available at {}", self.tcx.def_path_str(def_id));
         }
     }
 }

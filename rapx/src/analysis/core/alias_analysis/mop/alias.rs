@@ -1,12 +1,17 @@
 use super::graph::*;
-use crate::analysis::core::alias::default::types::*;
-use crate::analysis::core::alias::{AAFact, AAResult};
-use crate::analysis::utils::intrinsic_id::*;
-use crate::rap_debug;
-use rustc_data_structures::fx::FxHashMap;
+use super::types::*;
+use crate::{
+    analysis::{
+        core::alias_analysis::mop::{FnMap, MopAAFact},
+        utils::intrinsic_id::*,
+    },
+    rap_debug,
+};
 use rustc_hir::def_id::DefId;
-use rustc_middle::mir::{Operand, Place, ProjectionElem, TerminatorKind};
-use rustc_middle::ty;
+use rustc_middle::{
+    mir::{Operand, Place, ProjectionElem, TerminatorKind},
+    ty,
+};
 use std::collections::HashSet;
 
 impl<'tcx> MopGraph<'tcx> {
@@ -40,7 +45,7 @@ impl<'tcx> MopGraph<'tcx> {
     pub fn alias_bbcall(
         &mut self,
         bb_index: usize,
-        fn_map: &mut FxHashMap<DefId, AAResult>,
+        fn_map: &mut FnMap,
         recursion_set: &mut HashSet<DefId>,
     ) {
         let cur_block = self.blocks[bb_index].clone();
@@ -58,15 +63,25 @@ impl<'tcx> MopGraph<'tcx> {
                 let lv = self.projection(false, *destination);
                 let mut merge_vec = Vec::new();
                 merge_vec.push(lv);
+                let mut may_drop_flag = 0;
+                if self.values[lv].may_drop {
+                    may_drop_flag += 1;
+                }
                 for arg in args {
                     match arg.node {
                         Operand::Copy(ref p) => {
                             let rv = self.projection(true, *p);
                             merge_vec.push(rv);
+                            if self.values[rv].may_drop {
+                                may_drop_flag += 1;
+                            }
                         }
                         Operand::Move(ref p) => {
                             let rv = self.projection(true, *p);
                             merge_vec.push(rv);
+                            if self.values[rv].may_drop {
+                                may_drop_flag += 1;
+                            }
                         }
                         Operand::Constant(_) => {
                             merge_vec.push(0);
@@ -74,42 +89,54 @@ impl<'tcx> MopGraph<'tcx> {
                     }
                 }
                 if let ty::FnDef(ref target_id, _) = constant.const_.ty().kind() {
-                    if self.tcx.is_mir_available(*target_id) {
-                        rap_debug!("target_id {:?}", target_id);
-                        if fn_map.contains_key(target_id) {
-                            let assignments = fn_map.get(target_id).unwrap();
-                            for assign in assignments.aliases().iter() {
-                                self.merge(assign, &merge_vec);
+                    //if may_drop_flag > 1 || Self::should_check(target_id.clone()) == false {
+                    if may_drop_flag > 0 {
+                        if self.tcx.is_mir_available(*target_id) {
+                            rap_debug!("target_id {:?}", target_id);
+                            if fn_map.contains_key(target_id) {
+                                let assignments = fn_map.get(target_id).unwrap();
+                                for assign in assignments.aliases().iter() {
+                                    if !assign.valuable() {
+                                        continue;
+                                    }
+                                    self.merge(assign, &merge_vec);
+                                }
+                            } else {
+                                /* Fixed-point iteration: this is not perfect */
+                                if recursion_set.contains(target_id) {
+                                    continue;
+                                }
+                                recursion_set.insert(*target_id);
+                                let mut mop_graph = MopGraph::new(self.tcx, *target_id);
+                                mop_graph.solve_scc();
+                                mop_graph.check(0, fn_map, recursion_set);
+                                let ret_alias = mop_graph.ret_alias.clone();
+                                for assign in ret_alias.aliases().iter() {
+                                    if !assign.valuable() {
+                                        continue;
+                                    }
+                                    self.merge(assign, &merge_vec);
+                                }
+                                fn_map.insert(*target_id, ret_alias);
+                                recursion_set.remove(target_id);
                             }
-                        } else {
-                            /* Fixed-point iteration: this is not perfect */
-                            if recursion_set.contains(target_id) {
+                        } else if self.values[lv].may_drop {
+                            if target_id.index.as_usize() == CALL_MUT {
                                 continue;
                             }
-                            recursion_set.insert(*target_id);
-                            let mut mop_graph = MopGraph::new(self.tcx, *target_id);
-                            mop_graph.solve_scc();
-                            mop_graph.check(0, fn_map, recursion_set);
-                            let ret_alias = mop_graph.ret_alias.clone();
-                            for assign in ret_alias.aliases().iter() {
-                                self.merge(assign, &merge_vec);
-                            }
-                            fn_map.insert(*target_id, ret_alias);
-                            recursion_set.remove(target_id);
-                        }
-                    } else {
-                        if target_id.index.as_usize() == CALL_MUT {
-                            continue;
-                        }
 
-                        let mut right_set = Vec::new();
-                        for rv in &merge_vec {
-                            if lv != *rv && self.values[lv].is_ptr() {
-                                right_set.push(*rv);
+                            let mut right_set = Vec::new();
+                            for rv in &merge_vec {
+                                if self.values[*rv].may_drop
+                                    && lv != *rv
+                                    && self.values[lv].is_ptr()
+                                {
+                                    right_set.push(*rv);
+                                }
                             }
-                        }
-                        if right_set.len() == 1 {
-                            self.merge_alias(lv, right_set[0], 0);
+                            if right_set.len() == 1 {
+                                self.merge_alias(lv, right_set[0], 0);
+                            }
                         }
                     }
                 }
@@ -144,7 +171,11 @@ impl<'tcx> MopGraph<'tcx> {
                     if let std::collections::hash_map::Entry::Vacant(e) =
                         self.values[proj_id].fields.entry(field_idx)
                     {
-                        let mut node = ValueNode::new(new_id, local);
+                        let ty_env = ty::TypingEnv::post_analysis(self.tcx, self.def_id);
+                        let need_drop = ty.needs_drop(self.tcx, ty_env);
+                        let may_drop = !is_not_drop(self.tcx, ty);
+                        let mut node =
+                            ValueNode::new(new_id, local, need_drop, need_drop || may_drop);
                         node.kind = kind(ty);
                         node.field_id = field_idx;
                         e.insert(node.index);
@@ -161,7 +192,7 @@ impl<'tcx> MopGraph<'tcx> {
 
     //assign alias for a variable.
     pub fn merge_alias(&mut self, lv: usize, rv: usize, depth: usize) {
-        rap_debug!("alias set now: {:?}", self.alias_set);
+        rap_debug!("Alias set before merge: {:?}", self.alias_set);
         // println!("A:{:?} V:{:?}", self.alias_set, self.values.len());
         self.union_merge(lv, rv);
         // println!("Li:{} Ri:{} L:{:?} R:{:?} A:{:?} V:{:?}", self.values[lv].index, self.values[rv].index, self.values[lv].alias ,self.values[rv].alias, self.alias_set, self.values.len());
@@ -186,7 +217,12 @@ impl<'tcx> MopGraph<'tcx> {
 
         for field in self.values[rv].fields.clone().into_iter() {
             if !self.values[lv].fields.contains_key(&field.0) {
-                let mut node = ValueNode::new(self.values.len(), self.values[lv].local);
+                let mut node = ValueNode::new(
+                    self.values.len(),
+                    self.values[lv].local,
+                    self.values[field.1].need_drop,
+                    self.values[field.1].may_drop,
+                );
                 node.kind = self.values[field.1].kind;
                 node.field_id = field.0;
                 self.values[lv].fields.insert(field.0, node.index);
@@ -199,7 +235,7 @@ impl<'tcx> MopGraph<'tcx> {
     }
 
     //inter-procedure instruction to merge alias.
-    pub fn merge(&mut self, ret_alias: &AAFact, arg_vec: &[usize]) {
+    pub fn merge(&mut self, ret_alias: &MopAAFact, arg_vec: &[usize]) {
         rap_debug!("{:?}", ret_alias);
         if ret_alias.lhs_no() >= arg_vec.len() || ret_alias.rhs_no() >= arg_vec.len() {
             rap_debug!("Vector error!");
@@ -211,7 +247,9 @@ impl<'tcx> MopGraph<'tcx> {
         let mut rv = right_init;
         for index in ret_alias.lhs_fields().iter() {
             if !self.values[lv].fields.contains_key(index) {
-                let mut node = ValueNode::new(self.values.len(), left_init);
+                let need_drop = ret_alias.lhs_need_drop;
+                let may_drop = ret_alias.lhs_may_drop;
+                let mut node = ValueNode::new(self.values.len(), left_init, need_drop, may_drop);
                 node.kind = TyKind::RawPtr;
                 node.field_id = *index;
                 self.values[lv].fields.insert(*index, node.index);
@@ -225,7 +263,9 @@ impl<'tcx> MopGraph<'tcx> {
                 right_init = self.values[rv].local;
             }
             if !self.values[rv].fields.contains_key(index) {
-                let mut node = ValueNode::new(self.values.len(), right_init);
+                let need_drop = ret_alias.rhs_need_drop;
+                let may_drop = ret_alias.rhs_may_drop;
+                let mut node = ValueNode::new(self.values.len(), right_init, need_drop, may_drop);
                 node.kind = TyKind::RawPtr;
                 node.field_id = *index;
                 self.values[rv].fields.insert(*index, node.index);
@@ -293,9 +333,16 @@ impl<'tcx> MopGraph<'tcx> {
                                 };
                             }
                         }
-                        let mut new_alias = AAFact::new(left_node.local, right_node.local);
-                        new_alias.lhs_fields = self.get_field_seq(left_node);
-                        new_alias.rhs_fields = self.get_field_seq(right_node);
+                        let mut new_alias = MopAAFact::new(
+                            left_node.local,
+                            left_node.may_drop,
+                            left_node.need_drop,
+                            right_node.local,
+                            right_node.may_drop,
+                            right_node.need_drop,
+                        );
+                        new_alias.fact.lhs_fields = self.get_field_seq(left_node);
+                        new_alias.fact.rhs_fields = self.get_field_seq(right_node);
                         if new_alias.lhs_no() == 0 && new_alias.rhs_no() == 0 {
                             return;
                         }

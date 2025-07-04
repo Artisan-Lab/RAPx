@@ -10,13 +10,16 @@ pub mod types;
 use rustc_hir::def_id::DefId;
 use rustc_middle::ty::TyCtxt;
 
-use crate::analysis::core::alias::mop::{FnMap, MopAlias};
-use crate::analysis::core::heap_item::{AdtOwner, TypeAnalysis};
-use crate::analysis::rcanary::rCanary;
+use crate::analysis::core::{
+    alias_analysis::{
+        mop::{FnMap, MopAlias},
+        AliasAnalysis,
+    },
+    ownedheap_analysis::{default::DefaultOwnedHeapAnalysis, OHAResult, OwnedHeapAnalysis},
+};
 use graph::SafeDropGraph;
 use safedrop::*;
 
-use super::core::alias::AliasAnalysis;
 use super::Analysis;
 
 pub struct SafeDrop<'tcx> {
@@ -32,9 +35,9 @@ impl<'tcx> SafeDrop<'tcx> {
         mop.run();
         let fn_map = mop.get_all_fn_alias();
 
-        let rcx_boxed = Box::new(rCanary::new(self.tcx));
-        let rcx = Box::leak(rcx_boxed);
-        TypeAnalysis::new(rcx).start();
+        let mut heap = DefaultOwnedHeapAnalysis::new(self.tcx);
+        heap.run();
+        let adt_owner = heap.get_all_items();
 
         let mir_keys = self.tcx.mir_keys(());
         for local_def_id in mir_keys {
@@ -42,13 +45,13 @@ impl<'tcx> SafeDrop<'tcx> {
                 self.tcx,
                 &fn_map,
                 local_def_id.to_def_id(),
-                rcx.adt_owner().clone(),
+                adt_owner.clone(),
             );
         }
     }
 }
 
-pub fn query_safedrop(tcx: TyCtxt, fn_map: &FnMap, def_id: DefId, adt_owner: AdtOwner) {
+pub fn query_safedrop(tcx: TyCtxt, fn_map: &FnMap, def_id: DefId, adt_owner: OHAResult) {
     /* filter const mir */
     if let Some(_other) = tcx.hir_body_const_context(def_id.expect_local()) {
         return;

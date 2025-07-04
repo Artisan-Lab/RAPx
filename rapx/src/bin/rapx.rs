@@ -34,7 +34,7 @@ fn main() {
             "-opt=all" => compiler.enable_opt(2),
             "-opt=report" => compiler.enable_opt(0),
             "-alias" | "-alias0" | "-alias1" | "-alias2" => compiler.enable_alias(arg),
-            "-heap" => compiler.enable_heap_item(),
+            "-ownedheap" => compiler.enable_ownedheap(),
             "-adg" => compiler.enable_api_dep(), // api dependency graph
             "-callgraph" => compiler.enable_callgraph(),
             "-dataflow" => compiler.enable_dataflow(1),

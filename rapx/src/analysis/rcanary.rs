@@ -1,36 +1,36 @@
 pub mod ranalyzer;
 
-use rustc_middle::ty::TyCtxt;
-
-use crate::Elapsed;
-use std::collections::HashMap;
-
-use crate::analysis::core::heap_item::{AdtOwner, TypeAnalysis};
+use crate::analysis::{
+    core::ownedheap_analysis::{default::DefaultOwnedHeapAnalysis, OHAResult, OwnedHeapAnalysis},
+    Analysis,
+};
 use ranalyzer::{FlowAnalysis, IcxSliceFroBlock, IntraFlowContext, MirGraph};
+use rustc_middle::ty::TyCtxt;
+use std::collections::HashMap;
 
 #[allow(non_camel_case_types)]
 #[derive(Clone)]
 pub struct rCanary<'tcx> {
     tcx: TyCtxt<'tcx>,
-    adt_owner: AdtOwner,
+    adt_owner: OHAResult,
     mir_graph: MirGraph,
-    elapsed: Elapsed,
 }
 
 impl<'tcx> rCanary<'tcx> {
-    pub fn new(tcx: TyCtxt<'tcx>) -> Self {
+    pub fn new(tcx: TyCtxt<'tcx>, adt_owner: OHAResult) -> Self {
         Self {
             tcx,
-            adt_owner: HashMap::default(),
+            adt_owner: adt_owner,
             mir_graph: HashMap::default(),
-            elapsed: (0, 0),
         }
     }
 
     pub fn start(&mut self) {
-        let rcx_boxed = Box::new(rCanary::new(self.tcx));
+        let mut heap = DefaultOwnedHeapAnalysis::new(self.tcx);
+        heap.run();
+        let adt_owner = heap.get_all_items();
+        let rcx_boxed = Box::new(rCanary::new(self.tcx, adt_owner));
         let rcx = Box::leak(rcx_boxed);
-        TypeAnalysis::new(rcx).start();
         FlowAnalysis::new(rcx).start();
     }
 
@@ -38,11 +38,11 @@ impl<'tcx> rCanary<'tcx> {
         self.tcx
     }
 
-    pub fn adt_owner(&self) -> &AdtOwner {
+    pub fn adt_owner(&self) -> &OHAResult {
         &self.adt_owner
     }
 
-    pub fn adt_owner_mut(&mut self) -> &mut AdtOwner {
+    pub fn adt_owner_mut(&mut self) -> &mut OHAResult {
         &mut self.adt_owner
     }
 
@@ -52,30 +52,6 @@ impl<'tcx> rCanary<'tcx> {
 
     pub fn mir_graph_mut(&mut self) -> &mut MirGraph {
         &mut self.mir_graph
-    }
-
-    pub fn get_time_build(&self) -> i64 {
-        self.elapsed.0
-    }
-
-    pub fn add_time_build(&mut self, time: i64) {
-        self.elapsed.0 = self.elapsed.0 + time;
-    }
-
-    pub fn mut_ref_time_build(&mut self) -> &mut i64 {
-        &mut self.elapsed.0
-    }
-
-    pub fn get_time_solve(&self) -> i64 {
-        self.elapsed.1
-    }
-
-    pub fn add_time_solve(&mut self, time: i64) {
-        self.elapsed.1 = self.elapsed.1 + time;
-    }
-
-    pub fn mut_ref_time_solve(&mut self) -> &mut i64 {
-        &mut self.elapsed.1
     }
 }
 

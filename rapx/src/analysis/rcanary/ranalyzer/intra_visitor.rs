@@ -1,13 +1,14 @@
 use rustc_abi::VariantIdx;
 use rustc_data_structures::graph;
 use rustc_hir::def_id::DefId;
-use rustc_middle::mir::{
-    AggregateKind, BasicBlock, BasicBlockData, Body, Local, Operand, Place, ProjectionElem, Rvalue,
-    Statement, StatementKind, Terminator, TerminatorKind,
+use rustc_middle::{
+    mir::{
+        AggregateKind, BasicBlock, BasicBlockData, Body, Local, Operand, Place, ProjectionElem,
+        Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
+    },
+    ty::{self, InstanceKind::Item, Ty, TyKind, TypeVisitable},
 };
-use rustc_middle::ty::{self, Ty, TyKind, TypeVisitable};
-use rustc_span::source_map::Spanned;
-use rustc_span::Symbol;
+use rustc_span::{source_map::Spanned, Symbol};
 
 use annotate_snippets::{Level, Renderer, Snippet};
 use std::ops::Add;
@@ -17,15 +18,17 @@ use super::super::{IcxMut, IcxSliceMut, Rcx, RcxMut};
 use super::is_z3_goal_verbose;
 use super::ownership::IntraVar;
 use super::{FlowAnalysis, IcxSliceFroBlock, IntraFlowAnalysis};
-use crate::analysis::core::heap_item::ownership::*;
-use crate::analysis::core::heap_item::type_visitor::*;
-use crate::analysis::core::heap_item::*;
-use crate::utils::log::{
-    are_spans_in_same_file, relative_pos_range, span_to_filename, span_to_line_number,
-    span_to_source_code,
+use crate::{
+    analysis::core::ownedheap_analysis::{default::*, *},
+    rap_debug, rap_error, rap_trace, rap_warn,
+    utils::{
+        log::{
+            are_spans_in_same_file, relative_pos_range, span_to_filename, span_to_line_number,
+            span_to_source_code,
+        },
+        source::get_name,
+    },
 };
-use crate::utils::source::get_name;
-use crate::{rap_debug, rap_error, rap_trace, rap_warn};
 
 type Disc = Option<VariantIdx>;
 type Aggre = Option<usize>;
@@ -46,7 +49,7 @@ impl<'tcx, 'a> FlowAnalysis<'tcx, 'a> {
 
         for each_mir in mir_keys {
             let def_id = each_mir.to_def_id();
-            let body = mir_body(tcx, def_id);
+            let body = tcx.instance_mir(Item(def_id));
             if graph::is_cyclic(&body.basic_blocks) {
                 continue;
             }
@@ -63,12 +66,6 @@ impl<'tcx, 'a> FlowAnalysis<'tcx, 'a> {
 
             let mut intra_visitor = IntraFlowAnalysis::new(self.rcx, def_id);
             intra_visitor.visit_body(&ctx, &goal, &solver, body);
-
-            let sec_build = intra_visitor.get_time_build();
-            let sec_solve = intra_visitor.get_time_solve();
-
-            self.rcx_mut().add_time_build(sec_build);
-            self.rcx_mut().add_time_solve(sec_solve);
         }
     }
 }
@@ -81,7 +78,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         solver: &'ctx z3::Solver<'ctx>,
         body: &'tcx Body<'tcx>,
     ) {
-        let topo: Vec<usize> = self.graph().get_topo().iter().map(|id| *id).collect();
+        let topo: Vec<usize> = self.graph.get_topo().iter().map(|id| *id).collect();
         for bidx in topo {
             let data = &body.basic_blocks[BasicBlock::from(bidx)];
             self.visit_block_data(ctx, goal, solver, data, bidx);
@@ -116,11 +113,11 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
     ) {
         // For node 0 there is no pre node existed!
         if bidx == 0 {
-            let mut icx_slice = IcxSliceFroBlock::new_for_block_0(self.body().local_decls.len());
+            let mut icx_slice = IcxSliceFroBlock::new_for_block_0(self.body.local_decls.len());
 
-            for arg_idx in 0..self.body().arg_count {
+            for arg_idx in 0..self.body.arg_count {
                 let idx = arg_idx + 1;
-                let ty = self.body().local_decls[Local::from_usize(idx)].ty;
+                let ty = self.body.local_decls[Local::from_usize(idx)].ty;
 
                 let ty_with_index = TyWithIndex::new(ty, None);
                 if ty_with_index == TyWithIndex(None) {
@@ -135,7 +132,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                     icx_slice.ty_mut()[idx] = TyWithIndex(None);
                     continue;
                 }
-                let int = rustbv_to_int(&ownership_layout_to_rustbv(default_layout.layout()));
+                let int = rustbv_to_int(&heap_layout_to_rustbv(default_layout.layout()));
 
                 let name = new_local_name(idx, 0, 0).add("_arg_init");
                 let len = default_layout.layout().len();
@@ -644,7 +641,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         let mut is_ctor = true;
         if self.icx_slice().var()[lu].is_init() {
             // if the lvalue is not initialized for the first time (already initialized)
-            // the constraint that promise the original value of lvalue that does not hold the ownership
+            // the constraint that promise the original value of lvalue that does not hold the heap
             // e.g., y=x ,that y is non-owning => l=0
             // check the pointee layout (of) is same
             if self.icx_slice().ty()[lu] != self.icx_slice().ty[ru] {
@@ -660,7 +657,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             is_ctor = false;
         } else {
             // this branch means that the assignment is the constructor of the lvalue
-            let r_place_ty = rplace.ty(&self.body().local_decls, self.tcx());
+            let r_place_ty = rplace.ty(&self.body.local_decls, self.tcx());
             let ty_with_vidx = TyWithIndex::new(r_place_ty.ty, r_place_ty.variant_index);
             match ty_with_vidx.get_priority() {
                 0 => {
@@ -700,7 +697,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         let l_zero_const = ast::BV::from_u64(ctx, 0, llen as u32);
         let r_zero_const = ast::BV::from_u64(ctx, 0, rlen as u32);
 
-        // the constraint that promise the unique ownership in transformation of y=x, l=r
+        // the constraint that promise the unique heap in transformation of y=x, l=r
         // the exactly constraint is that (r'=r && l'=0) || (l'=r && r'=0)
         // this is for (r'=r && l'=0)
         let r_owning = r_new_bv._safe_eq(&r_ori_bv).unwrap();
@@ -773,7 +770,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         let mut is_ctor = true;
         if self.icx_slice().var()[lu].is_init() {
             // if the lvalue is not initialized for the first time
-            // the constraint that promise the original value of lvalue that does not hold the ownership
+            // the constraint that promise the original value of lvalue that does not hold the heap
             // e.g., y=move x ,that y (l) is non-owning
             // check the pointee layout (of) is same
             if self.icx_slice().ty()[lu] != self.icx_slice().ty[ru] {
@@ -789,7 +786,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             is_ctor = false;
         } else {
             // this branch means that the assignment is the constructor of the lvalue
-            let r_place_ty = rplace.ty(&self.body().local_decls, self.tcx());
+            let r_place_ty = rplace.ty(&self.body.local_decls, self.tcx());
             let ty_with_vidx = TyWithIndex::new(r_place_ty.ty, r_place_ty.variant_index);
             match ty_with_vidx.get_priority() {
                 0 => {
@@ -828,7 +825,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         let r_zero_const = ast::BV::from_u64(ctx, 0, rlen as u32);
 
-        // the constraint that promise the unique ownership in transformation of y=move x, l=move r
+        // the constraint that promise the unique heap in transformation of y=move x, l=move r
         // the exactly constraint is that r'=0 && l'=r
         // this is for r'=0
         let r_non_owning = r_new_bv._safe_eq(&r_zero_const).unwrap();
@@ -885,7 +882,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         // extract the ty of the rplace, the rplace has projection like _1.0
         // rpj ty is the exact ty of rplace, the first field ty of rplace
-        let rpj_ty = rplace.ty(&self.body().local_decls, self.tcx());
+        let rpj_ty = rplace.ty(&self.body.local_decls, self.tcx());
         let rpj_fields = self.extract_projection(rplace, None);
         if rpj_fields.is_unsupported() {
             // we only support that the field depth is 1 in max
@@ -899,15 +896,15 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         }
         let index_needed = rpj_fields.index_needed();
 
-        let default_ownership = self.extract_default_ty_layout(rpj_ty.ty, rpj_ty.variant_index);
-        if !default_ownership.get_requirement() || default_ownership.is_empty() {
+        let default_heap = self.extract_default_ty_layout(rpj_ty.ty, rpj_ty.variant_index);
+        if !default_heap.get_requirement() || default_heap.is_empty() {
             return;
         }
 
         // get the length of current variable and the rplace projection to generate bit vector in the future
         let mut llen = self.icx_slice().len()[lu];
         let rlen = self.icx_slice().len()[ru];
-        let rpj_len = default_ownership.layout().len();
+        let rpj_len = default_heap.layout().len();
 
         // extract the original z3 ast of the variable needed to prepare generating new
         let l_ori_bv: ast::BV;
@@ -916,7 +913,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         let mut is_ctor = true;
         if self.icx_slice().var()[lu].is_init() {
             // if the lvalue is not initialized for the first time
-            // the constraint that promise the original value of lvalue that does not hold the ownership
+            // the constraint that promise the original value of lvalue that does not hold the heap
             // e.g., y=move x.f ,that y (l) is non-owning
             l_ori_bv = self.icx_slice_mut().var_mut()[lu].extract();
             let l_zero_const = ast::BV::from_u64(ctx, 0, llen as u32);
@@ -927,7 +924,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         } else {
             // this branch means that the assignment is the constructor of the lvalue
             // Note : l = r.f => l's len must be 1 if l is a pointer
-            let r_place_ty = rplace.ty(&self.body().local_decls, self.tcx());
+            let r_place_ty = rplace.ty(&self.body.local_decls, self.tcx());
             let ty_with_vidx = TyWithIndex::new(r_place_ty.ty, r_place_ty.variant_index);
             match ty_with_vidx.get_priority() {
                 0 => {
@@ -942,7 +939,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                 2 => {
                     // update the layout of lvalue due to it is an instance
                     self.icx_slice_mut().ty_mut()[lu] = ty_with_vidx;
-                    self.icx_slice_mut().layout_mut()[lu] = default_ownership.layout().clone();
+                    self.icx_slice_mut().layout_mut()[lu] = default_heap.layout().clone();
                 }
                 _ => unreachable!(),
             }
@@ -964,7 +961,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         let l_new_bv = ast::BV::new_const(ctx, l_name, llen as u32);
         let r_new_bv = ast::BV::new_const(ctx, r_name, rlen as u32);
 
-        // the constraint that promise the unique ownership in transformation of y=x.f, l=r.f
+        // the constraint that promise the unique heap in transformation of y=x.f, l=r.f
         // the exactly constraint is that ( r.f'=r.f && l'=0 ) || ( l'=extend(r.f) && r.f'=0 )
         // this is for r.f'=r.f (no change) && l'=0
         let r_f_owning = r_new_bv._safe_eq(&r_ori_bv).unwrap();
@@ -975,15 +972,15 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         // this is for l'=extend(r.f) && r.f'=0
         // this is for l'=extend(r.f)
-        // note that we extract the ownership of the ori r.f and apply (extend) it to new lvalue
+        // note that we extract the heap of the ori r.f and apply (extend) it to new lvalue
         // like l'=r.f=1 => l' [1111] and default layout [****]
         let rust_bv_for_op_and = if self.icx_slice().taint()[ru].is_tainted() {
             rustbv_merge(
-                &ownership_layout_to_rustbv(default_ownership.layout()),
+                &heap_layout_to_rustbv(default_heap.layout()),
                 &self.generate_ptr_layout(rpj_ty.ty, rpj_ty.variant_index),
             )
         } else {
-            ownership_layout_to_rustbv(default_ownership.layout())
+            heap_layout_to_rustbv(default_heap.layout())
         };
         let int_for_op_and = rustbv_to_int(&rust_bv_for_op_and);
         let z3_bv_for_op_and = ast::BV::from_u64(ctx, int_for_op_and, llen as u32);
@@ -997,7 +994,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         let l_extend_owning = l_new_bv._safe_eq(&after_op_and).unwrap();
         // this is for r.f'=0
         // like r.1'=0 => ori and new => [0110] and [1011] => [0010]
-        // note that we calculate the index of r.f and use bit vector 'and' to update the ownership
+        // note that we calculate the index of r.f and use bit vector 'and' to update the heap
         let mut rust_bv_for_op_and = vec![true; rlen];
         rust_bv_for_op_and[index_needed] = false;
         let int_for_op_and = rustbv_to_int(&rust_bv_for_op_and);
@@ -1053,7 +1050,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         // extract the ty of the rplace, the rplace has projection like _1.0
         // rpj ty is the exact ty of rplace, the first field ty of rplace
-        let rpj_ty = rplace.ty(&self.body().local_decls, self.tcx());
+        let rpj_ty = rplace.ty(&self.body.local_decls, self.tcx());
         let rpj_fields = self.extract_projection(rplace, None);
         if rpj_fields.is_unsupported() {
             // we only support that the field depth is 1 in max
@@ -1067,15 +1064,15 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         }
         let index_needed = rpj_fields.index_needed();
 
-        let default_ownership = self.extract_default_ty_layout(rpj_ty.ty, rpj_ty.variant_index);
-        if !default_ownership.get_requirement() || default_ownership.is_empty() {
+        let default_heap = self.extract_default_ty_layout(rpj_ty.ty, rpj_ty.variant_index);
+        if !default_heap.get_requirement() || default_heap.is_empty() {
             return;
         }
 
         // get the length of current variable and the rplace projection to generate bit vector in the future
         let mut llen = self.icx_slice().len()[lu];
         let rlen = self.icx_slice().len()[ru];
-        let rpj_len = default_ownership.layout().len();
+        let rpj_len = default_heap.layout().len();
 
         // if the current layout of the father in rvalue is 0, avoid the following analysis
         // e.g., a = b, b:[]
@@ -1091,7 +1088,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         let mut is_ctor = true;
         if self.icx_slice().var()[lu].is_init() {
             // if the lvalue is not initialized for the first time
-            // the constraint that promise the original value of lvalue that does not hold the ownership
+            // the constraint that promise the original value of lvalue that does not hold the heap
             // e.g., y=move x.f ,that y (l) is non-owning
             // do not check the ty l = ty r due to field operation
             // if self.icx_slice().ty()[lu] != self.icx_slice().ty[ru] {
@@ -1108,7 +1105,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         } else {
             // this branch means that the assignment is the constructor of the lvalue
             // Note : l = r.f => l's len must be 1 if l is a pointer
-            let r_place_ty = rplace.ty(&self.body().local_decls, self.tcx());
+            let r_place_ty = rplace.ty(&self.body.local_decls, self.tcx());
             let ty_with_vidx = TyWithIndex::new(r_place_ty.ty, r_place_ty.variant_index);
             match ty_with_vidx.get_priority() {
                 0 => {
@@ -1123,7 +1120,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                 2 => {
                     // update the layout of lvalue due to it is an instance
                     self.icx_slice_mut().ty_mut()[lu] = ty_with_vidx;
-                    self.icx_slice_mut().layout_mut()[lu] = default_ownership.layout().clone();
+                    self.icx_slice_mut().layout_mut()[lu] = default_heap.layout().clone();
                 }
                 _ => unreachable!(),
             }
@@ -1145,18 +1142,18 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         let l_new_bv = ast::BV::new_const(ctx, l_name, llen as u32);
         let r_new_bv = ast::BV::new_const(ctx, r_name, rlen as u32);
 
-        // the constraint that promise the unique ownership in transformation of y=move x.f, l=move r.f
+        // the constraint that promise the unique heap in transformation of y=move x.f, l=move r.f
         // the exactly constraint is that l'=extend(r.f) && r.f'=0
         // this is for l'=extend(r.f)
-        // note that we extract the ownership of the ori r.f and apply (extend) it to new lvalue
+        // note that we extract the heap of the ori r.f and apply (extend) it to new lvalue
         // like l'=r.f=1 => l' [1111] and default layout [****]
         let rust_bv_for_op_and = if self.icx_slice().taint()[ru].is_tainted() {
             rustbv_merge(
-                &ownership_layout_to_rustbv(default_ownership.layout()),
+                &heap_layout_to_rustbv(default_heap.layout()),
                 &self.generate_ptr_layout(rpj_ty.ty, rpj_ty.variant_index),
             )
         } else {
-            ownership_layout_to_rustbv(default_ownership.layout())
+            heap_layout_to_rustbv(default_heap.layout())
         };
         let int_for_op_and = rustbv_to_int(&rust_bv_for_op_and);
         let z3_bv_for_op_and = ast::BV::from_u64(ctx, int_for_op_and, llen as u32);
@@ -1171,7 +1168,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         // this is for r.f'=0
         // like r.1'=0 => ori and new => [0110] and [1011] => [0010]
-        // note that we calculate the index of r.f and use bit vector 'and' to update the ownership
+        // note that we calculate the index of r.f and use bit vector 'and' to update the heap
         let mut rust_bv_for_op_and = vec![true; rlen];
         rust_bv_for_op_and[index_needed] = false;
         let int_for_op_and = rustbv_to_int(&rust_bv_for_op_and);
@@ -1209,13 +1206,13 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             return;
         }
 
-        let l_local_ty = self.body().local_decls[llocal].ty;
-        let default_ownership = self.extract_default_ty_layout(l_local_ty, Some(vidx));
-        if !default_ownership.get_requirement() || default_ownership.is_empty() {
+        let l_local_ty = self.body.local_decls[llocal].ty;
+        let default_heap = self.extract_default_ty_layout(l_local_ty, Some(vidx));
+        if !default_heap.get_requirement() || default_heap.is_empty() {
             return;
         }
 
-        let llen = default_ownership.layout().len();
+        let llen = default_heap.layout().len();
         self.icx_slice_mut().len_mut()[lu] = llen;
 
         if !self.icx_slice().var[lu].is_init() {
@@ -1263,7 +1260,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         }
 
         // extract the ty of the rvalue
-        let l_local_ty = self.body().local_decls[llocal].ty;
+        let l_local_ty = self.body.local_decls[llocal].ty;
         let lpj_fields = self.extract_projection(lplace, aggre);
         if lpj_fields.is_unsupported() {
             // we only support that the field depth is 1 in max
@@ -1303,13 +1300,13 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         let index_needed = lpj_fields.index_needed();
 
-        let default_ownership = self.extract_default_ty_layout(l_local_ty, disc);
-        if !default_ownership.get_requirement() || default_ownership.is_empty() {
+        let default_heap = self.extract_default_ty_layout(l_local_ty, disc);
+        if !default_heap.get_requirement() || default_heap.is_empty() {
             return;
         }
 
         // get the length of current variable and the lplace projection to generate bit vector in the future
-        let llen = default_ownership.layout().len();
+        let llen = default_heap.layout().len();
         self.icx_slice_mut().len_mut()[lu] = llen;
         let rlen = self.icx_slice().len()[ru];
 
@@ -1326,11 +1323,11 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         if self.icx_slice().var()[lu].is_init() {
             // if the lvalue is not initialized for the first time
-            // the constraint that promise the original value of lvalue that does not hold the ownership
+            // the constraint that promise the original value of lvalue that does not hold the heap
             // e.g., y.f= x ,that y.f (l) is non-owning
             l_ori_bv = self.icx_slice_mut().var_mut()[lu].extract();
             let extract_from_field = l_ori_bv.extract(index_needed as u32, index_needed as u32);
-            if lu > self.body().arg_count {
+            if lu > self.body.arg_count {
                 let l_f_zero_const = ast::BV::from_u64(ctx, 0, 1);
                 let constraint_l_f_ori_zero = extract_from_field._safe_eq(&l_f_zero_const).unwrap();
                 goal.assert(&constraint_l_f_ori_zero);
@@ -1347,7 +1344,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             solver.assert(&constraint_l_ctor_zero);
             l_ori_bv = l_ori_zero;
             self.icx_slice_mut().ty_mut()[lu] = TyWithIndex::new(l_local_ty, disc);
-            self.icx_slice_mut().layout_mut()[lu] = default_ownership.layout().clone();
+            self.icx_slice_mut().layout_mut()[lu] = default_heap.layout().clone();
         }
 
         // we no not need to update the lvalue length that is equal to rvalue
@@ -1364,7 +1361,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         let r_zero_const = ast::BV::from_u64(ctx, 0, rlen as u32);
 
-        // the constraint that promise the unique ownership in transformation of y.f=x, l.f=r
+        // the constraint that promise the unique heap in transformation of y.f=x, l.f=r
         // the exactly constraint is that (r'=r && l.f'=0) || (r'=0 && l.f'=shrink(r))
         // this is for r'=r && l.f'=0
         // this is for r'=r
@@ -1453,7 +1450,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         }
 
         // extract the ty of the rvalue
-        let l_local_ty = self.body().local_decls[llocal].ty;
+        let l_local_ty = self.body.local_decls[llocal].ty;
         let lpj_fields = self.extract_projection(lplace, aggre);
         if lpj_fields.is_unsupported() {
             // we only support that the field depth is 1 in max
@@ -1493,13 +1490,13 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         let index_needed = lpj_fields.index_needed();
 
-        let mut default_ownership = self.extract_default_ty_layout(l_local_ty, disc);
-        if !default_ownership.get_requirement() || default_ownership.is_empty() {
+        let mut default_heap = self.extract_default_ty_layout(l_local_ty, disc);
+        if !default_heap.get_requirement() || default_heap.is_empty() {
             return;
         }
 
         // get the length of current variable and the lplace projection to generate bit vector in the future
-        let llen = default_ownership.layout().len();
+        let llen = default_heap.layout().len();
         self.icx_slice_mut().len_mut()[lu] = llen;
         let rlen = self.icx_slice().len()[ru];
 
@@ -1516,12 +1513,12 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         if self.icx_slice().var()[lu].is_init() {
             // if the lvalue is not initialized for the first time
-            // the constraint that promise the original value of lvalue that does not hold the ownership
+            // the constraint that promise the original value of lvalue that does not hold the heap
             // e.g., y.f=move x ,that y.f (l) is non-owning
             // add: y.f -> y is not argument e.g., fn(arg1) arg1.1 = 0, cause arg is init as 1
             l_ori_bv = self.icx_slice_mut().var_mut()[lu].extract();
             let extract_from_field = l_ori_bv.extract(index_needed as u32, index_needed as u32);
-            if lu > self.body().arg_count {
+            if lu > self.body.arg_count {
                 let l_f_zero_const = ast::BV::from_u64(ctx, 0, 1);
                 let constraint_l_f_ori_zero = extract_from_field._safe_eq(&l_f_zero_const).unwrap();
                 goal.assert(&constraint_l_f_ori_zero);
@@ -1538,7 +1535,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             solver.assert(&constraint_l_ctor_zero);
             l_ori_bv = l_ori_zero;
             self.icx_slice_mut().ty_mut()[lu] = TyWithIndex::new(l_local_ty, disc);
-            self.icx_slice_mut().layout_mut()[lu] = default_ownership.layout_mut().clone();
+            self.icx_slice_mut().layout_mut()[lu] = default_heap.layout_mut().clone();
         }
 
         // we no not need to update the lvalue length that is equal to rvalue
@@ -1555,7 +1552,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         let r_zero_const = ast::BV::from_u64(ctx, 0, rlen as u32);
 
-        // the constraint that promise the unique ownership in transformation of y.f=move x, l.f=move r
+        // the constraint that promise the unique heap in transformation of y.f=move x, l.f=move r
         // the exactly constraint is that r'=0 && l.f'=shrink(r)
         // this is for r'=0
         let r_non_owning = r_new_bv._safe_eq(&r_zero_const).unwrap();
@@ -1621,7 +1618,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             return;
         }
 
-        let l_local_ty = self.body().local_decls[llocal].ty;
+        let l_local_ty = self.body.local_decls[llocal].ty;
 
         // extract the ty of the rplace, the rplace has projection like _1.0
         // rpj ty is the exact ty of rplace, the first field ty of rplace
@@ -1662,13 +1659,13 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         let r_index_needed = rpj_fields.index_needed();
         let l_index_needed = lpj_fields.index_needed();
 
-        let default_ownership = self.extract_default_ty_layout(l_local_ty, disc);
-        if !default_ownership.get_requirement() || default_ownership.is_empty() {
+        let default_heap = self.extract_default_ty_layout(l_local_ty, disc);
+        if !default_heap.get_requirement() || default_heap.is_empty() {
             return;
         }
 
         // get the length of current variable and the rplace projection to generate bit vector in the future
-        let llen = default_ownership.layout().len();
+        let llen = default_heap.layout().len();
         let rlen = self.icx_slice().len()[ru];
         self.icx_slice_mut().len_mut()[lu] = llen;
 
@@ -1685,11 +1682,11 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         if self.icx_slice().var()[lu].is_init() {
             // if the lvalue is not initialized for the first time
-            // the constraint that promise the original value of lvalue that does not hold the ownership
+            // the constraint that promise the original value of lvalue that does not hold the heap
             // e.g., y.f= move x.f ,that y.f (l) is non-owning
             l_ori_bv = self.icx_slice_mut().var_mut()[lu].extract();
             let extract_from_field = l_ori_bv.extract(l_index_needed as u32, l_index_needed as u32);
-            if lu > self.body().arg_count {
+            if lu > self.body.arg_count {
                 let l_f_zero_const = ast::BV::from_u64(ctx, 0, 1);
                 let constraint_l_f_ori_zero = extract_from_field._safe_eq(&l_f_zero_const).unwrap();
                 goal.assert(&constraint_l_f_ori_zero);
@@ -1706,7 +1703,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             solver.assert(&constraint_l_ctor_zero);
             l_ori_bv = l_ori_zero;
             self.icx_slice_mut().ty_mut()[lu] = TyWithIndex::new(l_local_ty, disc);
-            self.icx_slice_mut().layout_mut()[lu] = default_ownership.layout().clone();
+            self.icx_slice_mut().layout_mut()[lu] = default_heap.layout().clone();
         }
 
         // produce the name of lvalue and rvalue in this program point
@@ -1717,12 +1714,12 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         let l_new_bv = ast::BV::new_const(ctx, l_name, llen as u32);
         let r_new_bv = ast::BV::new_const(ctx, r_name, rlen as u32);
 
-        // the constraint that promise the unique ownership in transformation of y.f= x.f, l.f= r.f
+        // the constraint that promise the unique heap in transformation of y.f= x.f, l.f= r.f
         // the exactly constraint is that (r.f'=0 && l.f'=r.f) || (l.f'=0 && r.f'=r.f)
         // this is for r.f'=0 && l.f'=r.f
         // this is for r.f'=0
         // like r.1'=0 => ori and new => [0110] and [1011] => [0010]
-        // note that we calculate the index of r.f and use bit vector 'and' to update the ownership
+        // note that we calculate the index of r.f and use bit vector 'and' to update the heap
         let mut rust_bv_for_op_and = vec![true; rlen];
         rust_bv_for_op_and[r_index_needed] = false;
         let int_for_op_and = rustbv_to_int(&rust_bv_for_op_and);
@@ -1808,11 +1805,11 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             return;
         }
 
-        let l_local_ty = self.body().local_decls[llocal].ty;
+        let l_local_ty = self.body.local_decls[llocal].ty;
 
         // extract the ty of the rplace, the rplace has projection like _1.0
         // rpj ty is the exact ty of rplace, the first field ty of rplace
-        //let rpj_ty = rplace.ty(&self.body().local_decls, self.tcx());
+        //let rpj_ty = rplace.ty(&self.body.local_decls, self.tcx);
         let rpj_fields = self.extract_projection(rplace, None);
         if rpj_fields.is_unsupported() {
             // we only support that the field depth is 1 in max
@@ -1823,7 +1820,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         // extract the ty of the lplace, the lplace has projection like _1.0
         // lpj ty is the exact ty of lplace, the first field ty of lplace
-        //let lpj_ty = lplace.ty(&self.body().local_decls, self.tcx());
+        //let lpj_ty = lplace.ty(&self.body.local_decls, self.tcx);
         let lpj_fields = self.extract_projection(lplace, aggre);
         if lpj_fields.is_unsupported() {
             // we only support that the field depth is 1 in max
@@ -1852,13 +1849,13 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         let r_index_needed = rpj_fields.index_needed();
         let l_index_needed = lpj_fields.index_needed();
 
-        let default_ownership = self.extract_default_ty_layout(l_local_ty, disc);
-        if !default_ownership.get_requirement() || default_ownership.is_empty() {
+        let default_heap = self.extract_default_ty_layout(l_local_ty, disc);
+        if !default_heap.get_requirement() || default_heap.is_empty() {
             return;
         }
 
         // get the length of current variable and the rplace projection to generate bit vector in the future
-        let llen = default_ownership.layout().len();
+        let llen = default_heap.layout().len();
         let rlen = self.icx_slice().len()[ru];
         self.icx_slice_mut().len_mut()[lu] = llen;
 
@@ -1875,11 +1872,11 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         if self.icx_slice().var()[lu].is_init() {
             // if the lvalue is not initialized for the first time
-            // the constraint that promise the original value of lvalue that does not hold the ownership
+            // the constraint that promise the original value of lvalue that does not hold the heap
             // e.g., y.f= move x.f ,that y.f (l) is non-owning
             l_ori_bv = self.icx_slice_mut().var_mut()[lu].extract();
             let extract_from_field = l_ori_bv.extract(l_index_needed as u32, l_index_needed as u32);
-            if lu > self.body().arg_count {
+            if lu > self.body.arg_count {
                 let l_f_zero_const = ast::BV::from_u64(ctx, 0, 1);
                 let constraint_l_f_ori_zero = extract_from_field._safe_eq(&l_f_zero_const).unwrap();
                 goal.assert(&constraint_l_f_ori_zero);
@@ -1896,7 +1893,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             solver.assert(&constraint_l_ctor_zero);
             l_ori_bv = l_ori_zero;
             self.icx_slice_mut().ty_mut()[lu] = TyWithIndex::new(l_local_ty, disc);
-            self.icx_slice_mut().layout_mut()[lu] = default_ownership.layout().clone();
+            self.icx_slice_mut().layout_mut()[lu] = default_heap.layout().clone();
         }
 
         // produce the name of lvalue and rvalue in this program point
@@ -1907,11 +1904,11 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         let l_new_bv = ast::BV::new_const(ctx, l_name, llen as u32);
         let r_new_bv = ast::BV::new_const(ctx, r_name, rlen as u32);
 
-        // the constraint that promise the unique ownership in transformation of y.f=move x.f, l.f=move r.f
+        // the constraint that promise the unique heap in transformation of y.f=move x.f, l.f=move r.f
         // the exactly constraint is that r.f'=0 && l.f'=r.f
         // this is for r.f'=0
         // like r.1'=0 => ori and new => [0110] and [1011] => [0010]
-        // note that we calculate the index of r.f and use bit vector 'and' to update the ownership
+        // note that we calculate the index of r.f and use bit vector 'and' to update the heap
         let mut rust_bv_for_op_and = vec![true; rlen];
         rust_bv_for_op_and[r_index_needed] = false;
         let int_for_op_and = rustbv_to_int(&rust_bv_for_op_and);
@@ -1959,14 +1956,14 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             return false;
         }
 
-        let l_place_ty = dest.ty(&self.body().local_decls, self.tcx());
+        let l_place_ty = dest.ty(&self.body.local_decls, self.tcx());
         if !is_place_containing_ptr(&l_place_ty.ty) {
             return false;
         }
 
         match args[0].node {
             Operand::Move(aplace) => {
-                let a_place_ty = aplace.ty(&self.body().local_decls, self.tcx());
+                let a_place_ty = aplace.ty(&self.body.local_decls, self.tcx());
                 let default_layout =
                     self.extract_default_ty_layout(a_place_ty.ty, a_place_ty.variant_index);
                 if default_layout.is_owned() {
@@ -1992,7 +1989,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             return ans;
         }
 
-        let l_place_ty = dest.ty(&self.body().local_decls, self.tcx());
+        let l_place_ty = dest.ty(&self.body.local_decls, self.tcx());
         let default_layout =
             self.extract_default_ty_layout(l_place_ty.ty, l_place_ty.variant_index);
         if !default_layout.get_requirement() || default_layout.is_empty() {
@@ -2041,14 +2038,14 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                 match constant.ty().kind() {
                     ty::FnDef(id, ..) => {
                         //rap_debug!("{:?}", id);
-                        //rap_debug!("{:?}", mir_body(self.tcx(), *id));
+                        //rap_debug!("{:?}", mir_body(self.tcx, *id));
                         match id.index.as_usize() {
                             2171 => {
                                 // this for calling std::mem::drop(TY)
                                 match args[0].node {
                                     Operand::Move(aplace) => {
                                         let a_place_ty =
-                                            dest.ty(&self.body().local_decls, self.tcx());
+                                            dest.ty(&self.body.local_decls, self.tcx());
                                         let a_ty = a_place_ty.ty;
                                         if a_ty.is_adt() {
                                             self.handle_drop(
@@ -2078,7 +2075,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         let source_flag = self.check_fn_source(args, dest);
         // the recovery flag is for fn(*) -> Self
         // the return value should have the same layout as tainted one
-        // we will take the ownership of the args if the arg is a pointer
+        // we will take the heap of the args if the arg is a pointer
         let recovery_flag = self.check_fn_recovery(args, dest);
         if source_flag {
             self.add_taint(term);
@@ -2101,7 +2098,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                         continue;
                     }
 
-                    let a_place_ty = aplace.ty(&self.body().local_decls, self.tcx());
+                    let a_place_ty = aplace.ty(&self.body.local_decls, self.tcx());
                     let a_ty = a_place_ty.ty;
                     let is_a_ptr = a_ty.is_any_ptr();
 
@@ -2186,7 +2183,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                         continue;
                     }
 
-                    let a_ty = aplace.ty(&self.body().local_decls, self.tcx()).ty;
+                    let a_ty = aplace.ty(&self.body.local_decls, self.tcx()).ty;
                     let is_a_ptr = a_ty.is_any_ptr();
 
                     let a_ori_bv = self.icx_slice_mut().var_mut()[au].extract();
@@ -2264,8 +2261,8 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
         let l_ori_bv: ast::BV;
 
-        let l_place_ty = dest.ty(&self.body().local_decls, self.tcx());
-        let l_local_ty = self.body().local_decls[llocal].ty;
+        let l_place_ty = dest.ty(&self.body.local_decls, self.tcx());
+        let l_local_ty = self.body.local_decls[llocal].ty;
 
         let mut is_ctor = true;
         match dest.projection.len() {
@@ -2282,12 +2279,12 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                     let modified_layout_bv =
                         self.generate_ptr_layout(l_place_ty.ty, l_place_ty.variant_index);
                     let merge_layout_bv = rustbv_merge(
-                        &ownership_layout_to_rustbv(return_value_layout.layout()),
+                        &heap_layout_to_rustbv(return_value_layout.layout()),
                         &modified_layout_bv,
                     );
                     rustbv_to_int(&merge_layout_bv)
                 } else {
-                    rustbv_to_int(&ownership_layout_to_rustbv(return_value_layout.layout()))
+                    rustbv_to_int(&heap_layout_to_rustbv(return_value_layout.layout()))
                 };
 
                 let mut llen = self.icx_slice().len()[lu];
@@ -2348,7 +2345,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                     return;
                 }
 
-                //let int_for_gen = rustbv_to_int(&ownership_layout_to_rustbv(return_value_layout.layout()));
+                //let int_for_gen = rustbv_to_int(&heap_layout_to_rustbv(return_value_layout.layout()));
 
                 let llen = self.icx_slice().len()[lu];
 
@@ -2385,7 +2382,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                 let update_field = if source_flag {
                     ast::BV::from_u64(ctx, 1, 1)
                 } else {
-                    if return_value_layout.layout()[index_needed] == RawTypeOwner::Owned {
+                    if return_value_layout.layout()[index_needed] == OwnedHeap::True {
                         ast::BV::from_u64(ctx, 1, 1)
                     } else {
                         ast::BV::from_u64(ctx, 0, 1)
@@ -2434,7 +2431,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             if len == 0 {
                 continue;
             }
-            if iidx <= self.body().arg_count {
+            if iidx <= self.body.arg_count {
                 continue;
             }
 
@@ -2468,31 +2465,28 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             }
         }
 
-        // rap_debug!("{}", self.body().local_decls.display());
-        // rap_debug!("{}", self.body().basic_blocks.display());
+        // rap_debug!("{}", self.body.local_decls.display());
+        // rap_debug!("{}", self.body.basic_blocks.display());
         // let g = format!("{}", goal);
         // rap_debug!("{}\n", g.color(Color::LightGray).bold());
 
         if result == z3::SatResult::Unsat && self.taint_flag {
-            let fn_name = get_name(self.tcx(), self.did)
+            let fn_name = get_name(self.tcx(), self.def_id)
                 .unwrap_or_else(|| Symbol::intern("no symbol available"));
 
             rap_warn!("Memory Leak detected in function {:}", fn_name);
-            let source = span_to_source_code(self.body().span);
-            let file = span_to_filename(self.body().span);
+            let source = span_to_source_code(self.body.span);
+            let file = span_to_filename(self.body.span);
             let mut snippet = Snippet::source(&source)
-                .line_start(span_to_line_number(self.body().span))
+                .line_start(span_to_line_number(self.body.span))
                 .origin(&file)
                 .fold(false);
 
             for source in self.taint_source.iter() {
-                if are_spans_in_same_file(self.body().span, source.source_info.span) {
+                if are_spans_in_same_file(self.body.span, source.source_info.span) {
                     snippet = snippet.annotation(
                         Level::Warning
-                            .span(relative_pos_range(
-                                self.body().span,
-                                source.source_info.span,
-                            ))
+                            .span(relative_pos_range(self.body.span, source.source_info.span))
                             .label("Memory Leak Candidates."),
                     );
                 }
@@ -2534,7 +2528,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         }
 
         let len = self.icx_slice().len()[u];
-        let rust_bv = reverse_ownership_layout_to_rustbv(&self.icx_slice().layout()[u]);
+        let rust_bv = reverse_heap_layout_to_rustbv(&self.icx_slice().layout()[u]);
         let ori_bv = self.icx_slice().var()[u].extract();
 
         let f = self.extract_projection(dest, None);
@@ -2546,7 +2540,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         match f.has_field() {
             false => {
                 // drop the entire owning item
-                // reverse the ownership layout and using and operator
+                // reverse the heap layout and using and operator
                 if recovery {
                     // recovery for pointer, clear all
                     let name = new_local_name(u, bidx, 0).add("_drop_recovery");
@@ -2595,7 +2589,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
 
                 if (rust_bv[index_needed] && !recovery) || (!rust_bv[index_needed] && recovery) {
                     // not actually drop, just update the idx
-                    // the default ownership is false (non-owning) somehow, we just reverse it before
+                    // the default heap is false (non-owning) somehow, we just reverse it before
                     let constraint_update = new_bv._eq(&ori_bv);
 
                     goal.assert(&constraint_update);
@@ -2661,10 +2655,10 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         match ty.kind() {
             TyKind::Array(..) => {
                 let mut res = OwnershipLayoutResult::new();
-                let mut default_ownership = DefaultOwnership::new(self.tcx(), self.owner());
+                let mut default_heap = DefaultOwnership::new(self.tcx(), self.owner());
 
-                let _ = ty.visit_with(&mut default_ownership);
-                res.update_from_default_ownership_visitor(&mut default_ownership);
+                let _ = ty.visit_with(&mut default_heap);
+                res.update_from_default_heap_visitor(&mut default_heap);
 
                 res
             }
@@ -2672,10 +2666,10 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                 let mut res = OwnershipLayoutResult::new();
 
                 for tuple_ty in tuple_ty_list.iter() {
-                    let mut default_ownership = DefaultOwnership::new(self.tcx(), self.owner());
+                    let mut default_heap = DefaultOwnership::new(self.tcx(), self.owner());
 
-                    let _ = tuple_ty.visit_with(&mut default_ownership);
-                    res.update_from_default_ownership_visitor(&mut default_ownership);
+                    let _ = tuple_ty.visit_with(&mut default_heap);
+                    res.update_from_default_heap_visitor(&mut default_heap);
                 }
 
                 res
@@ -2693,10 +2687,10 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                     for field in adtdef.all_fields() {
                         let field_ty = field.ty(self.tcx(), substs);
 
-                        let mut default_ownership = DefaultOwnership::new(self.tcx(), self.owner());
+                        let mut default_heap = DefaultOwnership::new(self.tcx(), self.owner());
 
-                        let _ = field_ty.visit_with(&mut default_ownership);
-                        res.update_from_default_ownership_visitor(&mut default_ownership);
+                        let _ = field_ty.visit_with(&mut default_heap);
+                        res.update_from_default_heap_visitor(&mut default_heap);
                     }
                 }
                 // check the ty which is an enum with a exact variant idx
@@ -2706,10 +2700,10 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                     for field in &adtdef.variants()[vidx].fields {
                         let field_ty = field.ty(self.tcx(), substs);
 
-                        let mut default_ownership = DefaultOwnership::new(self.tcx(), self.owner());
+                        let mut default_heap = DefaultOwnership::new(self.tcx(), self.owner());
 
-                        let _ = field_ty.visit_with(&mut default_ownership);
-                        res.update_from_default_ownership_visitor(&mut default_ownership);
+                        let _ = field_ty.visit_with(&mut default_heap);
+                        res.update_from_default_heap_visitor(&mut default_heap);
                     }
                 }
                 res
@@ -2719,19 +2713,19 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                 res.set_requirement(true);
                 res.set_param(true);
                 res.set_owned(true);
-                res.layout_mut().push(RawTypeOwner::Owned);
+                res.layout_mut().push(OwnedHeap::True);
                 res
             }
             TyKind::RawPtr(..) => {
                 let mut res = OwnershipLayoutResult::new();
                 res.set_requirement(true);
-                res.layout_mut().push(RawTypeOwner::Unowned);
+                res.layout_mut().push(OwnedHeap::False);
                 res
             }
             TyKind::Ref(..) => {
                 let mut res = OwnershipLayoutResult::new();
                 res.set_requirement(true);
-                res.layout_mut().push(RawTypeOwner::Unowned);
+                res.layout_mut().push(OwnedHeap::False);
                 res
             }
             _ => OwnershipLayoutResult::new(),
@@ -2742,7 +2736,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         &mut self,
         ty: Ty<'tcx>,
         variant: Option<VariantIdx>,
-    ) -> RustBV {
+    ) -> Vec<bool> {
         let mut res = Vec::new();
         match ty.kind() {
             TyKind::Array(..) => {
@@ -2808,7 +2802,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
             // Therefore, we do not need to record the ty of such field, instead, the projection
             // records the ty of the place, it is correct, because for local constructor, we do
             // not use the type information of the filed, but only need the index to init them one by one.
-            let ty = place.ty(&self.body().local_decls, self.tcx());
+            let ty = place.ty(&self.body.local_decls, self.tcx());
             prj.pf_vec.push((aggre.unwrap(), ty.ty));
             return prj;
         }
@@ -2933,31 +2927,31 @@ fn has_projection(place: &Place) -> bool {
     };
 }
 
-fn ownership_layout_to_rustbv(layout: &OwnershipLayout) -> RustBV {
+fn heap_layout_to_rustbv(layout: &Vec<OwnedHeap>) -> Vec<bool> {
     let mut v = Vec::default();
     for item in layout.iter() {
         match item {
-            RawTypeOwner::Uninit => rap_error!("item of raw type owner is uninit"),
-            RawTypeOwner::Unowned => v.push(false),
-            RawTypeOwner::Owned => v.push(true),
+            OwnedHeap::Unknown => rap_error!("item of raw type owner is uninit"),
+            OwnedHeap::False => v.push(false),
+            OwnedHeap::True => v.push(true),
         }
     }
     v
 }
 
-fn reverse_ownership_layout_to_rustbv(layout: &OwnershipLayout) -> RustBV {
+fn reverse_heap_layout_to_rustbv(layout: &Vec<OwnedHeap>) -> Vec<bool> {
     let mut v = Vec::default();
     for item in layout.iter() {
         match item {
-            RawTypeOwner::Uninit => rap_error!("item of raw type owner is uninit"),
-            RawTypeOwner::Unowned => v.push(true),
-            RawTypeOwner::Owned => v.push(false),
+            OwnedHeap::Unknown => rap_error!("item of raw type owner is uninit"),
+            OwnedHeap::False => v.push(true),
+            OwnedHeap::True => v.push(false),
         }
     }
     v
 }
 
-fn rustbv_merge(a: &RustBV, b: &RustBV) -> RustBV {
+fn rustbv_merge(a: &Vec<bool>, b: &Vec<bool>) -> Vec<bool> {
     assert_eq!(a.len(), b.len());
     let mut bv = Vec::new();
     for idx in 0..a.len() {
@@ -2969,7 +2963,7 @@ fn rustbv_merge(a: &RustBV, b: &RustBV) -> RustBV {
 // Create an unsigned integer from bit bit-vector.
 // The bit-vector has n bits
 // the i'th bit (counting from 0 to n-1) is 1 if ans div 2^i mod 2 is 1.
-fn rustbv_to_int(bv: &RustBV) -> u64 {
+fn rustbv_to_int(bv: &Vec<bool>) -> u64 {
     let mut ans = 0;
     let mut base = 1;
     for tf in bv.iter() {

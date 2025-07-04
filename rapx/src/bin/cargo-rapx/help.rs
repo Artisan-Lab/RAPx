@@ -17,7 +17,7 @@ Analysis:
     -audit          (under development) generate unsafe code audit units
     -callgraph      generate callgraphs
     -dataflow       generate dataflow graphs
-    -heap           analyze if the type holds a piece of memory on heap
+    -ownedheap      analyze if the type holds a piece of memory on heap
     -range          perform range analysis
 
 General command: 

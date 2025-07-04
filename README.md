@@ -1,7 +1,13 @@
-# ![logo](https://raw.githubusercontent.com/Artisan-Lab/RAPx/main/rapx_logo.png)
-RAPx is a static Rust analysis platform developed by researchers at [Artisan-Lab](https://hxuhack.github.io), Fudan University. The project aims to provide a foundation for Rust programmers to develop or use advanced static analysis features beyond those offered by the rustc compiler. For further details, please refer to the [RAPx-Book](https://artisan-lab.github.io/RAPx-Book).
+# ![logo](https://raw.githubusercontent.com/Artisan-Lab/RAPx/main/logo.png)
+RAPx (Rust Analysis Platform with Extensions) [![license](https://img.shields.io/github/license/Artisan-Lab/RAPx)](./LICENSE-MPL) is an advanced static analysis platform for Rust, developed by researchers at [Artisan-Lab](https://hxuhack.github.io), Fudan University. It provides an extensible framework for building and integrating powerful analysis capabilities that go beyond those available in the standard rustc compiler, empowering developers to reason about safety, robustness, and performance at a deeper level.
 
-The project is still under heavy development. 
+RAPx is available on crates.io. [![crates.io](https://img.shields.io/crates/v/rapx.svg)](https://crates.io/crates/rapx)
+
+## Features
+# ![logo](https://raw.githubusercontent.com/Artisan-Lab/RAPx/main/feature.png)
+RAPx is structured into two layers: a core layer offering essential program analysis algorithms (e.g., alias and dataflow analysis), and an application layer implementing specific tasks such as bug detection. This separation of concerns promotes modular development and fosters collaboration between algorithm and application developers.
+
+The project is still under heavy development. For further details, please refer to the [RAPx-Book](https://artisan-lab.github.io/RAPx-Book).
 
 ## Quick Start
 
@@ -49,7 +55,7 @@ Analysis:
     -audit          (under development) generate unsafe code audit units
     -callgraph      generate callgraphs
     -dataflow       generate dataflow graphs
-    -heap           analyze if the type holds a piece of memory on heap
+    -ownedheap      analyze if the type holds a piece of memory on heap
     -range          perform range analysis
 ```
 

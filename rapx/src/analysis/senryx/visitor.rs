@@ -1,21 +1,22 @@
-use crate::analysis::core::alias::mop::FnMap;
-use crate::analysis::safedrop::graph::SafeDropGraph;
-use crate::analysis::utils::fn_info::display_hashmap;
-use crate::analysis::utils::fn_info::get_all_std_unsafe_callees_block_id;
-use crate::analysis::utils::fn_info::get_callees;
-use crate::analysis::utils::fn_info::get_cleaned_def_path_name;
-use crate::analysis::utils::fn_info::is_ptr;
-use crate::analysis::utils::fn_info::is_ref;
-use crate::analysis::utils::show_mir::display_mir;
-use crate::rap_warn;
-use rustc_middle::mir::Local;
-use rustc_middle::mir::ProjectionElem;
-use rustc_middle::ty::PseudoCanonicalInput;
-use rustc_span::source_map::Spanned;
-use rustc_span::Span;
-use std::collections::{HashMap, HashSet};
-use std::fmt::Debug;
-use std::hash::Hash;
+use crate::{
+    analysis::{
+        core::{alias_analysis::mop::FnMap, ownedheap_analysis::OHAResult},
+        safedrop::graph::SafeDropGraph,
+        utils::{
+            fn_info::{
+                display_hashmap, get_all_std_unsafe_callees_block_id, get_callees,
+                get_cleaned_def_path_name, is_ptr, is_ref,
+            },
+            show_mir::display_mir,
+        },
+    },
+    rap_warn,
+};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    hash::Hash,
+};
 
 use super::contracts::abstract_state::{
     AbstractStateItem, AlignState, PathInfo, StateType, VType, Value,
@@ -27,16 +28,15 @@ use super::generic_check::GenericChecker;
 use super::inter_record::InterAnalysisRecord;
 use super::matcher::UnsafeApi;
 use super::matcher::{get_arg_place, parse_unsafe_api};
-use crate::analysis::core::heap_item::AdtOwner;
 use rustc_hir::def_id::DefId;
-use rustc_middle::ty::TyCtxt;
 use rustc_middle::{
     mir::{
-        self, AggregateKind, BasicBlock, BasicBlockData, BinOp, CastKind, Operand, Place, Rvalue,
-        Statement, StatementKind, Terminator, TerminatorKind,
+        self, AggregateKind, BasicBlock, BasicBlockData, BinOp, CastKind, Local, Operand, Place,
+        ProjectionElem, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
     },
-    ty::{self, GenericArgKind, Ty, TyKind},
+    ty::{self, GenericArgKind, PseudoCanonicalInput, Ty, TyCtxt, TyKind},
 };
+use rustc_span::{source_map::Spanned, Span};
 
 //TODO: modify contracts vec to contract-bool pairs (we can also use path index to record path info)
 pub struct CheckResult {
@@ -115,7 +115,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         Self {
             tcx,
             def_id,
-            safedrop_graph: SafeDropGraph::new(body, tcx, def_id, AdtOwner::default()),
+            safedrop_graph: SafeDropGraph::new(body, tcx, def_id, OHAResult::default()),
             abstract_states: HashMap::new(),
             unsafe_callee_report: HashMap::new(),
             local_ty: HashMap::new(),

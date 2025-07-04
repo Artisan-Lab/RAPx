@@ -1,11 +1,10 @@
-use rustc_middle::mir::TerminatorKind;
+use rustc_middle::{mir::TerminatorKind, ty::InstanceKind::Item};
 
 use std::collections::BinaryHeap;
 //use stopwatch::Stopwatch;
 
 use super::super::ranalyzer::{FlowAnalysis, NodeOrder};
 use super::super::RcxMut;
-use super::mir_body;
 
 impl<'tcx, 'a> FlowAnalysis<'tcx, 'a> {
     pub fn order(&mut self) {
@@ -20,7 +19,7 @@ impl<'tcx, 'a> FlowAnalysis<'tcx, 'a> {
         for each_mir in mir_keys {
             // Get the defid of current crate and get mir Body through this id
             let def_id = each_mir.to_def_id();
-            let body = mir_body(tcx, def_id);
+            let body = tcx.instance_mir(Item(def_id));
 
             let mut path = NodeOrder::new(body);
             let mut lev: Vec<usize> = vec![0; body.basic_blocks.len()];
@@ -31,9 +30,6 @@ impl<'tcx, 'a> FlowAnalysis<'tcx, 'a> {
                 .mir_graph_mut()
                 .insert(def_id, path.graph_mut().clone());
         }
-
-        //self.rcx_mut().add_time_build(sw.elapsed_ms());
-        //sw.stop();
     }
 }
 

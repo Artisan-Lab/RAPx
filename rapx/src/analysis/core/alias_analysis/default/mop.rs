@@ -1,12 +1,17 @@
-use super::graph::*;
-use super::*;
+use super::{graph::*, *};
 use rustc_data_structures::fx::FxHashSet;
 use rustc_hir::def_id::DefId;
-use rustc_middle::mir::Operand::{Constant, Copy, Move};
-use rustc_middle::mir::TerminatorKind;
-use rustc_middle::ty::TypingEnv;
-use std::collections::{HashMap, HashSet};
-use std::env;
+use rustc_middle::{
+    mir::{
+        Operand::{Constant, Copy, Move},
+        TerminatorKind,
+    },
+    ty::TypingEnv,
+};
+use std::{
+    collections::{HashMap, HashSet},
+    env,
+};
 
 impl<'tcx> MopGraph<'tcx> {
     pub fn split_check(

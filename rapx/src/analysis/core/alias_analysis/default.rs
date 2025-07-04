@@ -1,22 +1,23 @@
 pub mod alias;
 pub mod graph;
 pub mod mop;
-pub mod types;
 
-use crate::analysis::core::alias::AAFact;
-use crate::analysis::core::alias::{AAResult, AliasAnalysis};
-use crate::analysis::utils::intrinsic_id::{
-    COPY_FROM, COPY_FROM_NONOVERLAPPING, COPY_TO, COPY_TO_NONOVERLAPPING,
+use super::{AAFact, AAResult, AliasAnalysis};
+use crate::{
+    analysis::{
+        utils::intrinsic_id::{
+            COPY_FROM, COPY_FROM_NONOVERLAPPING, COPY_TO, COPY_TO_NONOVERLAPPING,
+        },
+        Analysis,
+    },
+    rap_debug, rap_info, rap_trace,
+    utils::source::*,
 };
-use crate::analysis::Analysis;
-use crate::utils::source::*;
-use crate::{rap_debug, rap_info, rap_trace};
 use graph::MopGraph;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
 use rustc_middle::ty::TyCtxt;
-use std::collections::HashSet;
-use std::convert::From;
+use std::{collections::HashSet, convert::From};
 
 pub const VISIT_LIMIT: usize = 1000;
 
@@ -27,11 +28,11 @@ pub struct DefaultAlias<'tcx> {
 
 impl<'tcx> Analysis for DefaultAlias<'tcx> {
     fn name(&self) -> &'static str {
-        "Alias Analysis (MoP)"
+        "Default alias analysis algorithm."
     }
 
     fn run(&mut self) {
-        rap_debug!("Start alias analysis via MoP.");
+        rap_debug!("Start alias analysis.");
         let mir_keys = self.tcx.mir_keys(());
         for local_def_id in mir_keys {
             self.query_mop(local_def_id.to_def_id());
@@ -59,7 +60,7 @@ where
     fn get_fn_alias(&mut self, def_id: DefId) -> T {
         self.fn_map
             .get(&def_id)
-            .expect(&format!("cannot find alias analysis result for {def_id:?}"))
+            .expect(&format!("Cannot find alias analysis result for {def_id:?}"))
             .clone()
             .into()
     }

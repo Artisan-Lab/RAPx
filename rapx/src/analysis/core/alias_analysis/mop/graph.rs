@@ -1,18 +1,18 @@
-use crate::analysis::core::alias::default::types::*;
-use crate::analysis::core::alias::AAResult;
-use crate::rap_debug;
-use crate::utils::source::*;
-use rustc_data_structures::fx::{FxHashMap, FxHashSet};
-use rustc_middle::mir::{
-    BasicBlock, Const, Operand, Place, Rvalue, StatementKind, Terminator, TerminatorKind,
-    UnwindAction,
+use crate::{
+    analysis::core::alias_analysis::mop::{types::*, MopAAResult},
+    rap_debug,
+    utils::source::*,
 };
-use rustc_middle::ty::TyCtxt;
-use rustc_span::def_id::DefId;
-use rustc_span::Span;
-use std::cell::RefCell;
-use std::cmp::min;
-use std::vec::Vec;
+use rustc_data_structures::fx::{FxHashMap, FxHashSet};
+use rustc_middle::{
+    mir::{
+        BasicBlock, Const, Operand, Place, Rvalue, StatementKind, Terminator, TerminatorKind,
+        UnwindAction,
+    },
+    ty::{TyCtxt, TypingEnv},
+};
+use rustc_span::{def_id::DefId, Span};
+use std::{cell::RefCell, cmp::min, vec::Vec};
 
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum AssignType {
@@ -93,6 +93,8 @@ impl<'tcx> BlockNode<'tcx> {
 pub struct ValueNode {
     pub index: usize, // node index
     pub local: usize, // location?
+    pub need_drop: bool,
+    pub may_drop: bool,
     pub kind: TyKind,
     pub father: usize,
     pub field_id: usize, // the field id of its father node.
@@ -100,12 +102,14 @@ pub struct ValueNode {
 }
 
 impl ValueNode {
-    pub fn new(index: usize, local: usize) -> Self {
+    pub fn new(index: usize, local: usize, need_drop: bool, may_drop: bool) -> Self {
         ValueNode {
             index,
             local,
+            need_drop,
             father: local,
             field_id: usize::MAX,
+            may_drop,
             kind: TyKind::Adt,
             fields: FxHashMap::default(),
         }
@@ -142,7 +146,7 @@ pub struct MopGraph<'tcx> {
     // record the constant value during safedrop checking, i.e., which id has what value.
     pub constant: FxHashMap<usize, usize>,
     // contains the return results for inter-procedure analysis.
-    pub ret_alias: AAResult,
+    pub ret_alias: MopAAResult,
     // a threhold to avoid path explosion.
     pub visit_times: usize,
     pub alias_set: Vec<usize>,
@@ -168,8 +172,16 @@ impl<'tcx> MopGraph<'tcx> {
         let arg_size = body.arg_count;
         let mut values = Vec::<ValueNode>::new();
         let mut alias = Vec::<usize>::new();
+        let ty_env = TypingEnv::post_analysis(tcx, def_id);
         for (local, local_decl) in locals.iter_enumerated() {
-            let mut node = ValueNode::new(local.as_usize(), local.as_usize());
+            let need_drop = local_decl.ty.needs_drop(tcx, ty_env); // the type is drop
+            let may_drop = !is_not_drop(tcx, local_decl.ty);
+            let mut node = ValueNode::new(
+                local.as_usize(),
+                local.as_usize(),
+                need_drop,
+                need_drop || may_drop,
+            );
             node.kind = kind(local_decl.ty);
             alias.push(values.len());
             values.push(node);
@@ -201,14 +213,22 @@ impl<'tcx> MopGraph<'tcx> {
                         Rvalue::Use(ref x) => {
                             match x {
                                 Operand::Copy(ref p) => {
-                                    let rv = *p;
-                                    let assign = Assignment::new(lv, rv, AssignType::Copy, span);
-                                    cur_bb.assignments.push(assign);
+                                    let rv_local = p.local.as_usize();
+                                    if values[lv_local].may_drop && values[rv_local].may_drop {
+                                        let rv = *p;
+                                        let assign =
+                                            Assignment::new(lv, rv, AssignType::Copy, span);
+                                        cur_bb.assignments.push(assign);
+                                    }
                                 }
                                 Operand::Move(ref p) => {
-                                    let rv = *p;
-                                    let assign = Assignment::new(lv, rv, AssignType::Move, span);
-                                    cur_bb.assignments.push(assign);
+                                    let rv_local = p.local.as_usize();
+                                    if values[lv_local].may_drop && values[rv_local].may_drop {
+                                        let rv = *p;
+                                        let assign =
+                                            Assignment::new(lv, rv, AssignType::Move, span);
+                                        cur_bb.assignments.push(assign);
+                                    }
                                 }
                                 Operand::Constant(ref constant) => {
                                     /* We should check the correctness due to the update of rustc
@@ -236,9 +256,12 @@ impl<'tcx> MopGraph<'tcx> {
                         Rvalue::Ref(_, _, ref p)
                         | Rvalue::RawPtr(_, ref p)
                         | Rvalue::CopyForDeref(ref p) => {
-                            let rv = *p;
-                            let assign = Assignment::new(lv, rv, AssignType::Copy, span);
-                            cur_bb.assignments.push(assign);
+                            let rv_local = p.local.as_usize();
+                            if values[lv_local].may_drop && values[rv_local].may_drop {
+                                let rv = *p;
+                                let assign = Assignment::new(lv, rv, AssignType::Copy, span);
+                                cur_bb.assignments.push(assign);
+                            }
                         }
                         Rvalue::ShallowInitBox(ref x, _) => {
                             /*
@@ -247,7 +270,7 @@ impl<'tcx> MopGraph<'tcx> {
                              * We simplify it as: lvl0
                              */
                             if !values[lv_local].fields.contains_key(&0) {
-                                let mut lvl0 = ValueNode::new(values.len(), lv_local);
+                                let mut lvl0 = ValueNode::new(values.len(), lv_local, false, true);
                                 lvl0.field_id = 0;
                                 values[lv_local].fields.insert(0, lvl0.index);
                                 alias.push(values.len());
@@ -255,23 +278,33 @@ impl<'tcx> MopGraph<'tcx> {
                             }
                             match x {
                                 Operand::Copy(ref p) | Operand::Move(ref p) => {
-                                    let rv = *p;
-                                    let assign = Assignment::new(lv, rv, AssignType::InitBox, span);
-                                    cur_bb.assignments.push(assign);
+                                    let rv_local = p.local.as_usize();
+                                    if values[lv_local].may_drop && values[rv_local].may_drop {
+                                        let rv = *p;
+                                        let assign =
+                                            Assignment::new(lv, rv, AssignType::InitBox, span);
+                                        cur_bb.assignments.push(assign);
+                                    }
                                 }
                                 Operand::Constant(_) => {}
                             }
                         }
                         Rvalue::Cast(_, ref x, _) => match x {
                             Operand::Copy(ref p) => {
-                                let rv = *p;
-                                let assign = Assignment::new(lv, rv, AssignType::Copy, span);
-                                cur_bb.assignments.push(assign);
+                                let rv_local = p.local.as_usize();
+                                if values[lv_local].may_drop && values[rv_local].may_drop {
+                                    let rv = *p;
+                                    let assign = Assignment::new(lv, rv, AssignType::Copy, span);
+                                    cur_bb.assignments.push(assign);
+                                }
                             }
                             Operand::Move(ref p) => {
-                                let rv = *p;
-                                let assign = Assignment::new(lv, rv, AssignType::Move, span);
-                                cur_bb.assignments.push(assign);
+                                let rv_local = p.local.as_usize();
+                                if values[lv_local].may_drop && values[rv_local].may_drop {
+                                    let rv = *p;
+                                    let assign = Assignment::new(lv, rv, AssignType::Move, span);
+                                    cur_bb.assignments.push(assign);
+                                }
                             }
                             Operand::Constant(_) => {}
                         },
@@ -279,10 +312,13 @@ impl<'tcx> MopGraph<'tcx> {
                             for each_x in x {
                                 match each_x {
                                     Operand::Copy(ref p) | Operand::Move(ref p) => {
-                                        let rv = *p;
-                                        let assign =
-                                            Assignment::new(lv, rv, AssignType::Copy, span);
-                                        cur_bb.assignments.push(assign);
+                                        let rv_local = p.local.as_usize();
+                                        if values[lv_local].may_drop && values[rv_local].may_drop {
+                                            let rv = *p;
+                                            let assign =
+                                                Assignment::new(lv, rv, AssignType::Copy, span);
+                                            cur_bb.assignments.push(assign);
+                                        }
                                     }
                                     Operand::Constant(_) => {}
                                 }
@@ -416,7 +452,7 @@ impl<'tcx> MopGraph<'tcx> {
             scc_indices,
             alias_set: alias,
             constant: FxHashMap::default(),
-            ret_alias: AAResult::new(arg_size),
+            ret_alias: MopAAResult::new(arg_size),
             visit_times: 0,
             child_scc: FxHashMap::default(),
             disc_map,

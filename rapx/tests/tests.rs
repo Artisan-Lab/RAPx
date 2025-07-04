@@ -190,7 +190,7 @@ fn test_leak_proxy() {
 
 #[test]
 fn test_heap_cell() {
-    let output = running_tests_with_arg("heap/heap_cell", "-heap");
+    let output = running_tests_with_arg("ownedheap/heap_cell", "-ownedheap");
     assert_eq!(
         output.contains("std::cell::Cell<T/#0> (0, [1])")
             && output.contains("std::cell::RefCell<T/#0> (0, [1])")
@@ -207,7 +207,7 @@ fn test_heap_cell() {
 
 #[test]
 fn test_heap_collections() {
-    let output = running_tests_with_arg("heap/heap_collections", "-heap");
+    let output = running_tests_with_arg("ownedheap/heap_collections", "-ownedheap");
     assert_eq!(
         output.contains("std::ptr::Unique<T/#0> (1, [0])")
             && output.contains("std::boxed::Box<T/#0, A/#1> (1, [0,1])")
@@ -229,7 +229,7 @@ fn test_heap_collections() {
 
 #[test]
 fn test_heap_nested() {
-    let output: String = running_tests_with_arg("heap/heap_nested", "-heap");
+    let output: String = running_tests_with_arg("ownedheap/heap_nested", "-ownedheap");
     assert_eq!(
         output.contains("X<A/#0> (0, [1])")
             && output.contains("Y<B/#0> (0, [1])")
@@ -240,7 +240,7 @@ fn test_heap_nested() {
 
 #[test]
 fn test_heap_proxy() {
-    let output = running_tests_with_arg("heap/heap_proxy", "-heap");
+    let output = running_tests_with_arg("ownedheap/heap_proxy", "-ownedheap");
     assert_eq!(
         output.contains("Proxy1<T/#0> (0, [0])")
             && output.contains("Proxy2<T/#0> (1, [0])")
