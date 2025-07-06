@@ -11,7 +11,7 @@ use crate::analysis::{
             range::Range,
             ConstraintGraph::ConstraintGraph,
         },
-        ssa_pass_runner::PassRunner,
+        ssa_pass_runner::*,
     },
     safedrop::graph::SafeDropGraph,
 };
@@ -211,8 +211,11 @@ where
                     passrunner.run_pass(body_mut_ref, ssa_def_id, essa_def_id);
                     self.body_map.insert(def_id, body);
                     // Print the MIR after SSA/ESSA passes
-                    // SSAPassRunner::print_diff(self.tcx, body_mut_ref, def_id.into());
-                    // SSAPassRunner::print_mir_graph(self.tcx, body_mut_ref, def_id.into());
+                    if self.debug {
+                        print_diff(self.tcx, body_mut_ref, def_id.into());
+                        print_mir_graph(self.tcx, body_mut_ref, def_id.into());
+                    }
+
                     self.ssa_places_mapping
                         .insert(def_id, passrunner.places_map.clone());
                     // rap_info!("ssa_places_mapping: {:?}", self.ssa_places_mapping);
@@ -311,7 +314,10 @@ where
                 if var_map.is_empty() {
                     rap_info!("  No final variables tracked for this function.");
                 } else {
-                    for (place, range) in var_map {
+                    let mut sorted_vars: Vec<_> = var_map.iter().collect();
+                    sorted_vars.sort_by_key(|(place, _)| place.local.index());
+
+                    for (place, range) in sorted_vars {
                         rap_info!("Var: {:?}, {}", place, range);
                     }
                 }

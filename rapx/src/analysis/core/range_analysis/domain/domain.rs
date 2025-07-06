@@ -239,15 +239,9 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> SymbInterval<'tcx, T> {
                 }
             }
 
-            BinOp::Ne => {
-                // 不等的情况不好精确表示，用全范围
-                Range::new(T::min_value(), T::max_value(), RangeType::Regular)
-            }
+            BinOp::Ne => Range::new(T::min_value(), T::max_value(), RangeType::Regular),
 
-            _ => {
-                // 其它暂未处理的操作，保守返回全范围
-                Range::new(T::min_value(), T::max_value(), RangeType::Regular)
-            }
+            _ => Range::new(T::min_value(), T::max_value(), RangeType::Regular),
         }
     }
 }

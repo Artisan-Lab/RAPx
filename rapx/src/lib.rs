@@ -67,7 +67,7 @@ pub struct RapCallback {
     opt: usize,
     ownedheap: bool,
     ssa: bool,
-    range: bool,
+    range: usize,
 }
 
 #[allow(clippy::derivable_impls)]
@@ -87,7 +87,7 @@ impl Default for RapCallback {
             opt: usize::MAX,
             ownedheap: false,
             ssa: false,
-            range: false,
+            range: 0,
         }
     }
 }
@@ -256,11 +256,11 @@ impl RapCallback {
     pub fn is_ssa_transform_enabled(self) -> bool {
         self.ssa
     }
-    pub fn enable_range_analysis(&mut self) {
-        self.range = true;
+    pub fn enable_range_analysis(&mut self, x: usize) {
+        self.range = x;
     }
     pub fn is_range_analysis_enabled(self) -> bool {
-        self.range
+        self.range > 0
     }
 }
 
@@ -336,7 +336,13 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
         let mut analyzer = CallGraphAnalyzer::new(tcx);
         analyzer.start();
         let callgraph = analyzer.get_callgraph();
-        rap_info!("{}", CallGraphDisplay{ graph: &callgraph, tcx});
+        rap_info!(
+            "{}",
+            CallGraphDisplay {
+                graph: &callgraph,
+                tcx
+            }
+        );
         //analyzer.display();
     }
 
@@ -350,7 +356,17 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
         SSATrans::new(tcx, false).start();
     }
     if callback.is_range_analysis_enabled() {
-        let mut analyzer = RangeAnalyzer::<i128>::new(tcx, false);
-        analyzer.run();
+        match callback.range {
+            1 => {
+                let mut analyzer = RangeAnalyzer::<i128>::new(tcx, false);
+                analyzer.run();
+            }
+            2 => {
+                let mut analyzer = RangeAnalyzer::<i128>::new(tcx, true);
+                analyzer.run();
+                analyzer.using_path_constraints_analysis();
+            }
+            _ => {}
+        }
     }
 }

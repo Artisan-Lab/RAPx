@@ -8,8 +8,8 @@ use std::{collections::HashMap, hash::Hash};
 
 use super::visitor::CallGraphVisitor;
 use crate::{
+    analysis::core::callgraph::{CallGraph, CallGraphAnalysis},
     rap_info, Analysis,
-    analysis::core::callgraph::{CallGraph, CallGraphAnalysis}
 };
 
 pub struct CallGraphAnalyzer<'tcx> {
@@ -34,19 +34,32 @@ impl<'tcx> Analysis for CallGraphAnalyzer<'tcx> {
 
 impl<'tcx> CallGraphAnalysis for CallGraphAnalyzer<'tcx> {
     fn get_callgraph(&mut self) -> CallGraph {
-        let fn_calls: HashMap<DefId, Vec<DefId>> = self.graph.fn_calls.clone().into_iter()
+        let fn_calls: HashMap<DefId, Vec<DefId>> = self
+            .graph
+            .fn_calls
+            .clone()
+            .into_iter()
             .map(|(caller, callees)| {
-                let caller_id = self.graph.functions.get(&caller)
+                let caller_id = self
+                    .graph
+                    .functions
+                    .get(&caller)
                     .expect("Key must exist in functions map")
                     .def_id;
 
-                let callees_id = callees.into_iter()
+                let callees_id = callees
+                    .into_iter()
                     .map(|(callee, _)| {
-                        self.graph.functions.get(&callee).expect("Value must exist in functions map")
+                        self.graph
+                            .functions
+                            .get(&callee)
+                            .expect("Value must exist in functions map")
                             .def_id
-                    }).collect::<Vec<_>>();
+                    })
+                    .collect::<Vec<_>>();
                 (caller_id, callees_id)
-            }).collect();
+            })
+            .collect();
         CallGraph { fn_calls }
     }
 }
@@ -111,7 +124,7 @@ impl Node {
 pub struct CallGraphInfo<'tcx> {
     pub functions: HashMap<usize, Node>, // id -> node
     pub fn_calls: HashMap<usize, Vec<(usize, &'tcx mir::Terminator<'tcx>)>>, // caller_id -> Vec<(callee_id, terminator)>
-    pub node_registry: HashMap<String, usize>,                                     // path -> id
+    pub node_registry: HashMap<String, usize>,                               // path -> id
 }
 
 impl<'tcx> CallGraphInfo<'tcx> {
@@ -158,10 +171,7 @@ impl<'tcx> CallGraphInfo<'tcx> {
         callee_id: usize,
         terminator_stmt: &'tcx mir::Terminator<'tcx>,
     ) {
-        let entry = self
-            .fn_calls
-            .entry(caller_id)
-            .or_insert_with(Vec::new);
+        let entry = self.fn_calls.entry(caller_id).or_insert_with(Vec::new);
         entry.push((callee_id, terminator_stmt));
     }
 

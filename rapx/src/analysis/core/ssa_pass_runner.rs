@@ -118,7 +118,7 @@ pub fn lvalue_check(mir_string: &str) -> bool {
     !has_duplicate
 }
 pub fn print_diff<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>, def_id: DefId) {
-    let dir_path = "passrunner_mir";
+    let dir_path = "ssa_mir";
     fs::create_dir_all(dir_path).unwrap();
     // PassRunner::new(self.tcx);
     let name = tcx.def_path_str(def_id);
@@ -193,8 +193,6 @@ impl<'tcx> PassRunner<'tcx> {
         let arg_count = body.arg_count;
         let ssatransformer =
             SSATransformer::SSATransformer::new(self.tcx, body, ssa_def_id, essa_def_id, arg_count);
-
-        ssatransformer.print_ssatransformer();
         let mut replacer = Replacer::Replacer {
             tcx: self.tcx,
             ssatransformer,

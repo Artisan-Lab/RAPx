@@ -4,7 +4,7 @@ pub mod visitor;
 use crate::Analysis;
 use rustc_hir::def_id::DefId;
 use rustc_middle::ty::TyCtxt;
-use std::{fmt, collections::HashMap};
+use std::{collections::HashMap, fmt};
 
 pub struct CallGraph {
     pub fn_calls: HashMap<DefId, Vec<DefId>>, // caller_id -> Vec<(callee_id)>

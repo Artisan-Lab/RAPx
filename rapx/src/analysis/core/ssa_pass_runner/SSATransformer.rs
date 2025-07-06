@@ -49,21 +49,6 @@ pub struct SSATransformer<'tcx> {
 }
 
 impl<'tcx> SSATransformer<'tcx> {
-    pub fn print_ssatransformer(&self) {
-        // println!("SSATransformer:");
-        // println!("cfg: {:?}", self.cfg);
-        // println!("dominators: {:?}", self.dominators);
-        // println!("dom_tree: {:?}", self.dom_tree);
-        // println!("df: {:?}", self.df);
-        // println!("local_assign_blocks: {:?}", self.local_assign_blocks);
-        // println!("reaching_def: {:?}", self.reaching_def);
-        // println!("local_index: {:?}", self.local_index);
-        // println!("local_defination_block: {:?}", self.local_defination_block);
-        // println!("skipped: {:?}", self.skipped);
-        // println!("phi_index: {:?}", self.phi_index);
-        // println!("phi_statements: {:?}", self.phi_statements);
-        // println!("essa_statements: {:?}", self.essa_statements);
-    }
     fn find_phi_placeholder(tcx: TyCtxt<'_>, crate_name: &str) -> Option<DefId> {
         let sym_crate = Symbol::intern(crate_name);
         let krate = tcx
@@ -112,7 +97,7 @@ impl<'tcx> SSATransformer<'tcx> {
         let mut skipped = HashSet::new();
         if len > 0 {
             skipped.extend(arg_count + 1..len + 1);
-            skipped.insert(0); // Skip the return place
+            // skipped.insert(0); // Skip the return place
         }
         // let phi_def_id = tcx.type_of(tcx.local_def_id_to_hir_id(def_id).owner.to_def_id());
         // print!("phi_def_id: {:?}\n", def_id);
@@ -154,34 +139,6 @@ impl<'tcx> SSATransformer<'tcx> {
         &self.body
     }
 
-    // pub fn analyze(&self) {
-    //     println!("{:?}", self.cfg);
-    //     println!("{:?}", self.dominators);
-    //     println!("!!!!!!!!!!!!!!!!!!!!!!!!");
-    //     Self::print_dominance_tree(&self.dom_tree, START_BLOCK, 0);
-    //     print!("{:?}", self.df);
-    //     println!("!!!!!!!!!!!!!!!!!!!!!!!!");
-    //     print!("{:?}", self.local_assign_blocks);
-
-    //     let dir_path = "ssa_mir";
-
-    //     let mir_file_path = format!("{}/mir_{:?}.txt", dir_path, self.def_id);
-    //     let phi_mir_file_path = format!("{}/ssa_mir_{:?}.txt", dir_path, self.def_id);
-    //     let mut file = File::create(&mir_file_path).unwrap();
-    //     let mut w1 = io::BufWriter::new(&mut file);
-    //     write_mir_pretty(self.tcx, None, &mut w1).unwrap();
-    //     let mut file2 = File::create(&phi_mir_file_path).unwrap();
-    //     let mut w2 = io::BufWriter::new(&mut file2);
-    //     let options = PrettyPrintMirOptions::from_cli(self.tcx);
-    //     write_mir_fn(
-    //         self.tcx,
-    //         &self.body.borrow(),
-    //         &mut |_, _| Ok(()),
-    //         &mut w2,
-    //         options,
-    //     )
-    //     .unwrap();
-    // }
     fn map_locals_to_definition_block(body: &Body) -> HashMap<Local, BasicBlock> {
         let mut local_to_block_map: HashMap<Local, BasicBlock> = HashMap::new();
 
@@ -190,6 +147,9 @@ impl<'tcx> SSATransformer<'tcx> {
                 match &statement.kind {
                     StatementKind::Assign(box (place, _)) => {
                         if let Some(local) = place.as_local() {
+                            if local.as_u32() == 0 {
+                                continue; // Skip the return place
+                            }
                             local_to_block_map.entry(local).or_insert(bb);
                         }
                     }
@@ -261,7 +221,9 @@ impl<'tcx> SSATransformer<'tcx> {
             for stmt in &data.statements {
                 if let StatementKind::Assign(box (place, _)) = &stmt.kind {
                     let local = place.local;
-
+                    if local.as_u32() == 0 {
+                        continue; // Skip the return place
+                    }
                     local_to_blocks
                         .entry(local)
                         .or_insert_with(HashSet::new)

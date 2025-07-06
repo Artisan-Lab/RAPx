@@ -269,9 +269,16 @@ where
             );
         } else {
             let result = self.range.clone().intersect(other.range.clone());
+            let result = self.range.clone().intersect(other.range.clone());
+            let mut range = Range::default(T::min_value());
 
-            let range = Range::init(result.unwrap());
-            range
+            if let Some(r) = result {
+                range = Range::init(r);
+                range
+            } else {
+                range
+            }
+
             // let left = std::cmp::max_by(self.get_lower(), other.get_lower(), |a, b| {
             //     a.partial_cmp(b).unwrap()
             // });

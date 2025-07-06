@@ -364,21 +364,28 @@ where
 
                         self.add_varnode(&p2);
                         rap_trace!("add_vbm_varnode{:?}\n", p2.clone());
-                        let flipped_binop = Self::flipped_binop(cmp_op).unwrap();
+                        let flipped_cmp_op = Self::flipped_binop(cmp_op).unwrap();
+                        let reversed_cmp_op = Self::reverse_binop(cmp_op).unwrap();
+                        let reversed_flippedd_cmp_op =
+                            Self::flipped_binop(reversed_cmp_op).unwrap();
                         let STOp1 = IntervalType::Symb(SymbInterval::new(CR.clone(), p2, cmp_op));
-                        let SFOp1 = IntervalType::Symb(SymbInterval::new(CR.clone(), p2, cmp_op));
+                        let SFOp1 =
+                            IntervalType::Symb(SymbInterval::new(CR.clone(), p2, flipped_cmp_op));
                         let STOp2 =
-                            IntervalType::Symb(SymbInterval::new(CR.clone(), p1, flipped_binop));
-                        let SFOp2 =
-                            IntervalType::Symb(SymbInterval::new(CR.clone(), p1, flipped_binop));
-                        //    let STOp1 = IntervalType::Symb(SymbInterval::new(CR.clone(), p2, flipped_binop));
-                        //     let SFOp1 = IntervalType::Symb(SymbInterval::new(CR.clone(), p2, cmp_op));
-                        //     let STOp2 = IntervalType::Symb(SymbInterval::new(CR.clone(), p1, flipped_binop));
-                        //     let SFOp2 = IntervalType::Symb(SymbInterval::new(CR.clone(), p1, cmp_op));
+                            IntervalType::Symb(SymbInterval::new(CR.clone(), p1, reversed_cmp_op));
+                        let SFOp2 = IntervalType::Symb(SymbInterval::new(
+                            CR.clone(),
+                            p1,
+                            reversed_flippedd_cmp_op,
+                        ));
+                        rap_trace!("SFOp1{:?}\n", SFOp1);
+                        rap_trace!("SFOp2{:?}\n", SFOp2);
+                        rap_trace!("STOp1{:?}\n", STOp1);
+                        rap_trace!("STOp2{:?}\n", STOp2);
                         let vbm_1 =
-                            ValueBranchMap::new(p1, &target_vec[0], &target_vec[1], STOp1, SFOp1);
+                            ValueBranchMap::new(p1, &target_vec[0], &target_vec[1], SFOp1, STOp1);
                         let vbm_2 =
-                            ValueBranchMap::new(p2, &target_vec[0], &target_vec[1], STOp2, SFOp2);
+                            ValueBranchMap::new(p2, &target_vec[0], &target_vec[1], SFOp2, STOp2);
                         self.values_branchmap.insert(&p1, vbm_1);
                         self.values_branchmap.insert(&p2, vbm_2);
                         self.switchbbs.insert(block, (*p1, *p2));
@@ -388,6 +395,25 @@ where
         }
     }
     pub fn flipped_binop(op: BinOp) -> Option<BinOp> {
+        use BinOp::*;
+        Some(match op {
+            Eq => Eq,
+            Ne => Ne,
+            Lt => Ge,
+            Le => Gt,
+            Gt => Le,
+            Ge => Lt,
+            Add => Add,
+            Mul => Mul,
+            BitXor => BitXor,
+            BitAnd => BitAnd,
+            BitOr => BitOr,
+            _ => {
+                return None;
+            }
+        })
+    }
+    fn reverse_binop(op: BinOp) -> Option<BinOp> {
         use BinOp::*;
         Some(match op {
             Eq => Eq,

@@ -221,14 +221,29 @@ impl<'tcx> Replacer<'tcx> {
                     BinOp::Ge => Ge_operand.clone(),
                     _ => panic!("not a comparison operator"),
                 };
+
                 let flip_cmp_operand: Operand<'_> = match Self::flip(cmp_op) {
-                    BinOp::Lt => Gt_operand.clone(),
-                    BinOp::Le => Ge_operand.clone(),
-                    BinOp::Gt => Lt_operand.clone(),
-                    BinOp::Ge => Le_operand.clone(),
+                    BinOp::Lt => Lt_operand.clone(),
+                    BinOp::Le => Le_operand.clone(),
+                    BinOp::Gt => Gt_operand.clone(),
+                    BinOp::Ge => Ge_operand.clone(),
                     _ => panic!("not a comparison operator"),
                 };
-
+                let reverse_cmp_operand: Operand<'_> = match Self::reverse(cmp_op) {
+                    BinOp::Lt => Lt_operand.clone(),
+                    BinOp::Le => Le_operand.clone(),
+                    BinOp::Gt => Gt_operand.clone(),
+                    BinOp::Ge => Ge_operand.clone(),
+                    _ => panic!("not a comparison operator"),
+                };
+                let flip_reverse_cmp_operand: Operand<'_> = match Self::flip(Self::reverse(cmp_op))
+                {
+                    BinOp::Lt => Lt_operand.clone(),
+                    BinOp::Le => Le_operand.clone(),
+                    BinOp::Gt => Gt_operand.clone(),
+                    BinOp::Ge => Ge_operand.clone(),
+                    _ => panic!("not a comparison operator"),
+                };
                 match (const_op1, const_op2) {
                     (None, None) => {
                         match (op1, op2) {
@@ -258,9 +273,9 @@ impl<'tcx> Replacer<'tcx> {
 
                                     operand2.push(Operand::Copy(Place::from(p2)));
                                     operand2.push(Operand::Copy(Place::from(p1)));
-                                    operand2.push(cmp_operand.clone());
+                                    operand2.push(flip_reverse_cmp_operand.clone());
                                     operand2.push(magic_number_operand.clone());
-                                    //     rvalue1 =
+                                    // rvalue1 =
                                     //     Rvalue::Aggregate(Box::new(AggregateKind::Tuple), operand1);
                                     // rvalue2 =
                                     //     Rvalue::Aggregate(Box::new(AggregateKind::Tuple), operand2);
@@ -274,7 +289,7 @@ impl<'tcx> Replacer<'tcx> {
 
                                     operand2.push(Operand::Copy(Place::from(p2)));
                                     operand2.push(Operand::Copy(Place::from(p1)));
-                                    operand2.push(flip_cmp_operand.clone());
+                                    operand2.push(reverse_cmp_operand.clone());
                                     operand2.push(magic_number_operand.clone());
                                     // rvalue1 =
                                     //     Rvalue::Aggregate(Box::new(AggregateKind::Tuple), operand1);
@@ -353,6 +368,15 @@ impl<'tcx> Replacer<'tcx> {
             BinOp::Le => BinOp::Gt,
             BinOp::Gt => BinOp::Le,
             BinOp::Ge => BinOp::Lt,
+            _ => panic!("flip() called on non-comparison operator"),
+        }
+    }
+    pub fn reverse(binOp: BinOp) -> BinOp {
+        match binOp {
+            BinOp::Lt => BinOp::Gt,
+            BinOp::Le => BinOp::Ge,
+            BinOp::Gt => BinOp::Lt,
+            BinOp::Ge => BinOp::Le,
             _ => panic!("flip() called on non-comparison operator"),
         }
     }
@@ -650,6 +674,9 @@ impl<'tcx> Replacer<'tcx> {
             projection: _,
         } = place.clone();
         let old_place = place.clone();
+        if old_local.as_u32() == 0 {
+            return;
+        }
         if self.ssatransformer.skipped.contains(&old_local.as_usize()) && not_phi {
             self.ssatransformer.skipped.remove(&old_local.as_usize());
             self.ssatransformer
