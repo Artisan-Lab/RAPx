@@ -1,4 +1,5 @@
-
+pub struct SSAstmt;
+pub struct ESSAstmt;
 
 fn main() {
     let para1 = 42;
