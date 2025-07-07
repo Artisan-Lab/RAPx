@@ -28,7 +28,7 @@ use analysis::{
         callgraph::{default::CallGraphAnalyzer, CallGraphAnalysis, CallGraphDisplay},
         dataflow::DataFlowAnalyzer,
         ownedheap_analysis::{default::OwnedHeapAnalyzer, OwnedHeapAnalysis},
-        range_analysis::RangeAnalyzer,
+        range_analysis::{default::RangeAnalyzer,RangeAnalysis},
         ssa_pass_runner::SSATrans,
     },
     opt::Opt,
@@ -364,7 +364,7 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
             2 => {
                 let mut analyzer = RangeAnalyzer::<i128>::new(tcx, true);
                 analyzer.run();
-                analyzer.using_path_constraints_analysis();
+                let (switch_bb,result )=analyzer.use_path_constraints_analysis();
             }
             _ => {}
         }
