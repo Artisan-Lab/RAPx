@@ -10,6 +10,7 @@ use super::visitor::CallGraphVisitor;
 use crate::{
     analysis::core::callgraph::{CallGraph, CallGraphAnalysis},
     rap_debug, rap_info, Analysis,
+
 };
 
 pub struct CallGraphAnalyzer<'tcx> {
@@ -186,7 +187,7 @@ impl<'tcx> CallGraphInfo<'tcx> {
         entry.push((callee_id, terminator_stmt));
     }
 
-    pub fn get_noed_by_path(&self, def_path: &String) -> Option<usize> {
+    pub fn get_node_by_path(&self, def_path: &String) -> Option<usize> {
         self.node_registry.get(def_path).copied()
     }
     pub fn get_callers_map(&self) -> HashMap<usize, Vec<(usize, &'tcx mir::Terminator<'tcx>)>> {
@@ -201,7 +202,6 @@ impl<'tcx> CallGraphInfo<'tcx> {
                     .push((caller_id, *terminator));
             }
         }
-
         callers_map
     }
 

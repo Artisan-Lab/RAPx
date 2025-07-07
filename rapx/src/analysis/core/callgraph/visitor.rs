@@ -33,14 +33,14 @@ impl<'b, 'tcx> CallGraphVisitor<'b, 'tcx> {
         callee_def_path: &String,
         terminator: &'tcx mir::Terminator<'tcx>,
     ) {
-        if let Some(caller_id) = self.call_graph_info.get_noed_by_path(caller_def_path) {
-            if let Some(callee_id) = self.call_graph_info.get_noed_by_path(callee_def_path) {
+        if let Some(caller_id) = self.call_graph_info.get_node_by_path(caller_def_path) {
+            if let Some(callee_id) = self.call_graph_info.get_node_by_path(callee_def_path) {
                 self.call_graph_info
                     .add_funciton_call_edge(caller_id, callee_id, terminator);
             } else {
                 self.call_graph_info
                     .add_node(callee_def_id, callee_def_path);
-                if let Some(callee_id) = self.call_graph_info.get_noed_by_path(callee_def_path) {
+                if let Some(callee_id) = self.call_graph_info.get_node_by_path(callee_def_path) {
                     self.call_graph_info
                         .add_funciton_call_edge(caller_id, callee_id, terminator);
                 }

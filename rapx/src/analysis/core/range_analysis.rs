@@ -9,6 +9,7 @@ use once_cell::sync::Lazy;
 use intervals::{
     Closed,
 };
+
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{BasicBlock, BinOp, Place};
@@ -49,6 +50,7 @@ pub trait RangeAnalysis<'tcx, T: IntervalArithmetic + ConstConvert + Debug>: Ana
     ///   control-flow constraints expressed as (Place, Place, BinOp).
     ///
     /// This supports path-sensitive pruning by allowing reasoning over feasible paths.
+
     fn use_path_constraints_analysis(
         &self,
     ) -> (
@@ -56,8 +58,6 @@ pub trait RangeAnalysis<'tcx, T: IntervalArithmetic + ConstConvert + Debug>: Ana
         HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>>,
     );
 }
-
-
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum RangeType {
@@ -117,6 +117,7 @@ where
         write!(f, "{} [{}, {}]", self.rtype, lower, upper)
     }
 }
+
 
 
 
