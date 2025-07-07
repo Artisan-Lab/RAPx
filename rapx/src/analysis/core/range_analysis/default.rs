@@ -2,11 +2,14 @@ use crate::analysis::{
     core::{
         callgraph::{default::CallGraphInfo, visitor::CallGraphVisitor},
         ownedheap_analysis::OHAResult,
-        range_analysis::{domain::{
-            domain::{ConstConvert, IntervalArithmetic},
-            range::Range,
-            ConstraintGraph::ConstraintGraph,
-        }, RangeAnalysis},
+        range_analysis::{
+            domain::{
+                domain::{ConstConvert, IntervalArithmetic},
+                range::Range,
+                ConstraintGraph::ConstraintGraph,
+            },
+            RangeAnalysis,
+        },
         ssa_pass_runner::*,
     },
     safedrop::graph::SafeDropGraph,
@@ -17,8 +20,8 @@ use crate::analysis::Analysis;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::DefId;
-use rustc_middle::mir::{BasicBlock, BinOp, Body};
 use rustc_middle::mir::Place;
+use rustc_middle::mir::{BasicBlock, BinOp, Body};
 use rustc_middle::ty::TyCtxt;
 use std::cell::RefCell;
 use std::{
@@ -76,7 +79,12 @@ where
             .get(&def_id)
             .and_then(|vars| vars.get(&place).cloned())
     }
-    fn use_path_constraints_analysis(&self)-> (HashSet<BasicBlock>,HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>>) {
+    fn use_path_constraints_analysis(
+        &self,
+    ) -> (
+        HashSet<BasicBlock>,
+        HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>>,
+    ) {
         let ssa_def_id = self.ssa_def_id.expect("SSA definition ID is not set");
         let essa_def_id = self.essa_def_id.expect("ESSA definition ID is not set");
         let mut result = HashMap::new();
@@ -95,7 +103,7 @@ where
                         SafeDropGraph::new(&body, self.tcx, def_id, OHAResult::default());
                     safedrop_graph.solve_scc();
                     let paths: Vec<Vec<usize>> = safedrop_graph.get_paths();
-                     result = cg.start_analyze_path_constraints(body_mut_ref, &paths);
+                    result = cg.start_analyze_path_constraints(body_mut_ref, &paths);
 
                     rap_info!(
                         "SafeDropGraph Paths for function {}: {:?}",
@@ -113,14 +121,11 @@ where
                         self.tcx.def_path_str(def_id),
                         result
                     );
-                     switchblocks  = switchbbs
-                        .keys().cloned()
-                        .collect();
+                    switchblocks = switchbbs.keys().cloned().collect();
                 }
             }
         }
-        return (switchblocks,result);
-
+        return (switchblocks, result);
     }
 }
 
@@ -358,5 +363,4 @@ where
             }
         }
     }
-
 }

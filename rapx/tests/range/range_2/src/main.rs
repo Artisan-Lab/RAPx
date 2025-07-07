@@ -1,9 +1,5 @@
-
 pub struct SSAstmt;
 pub struct ESSAstmt;
-#[used]
-static _SSASTMT: Option<SSAstmt> = None;
-static _ESSASTMT: Option<ESSAstmt> = None;
 
 fn main() {
     let para1 = 42;

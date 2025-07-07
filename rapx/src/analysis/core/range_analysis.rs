@@ -3,14 +3,10 @@
 #![allow(dead_code)]
 pub mod default;
 pub mod domain;
-use crate::analysis::
-    core::{
-
-        range_analysis::domain::{
-            domain::{ConstConvert, IntervalArithmetic},
-            range::Range,
-        }
-    };
+use crate::analysis::core::range_analysis::domain::{
+    domain::{ConstConvert, IntervalArithmetic},
+    range::Range,
+};
 
 use crate::analysis::Analysis;
 use rustc_data_structures::fx::FxHashMap;
@@ -27,5 +23,10 @@ pub trait RangeAnalysis<'tcx, T: IntervalArithmetic + ConstConvert + Debug>: Ana
     fn get_fn_local_range(&self, def_id: DefId, local: Place<'tcx>) -> Option<Range<T>>;
     // This function is used to get the path constraints analysis results.
     // It returns a set of basicblocks contains SwitchInt and a map from paths to the constraints on this path.
-    fn use_path_constraints_analysis(&self)-> (HashSet<BasicBlock>,HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>>);
+    fn use_path_constraints_analysis(
+        &self,
+    ) -> (
+        HashSet<BasicBlock>,
+        HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>>,
+    );
 }

@@ -9,7 +9,7 @@ use std::{collections::HashMap, hash::Hash};
 use super::visitor::CallGraphVisitor;
 use crate::{
     analysis::core::callgraph::{CallGraph, CallGraphAnalysis},
-    rap_info, Analysis,
+    rap_debug, rap_info, Analysis,
 };
 
 pub struct CallGraphAnalyzer<'tcx> {
@@ -78,13 +78,24 @@ impl<'tcx> CallGraphAnalyzer<'tcx> {
                 let def_id = local_def_id.to_def_id();
                 if self.tcx.is_mir_available(def_id) {
                     let def_kind = self.tcx.def_kind(def_id);
-                    let body: &Body = match def_kind {
-                        DefKind::Const | DefKind::Static { .. } => {
-                            // Compile Time Function Evaluation
+
+                    let body: &Body<'_> = match def_kind {
+                        DefKind::Fn | DefKind::AssocFn => &self.tcx.optimized_mir(def_id),
+                        DefKind::Const
+                        | DefKind::Static { .. }
+                        | DefKind::AssocConst
+                        | DefKind::InlineConst
+                        | DefKind::AnonConst => {
+                            // NOTE: safer fallback for constants
                             &self.tcx.mir_for_ctfe(def_id)
                         }
-                        _ => &self.tcx.optimized_mir(def_id),
+                        // These don't have MIR or shouldn't be visited
+                        _ => {
+                            rap_debug!("Skipping def_id {:?} with kind {:?}", def_id, def_kind);
+                            continue;
+                        }
                     };
+
                     let mut call_graph_visitor =
                         CallGraphVisitor::new(self.tcx, def_id.into(), body, &mut self.graph);
                     call_graph_visitor.visit();
