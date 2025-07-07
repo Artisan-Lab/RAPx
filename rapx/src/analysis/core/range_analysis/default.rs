@@ -3,12 +3,11 @@ use crate::analysis::{
         callgraph::{default::CallGraphInfo, visitor::CallGraphVisitor},
         ownedheap_analysis::OHAResult,
         range_analysis::{
+            
             domain::{
                 domain::{ConstConvert, IntervalArithmetic},
-                range::Range,
                 ConstraintGraph::ConstraintGraph,
-            },
-            RangeAnalysis,
+            }, Range, RangeAnalysis
         },
         ssa_pass_runner::*,
     },

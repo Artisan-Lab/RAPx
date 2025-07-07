@@ -8,81 +8,13 @@ use bounds::Bound;
 use intervals::*;
 use num_traits::{Bounded, Num, Zero};
 use rustc_middle::mir::{BinOp, UnOp};
-use z3::ast::Int;
 // use std::ops::Range;
 use std::ops::{Add, Mul, Sub};
 
-use crate::rap_trace;
+use crate::{analysis::core::range_analysis::{Range, RangeType}, rap_trace};
 
 use super::domain::*;
-use once_cell::sync::Lazy;
 
-static STR_MIN: Lazy<String> = Lazy::new(|| "Min".to_string());
-static STR_MAX: Lazy<String> = Lazy::new(|| "Max".to_string());
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub enum RangeType {
-    Unknown,
-    Regular,
-    Empty,
-}
-impl fmt::Display for RangeType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            RangeType::Unknown => "Unknown",
-            RangeType::Regular => "Regular",
-            RangeType::Empty => "Empty",
-        };
-        write!(f, "{}", s)
-    }
-}
-#[derive(Debug, PartialEq, Clone)]
-pub struct Range<T>
-where
-    T: PartialOrd + Clone,
-{
-    pub rtype: RangeType,
-    pub range: Closed<T>,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-enum UserType {
-    Unknown,
-    I32(i32),
-    I64(i64),
-    Usize(usize),
-    Empty,
-}
-impl<T> fmt::Display for Range<T>
-where
-    T: IntervalArithmetic,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let lower = if self.range.left.0 == T::min_value() {
-            &*STR_MIN
-        } else if self.range.left.0 == T::max_value() {
-            &*STR_MAX
-        } else {
-            return write!(
-                f,
-                "{} [{}, {}]",
-                self.rtype, self.range.left.0, self.range.right.0
-            );
-        };
-
-        let upper = if self.range.right.0 == T::min_value() {
-            &*STR_MIN
-        } else if self.range.right.0 == T::max_value() {
-            &*STR_MAX
-        } else {
-            return write!(
-                f,
-                "{} [{}, {}]",
-                self.rtype, self.range.left.0, self.range.right.0
-            );
-        };
-        write!(f, "{} [{}, {}]", self.rtype, lower, upper)
-    }
-}
 // fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 //     let lower: &Lazy<String> = if self.range.left.0 == T::min_value() {
 //         &STR_MIN

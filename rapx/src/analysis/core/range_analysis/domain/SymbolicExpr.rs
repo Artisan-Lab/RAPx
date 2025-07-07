@@ -15,13 +15,12 @@ use rustc_ast::token::TokenKind::Plus;
 use rustc_hir::def_id::DefId;
 use rustc_middle::{mir::*, ty::Ty};
 use std::ops::{Add, Mul, Sub};
-use z3::ast::Int;
 
 use crate::{
     analysis::core::range_analysis::domain::{
         domain::{ConstConvert, IntervalArithmetic},
-        range::{self, Range},
     },
+
     rap_trace,
 };
 #[derive(Debug, Clone, PartialEq, Eq)]

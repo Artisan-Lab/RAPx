@@ -5,7 +5,9 @@
 #![allow(unused_parens)]
 #![allow(non_snake_case)]
 
-use super::{domain::*, range::RangeType, range::*};
+use super::domain::*;
+use crate::analysis::core::range_analysis::{Range, RangeType};
+
 use crate::analysis::core::range_analysis::domain::SymbolicExpr::*;
 use crate::rap_debug;
 use crate::rap_info;

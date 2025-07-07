@@ -5,8 +5,8 @@
 #![allow(unused_parens)]
 #![allow(non_snake_case)]
 
-use super::range::{Range, RangeType};
 use crate::analysis::core::range_analysis::domain::ConstraintGraph::ConstraintGraph;
+use crate::analysis::core::range_analysis::{Range, RangeType};
 use crate::{rap_debug, rap_trace};
 use num_traits::{Bounded, CheckedAdd, CheckedSub, One, ToPrimitive, Zero};
 use rustc_abi::Size;
