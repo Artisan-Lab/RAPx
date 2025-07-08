@@ -50,7 +50,6 @@ pub struct ConstraintGraph<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub essa: DefId,
     pub ssa: DefId,
     // values_switchmap: ValuesSwitchMap<'tcx, T>, // Store intervals for switch branches
-
     pub index: i32,
     pub dfs: HashMap<&'tcx Place<'tcx>, i32>,
     pub root: HashMap<&'tcx Place<'tcx>, &'tcx Place<'tcx>>,
@@ -63,6 +62,7 @@ pub struct ConstraintGraph<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub arg_count: usize,
     pub rerurn_places: HashSet<&'tcx Place<'tcx>>,
     pub switchbbs: HashMap<BasicBlock, (Place<'tcx>, Place<'tcx>)>,
+    pub const_func_place: HashMap<&'tcx Place<'tcx>, usize>,
 }
 
 impl<'tcx, T> ConstraintGraph<'tcx, T>
@@ -98,6 +98,7 @@ where
             arg_count: 0,
             rerurn_places: HashSet::new(),
             switchbbs: HashMap::new(),
+            const_func_place: HashMap::new(),
         }
     }
     pub fn build_final_vars(
@@ -761,10 +762,10 @@ where
 
             // Insert this definition in defmap
             self.defmap.insert(&sink, bop_index);
-            //         if constant_count == arg_count {
-            //     rap_trace!("all args are constants\n");
-            //     sink_node.set_range(call_op.eval_call(caller_vars, all_cgs));
-            // }
+            if constant_count == arg_count {
+                rap_trace!("all args are constants\n");
+                self.const_func_place.insert(&sink, bop_index);
+            }
         }
     }
     fn add_ssa_op(
@@ -1356,9 +1357,27 @@ where
             }
         }
     }
+    pub fn solve_const_func_call(
+        &mut self,
+        cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+    ) {
+        for (&sink, op) in &self.const_func_place {
+            rap_trace!(
+                "solve_const_func_call for sink {:?} with opset {:?}\n",
+                sink,
+                op
+            );
+            if let BasicOpKind::Call(call_op) = &self.oprs[*op] {
+                let new_range = call_op.eval_call(&self.vars, cg_map);
+                rap_trace!("Setting range for {:?} to {:?}\n", sink, new_range);
+                self.vars.get_mut(sink).unwrap().set_range(new_range);
+            }
+        }
+    }
     pub fn find_intervals(&mut self, cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>) {
         // let scc_list = Nuutila::new(&self.vars, &self.usemap, &self.symbmap,false,&self.oprs);
         // self.print_vars();
+        self.solve_const_func_call(cg_map);
         self.numSCCs = self.worklist.len();
         let mut seen = HashSet::new();
         let mut components = Vec::new();

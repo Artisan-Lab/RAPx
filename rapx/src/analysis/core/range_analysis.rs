@@ -9,10 +9,10 @@ use crate::analysis::{
 };
 use intervals::Closed;
 use once_cell::sync::Lazy;
-use std;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{BasicBlock, BinOp, Place};
+use std;
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Debug},

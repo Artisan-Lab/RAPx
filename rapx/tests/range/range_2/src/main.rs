@@ -3,7 +3,7 @@ pub struct ESSAstmt;
 
 fn main() {
     let para1 = 42;
-    foo1(para1);
+    foo1(1);
 
     let para2 = 52;
     let _x = foo2(55, para2);
