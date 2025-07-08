@@ -6,6 +6,8 @@ use rustc_hir::def_id::DefId;
 use rustc_middle::ty::TyCtxt;
 use std::{collections::HashMap, fmt};
 
+/// This is the data structure used to store function calls.
+/// It contains a HashMap that records the callees of all functions.
 pub struct CallGraph {
     pub fn_calls: HashMap<DefId, Vec<DefId>>, // caller_id -> Vec<(callee_id)>
 }
@@ -30,6 +32,8 @@ impl<'a, 'tcx> fmt::Display for CallGraphDisplay<'a, 'tcx> {
     }
 }
 
+/// This trait provides features related to call graph extraction and analysis.
 pub trait CallGraphAnalysis: Analysis {
+    /// Return the call graph.
     fn get_callgraph(&mut self) -> CallGraph;
 }

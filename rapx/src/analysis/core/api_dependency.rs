@@ -1,7 +1,54 @@
-use std::hash::Hash;
+#![allow(dead_code)]
+#![allow(unused_variables)]
 
-use super::lifetime::Lifetime;
+pub mod default;
+mod extract;
+mod graph;
+mod visitor;
+
+use petgraph::{graph::NodeIndex, Graph};
+use rustc_hir::def_id::DefId;
 use rustc_middle::ty::{self, Ty, TyCtxt};
+
+use std::{collections::HashMap, hash::Hash};
+
+pub trait ApiDependencyAnalysis<'tcx> {
+    fn get_api_dependency_graph(&self) -> ApiDependencyGraph<'tcx>;
+}
+
+type InnerGraph<'tcx> = Graph<Node<'tcx>, Edge>;
+
+#[derive(Clone)]
+pub struct ApiDependencyGraph<'tcx> {
+    graph: InnerGraph<'tcx>,
+    node_indices: HashMap<Node<'tcx>, NodeIndex>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Node<'tcx> {
+    Api(DefId),
+    Ty(TyWrapper<'tcx>),
+    GenericParamDef(DefId, usize, String, bool), // (fn_def_id, index, symbol, is_lifetime_param)
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+pub enum Edge {
+    Arg(usize),
+    Ret,
+    Fn2Generic,
+}
+#[derive(Hash, Eq, PartialEq, Debug)]
+pub enum LifetimeKind {
+    Static,
+    Bound(usize),
+    Any(usize),
+}
+
+#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+pub struct Lifetime {
+    // pub kind: LifetimeKind,
+    pub id: usize,
+}
 
 /// TyWrapper is a wrapper of rustc_middle::ty::Ty,
 /// for the purpose of attaching custom lifetime information to Ty.
@@ -9,20 +56,6 @@ use rustc_middle::ty::{self, Ty, TyCtxt};
 pub struct TyWrapper<'tcx> {
     ty: ty::Ty<'tcx>,
     lifetime_map: Vec<Lifetime>,
-}
-
-impl<'tcx> From<Ty<'tcx>> for TyWrapper<'tcx> {
-    fn from(ty: ty::Ty<'tcx>) -> TyWrapper<'tcx> {
-        // TODO: initialize lifetime_map
-        let lifetime_map = Vec::new();
-        TyWrapper { ty, lifetime_map }
-    }
-}
-
-impl PartialEq for TyWrapper<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        eq_ty(self.ty, other.ty)
-    }
 }
 
 impl Hash for TyWrapper<'_> {
@@ -82,7 +115,7 @@ fn eq_ty<'tcx>(lhs: Ty<'tcx>, rhs: Ty<'tcx>) -> bool {
 
 fn traverse_ty_with_lifetime<'tcx, F: Fn(ty::Region, usize)>(ty: Ty<'tcx>, no: &mut usize, f: &F) {
     match ty.kind() {
-        ty::TyKind::Adt(adt_def, generic_arg) => {
+        ty::TyKind::Adt(_, generic_arg) => {
             for arg in generic_arg.iter() {
                 match arg.kind() {
                     ty::GenericArgKind::Lifetime(lt) => {
@@ -92,16 +125,16 @@ fn traverse_ty_with_lifetime<'tcx, F: Fn(ty::Region, usize)>(ty: Ty<'tcx>, no: &
                     ty::GenericArgKind::Type(ty) => {
                         traverse_ty_with_lifetime(ty, no, f);
                     }
-                    ty::GenericArgKind::Const(ct) => {}
+                    ty::GenericArgKind::Const(_) => {}
                 }
             }
         }
 
-        ty::TyKind::RawPtr(inner_ty, mutability) => {
+        ty::TyKind::RawPtr(inner_ty, _) => {
             traverse_ty_with_lifetime(*inner_ty, no, f);
         }
 
-        ty::TyKind::Ref(region, inner_ty, mutability) => {
+        ty::TyKind::Ref(region, inner_ty, _) => {
             *no = *no + 1;
             f(*region, *no);
             traverse_ty_with_lifetime(*inner_ty, no, f);
@@ -146,7 +179,7 @@ fn hash_ty<'tcx, H: std::hash::Hasher>(ty: Ty<'tcx>, state: &mut H, no: &mut usi
             adt_def.did().hash(state);
             for arg in generic_arg.iter() {
                 match arg.kind() {
-                    ty::GenericArgKind::Lifetime(lt) => {
+                    ty::GenericArgKind::Lifetime(_) => {
                         *no = *no + 1;
                         no.hash(state);
                     }
@@ -195,7 +228,7 @@ pub fn desc_ty_str<'tcx>(ty: Ty<'tcx>, no: &mut usize, tcx: TyCtxt<'tcx>) -> Str
                 ty_str += &generic_arg
                     .iter()
                     .map(|arg| match arg.kind() {
-                        ty::GenericArgKind::Lifetime(lt) => {
+                        ty::GenericArgKind::Lifetime(_) => {
                             let current_no = *no;
                             *no = *no + 1;
                             format!("'#{:?}", current_no)
@@ -252,5 +285,19 @@ pub fn desc_ty_str<'tcx>(ty: Ty<'tcx>, no: &mut usize, tcx: TyCtxt<'tcx>) -> Str
 impl<'tcx> TyWrapper<'tcx> {
     pub fn desc_str(&self, tcx: TyCtxt<'tcx>) -> String {
         desc_ty_str(self.ty, &mut 0, tcx)
+    }
+}
+
+impl<'tcx> From<Ty<'tcx>> for TyWrapper<'tcx> {
+    fn from(ty: ty::Ty<'tcx>) -> TyWrapper<'tcx> {
+        // TODO: initialize lifetime_map
+        let lifetime_map = Vec::new();
+        TyWrapper { ty, lifetime_map }
+    }
+}
+
+impl PartialEq for TyWrapper<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        eq_ty(self.ty, other.ty)
     }
 }

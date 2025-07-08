@@ -35,7 +35,7 @@ fn main() {
             "-opt=report" => compiler.enable_opt(0),
             "-alias" | "-alias0" | "-alias1" | "-alias2" => compiler.enable_alias(arg),
             "-ownedheap" => compiler.enable_ownedheap(),
-            "-adg" => compiler.enable_api_dep(), // api dependency graph
+            "-adg" => compiler.enable_api_graph(), // api dependency graph
             "-callgraph" => compiler.enable_callgraph(),
             "-dataflow" => compiler.enable_dataflow(1),
             "-ssa" => compiler.enable_ssa_transform(),

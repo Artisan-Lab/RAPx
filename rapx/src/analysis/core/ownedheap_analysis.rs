@@ -53,8 +53,13 @@ impl fmt::Display for OwnedHeap {
 /// the heap information is a tuple containing the information of each type parameter.
 pub type OHAResult = HashMap<DefId, Vec<(OwnedHeap, Vec<bool>)>>;
 
+/// This trait provides features for owned heap analysis, which is used to determine if a type owns
+/// memory on heap. Owned heap should be automatically released by default.
 pub trait OwnedHeapAnalysis: Analysis {
+    /// Return the result of owned heap analysis for all types.
     fn get_all_items(&mut self) -> OHAResult;
+    /// If a type is a heap owner, the function returns Result<true>. If the specified type is
+    /// illegal, the function returns Err.
     fn is_heapowner<'tcx>(hares: OHAResult, ty: Ty<'tcx>) -> Result<bool, &'static str> {
         match ty.kind() {
             TyKind::Adt(adtdef, ..) => {
@@ -69,6 +74,8 @@ pub trait OwnedHeapAnalysis: Analysis {
             _ => Err("The input is not an ADT"),
         }
     }
+    /// A type might be a heap owner if it is not a heap owner directly but contains type
+    /// parameters that may make the type become a heap owner after monomorphization.
     fn maybe_heapowner<'tcx>(hares: OHAResult, ty: Ty<'tcx>) -> Result<bool, &'static str> {
         match ty.kind() {
             TyKind::Adt(adtdef, ..) => {

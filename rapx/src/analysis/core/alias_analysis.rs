@@ -5,13 +5,17 @@ use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
 use std::{collections::HashSet, fmt};
 
+/// This trait provides features related to alias analysis.
+/// The type parameter `T` is used to specify the format of alias analysis result for each
+/// function. The default type is `AAResult`.
 pub trait AliasAnalysis<T>: Analysis {
+    /// Return the aliases among the function arguments and return value of a specific function.
     fn get_fn_alias(&mut self, def_id: DefId) -> T;
+    /// Return the aliases among the function arguments and return value for all functions.
     fn get_all_fn_alias(&mut self) -> FxHashMap<DefId, T>;
 }
 
 /// To store the alias relationships among arguments and return values.
-///
 /// Each function may have multiple return instructions, leading to different RetAlias.
 #[derive(Debug, Clone)]
 pub struct AAResult {
@@ -91,6 +95,7 @@ impl AAFact {
         }
     }
 
+    /// Swap the two elements of an alias pair, i.e., left to right, and right to left.
     pub fn swap(&mut self) {
         std::mem::swap(&mut self.lhs_no, &mut self.rhs_no);
         std::mem::swap(&mut self.lhs_fields, &mut self.rhs_fields);

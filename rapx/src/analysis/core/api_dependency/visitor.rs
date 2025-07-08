@@ -1,9 +1,10 @@
 use std::io::Write;
 
 use super::extract::extract_constraints;
-use super::graph::ApiDepGraph;
-use super::graph::{DepEdge, DepNode};
-use crate::rap_debug;
+use crate::{
+    analysis::core::api_dependency::{ApiDependencyGraph, Edge, Node},
+    rap_debug,
+};
 use rustc_hir::{
     def_id::{DefId, LocalDefId},
     intravisit::{FnKind, Visitor},
@@ -18,11 +19,11 @@ pub struct FnVisitor<'tcx, 'a> {
     tcx: TyCtxt<'tcx>,
     funcs: Vec<DefId>,
     current_fn_did: Option<DefId>,
-    graph: &'a mut ApiDepGraph<'tcx>,
+    graph: &'a mut ApiDependencyGraph<'tcx>,
 }
 
 impl<'tcx, 'a> FnVisitor<'tcx, 'a> {
-    pub fn new(tcx: TyCtxt<'tcx>, graph: &'a mut ApiDepGraph<'tcx>) -> FnVisitor<'tcx, 'a> {
+    pub fn new(tcx: TyCtxt<'tcx>, graph: &'a mut ApiDependencyGraph<'tcx>) -> FnVisitor<'tcx, 'a> {
         let fn_cnt = 0;
         let funcs = Vec::new();
         FnVisitor {
@@ -72,16 +73,16 @@ fn get_bound_var_attr(var: ty::BoundVariableKind) -> (String, bool) {
 impl<'tcx, 'a> Visitor<'tcx> for FnVisitor<'tcx, 'a> {
     fn visit_fn<'v>(
         &mut self,
-        fk: FnKind<'v>,
-        fd: &'v FnDecl<'v>,
-        b: BodyId,
-        span: Span,
+        _fk: FnKind<'v>,
+        _fd: &'v FnDecl<'v>,
+        _b: BodyId,
+        _span: Span,
         id: LocalDefId,
     ) -> Self::Result {
         let fn_def_id = id.to_def_id();
         self.fn_cnt += 1;
         self.funcs.push(fn_def_id);
-        let api_node = self.graph.get_node(DepNode::api(id));
+        let api_node = self.graph.get_node(Node::api(id));
 
         let early_fn_sig = self.tcx.fn_sig(fn_def_id);
         let binder_fn_sig = early_fn_sig.instantiate_identity();
@@ -98,14 +99,14 @@ impl<'tcx, 'a> Visitor<'tcx> for FnVisitor<'tcx, 'a> {
         for i in 0..early_generic_count {
             let generic_param_def = generics.param_at(i, self.tcx);
             rap_debug!("early bound generic#{i}: {:?}", generic_param_def);
-            let node_index = self.graph.get_node(DepNode::generic_param_def(
+            let node_index = self.graph.get_node(Node::generic_param_def(
                 fn_def_id,
                 i,
                 generic_param_def.name,
                 !generic_param_def.kind.is_ty_or_const(),
             ));
             self.graph
-                .add_edge_once(api_node, node_index, DepEdge::fn2generic());
+                .add_edge_once(api_node, node_index, Edge::fn2generic());
         }
 
         // add late bound generic
@@ -116,14 +117,14 @@ impl<'tcx, 'a> Visitor<'tcx> for FnVisitor<'tcx, 'a> {
         for (i, var) in binder_fn_sig.bound_vars().iter().enumerate() {
             rap_debug!("bound var#{i}: {var:?}");
             let (name, is_lifetime) = get_bound_var_attr(var);
-            let node_index = self.graph.get_node(DepNode::generic_param_def(
+            let node_index = self.graph.get_node(Node::generic_param_def(
                 fn_def_id,
                 early_generic_count + i,
                 name,
                 is_lifetime,
             ));
             self.graph
-                .add_edge_once(api_node, node_index, DepEdge::fn2generic());
+                .add_edge_once(api_node, node_index, Edge::fn2generic());
         }
 
         extract_constraints(fn_def_id, self.tcx);
@@ -131,13 +132,13 @@ impl<'tcx, 'a> Visitor<'tcx> for FnVisitor<'tcx, 'a> {
         // add inputs/output to graph, and compute constraints based on subtyping
         for (no, input_ty) in fn_sig.inputs().iter().enumerate() {
             // let free_input_ty = input_ty.fold_with(folder)
-            let input_node = self.graph.get_node(DepNode::ty(*input_ty));
-            self.graph.add_edge(input_node, api_node, DepEdge::arg(no));
+            let input_node = self.graph.get_node(Node::ty(*input_ty));
+            self.graph.add_edge(input_node, api_node, Edge::arg(no));
         }
 
         let output_ty = fn_sig.output();
-        let output_node = self.graph.get_node(DepNode::ty(output_ty));
-        self.graph.add_edge(api_node, output_node, DepEdge::ret());
+        let output_node = self.graph.get_node(Node::ty(output_ty));
+        self.graph.add_edge(api_node, output_node, Edge::ret());
         rap_debug!("exit visit_fn");
     }
 }

@@ -1,23 +1,29 @@
 pub mod debug;
 pub mod graph;
 
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::Write;
-use std::process::Command;
+use std::{
+    collections::{HashMap, HashSet},
+    fs::File,
+    io::Write,
+    process::Command,
+};
 
-use rustc_hir::def::DefKind;
-use rustc_hir::def_id::DefId;
-use rustc_middle::mir::{Body, Local};
-use rustc_middle::ty::TyCtxt;
+use rustc_hir::{def::DefKind, def_id::DefId};
+use rustc_middle::{
+    mir::{Body, Local},
+    ty::TyCtxt,
+};
 
 use crate::Analysis;
 use graph::Graph;
-use std::collections::HashSet;
 
+/// This trait provides features related to dataflow analysis.
 pub trait DataFlowAnalysis: Analysis {
+    /// If there is a dataflow between `local1` and `local2` within the function specified by
+    /// `def_id`, the function returns ture; otherwise, it returns false.
     fn has_flow_between(&self, def_id: DefId, local1: Local, local2: Local) -> bool;
 
+    /// The function returns a set of Locals that are equivelent to the given `local`.
     fn collect_equivalent_locals(&self, def_id: DefId, local: Local) -> HashSet<Local>;
 }
 

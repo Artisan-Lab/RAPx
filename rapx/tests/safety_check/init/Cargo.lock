@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "init"
+name = "safety_check_init"
 version = "0.1.0"

@@ -24,12 +24,12 @@ extern crate stable_mir;
 use analysis::{
     core::{
         alias_analysis::default::AliasAnalyzer,
-        api_dep::ApiDep,
+        api_dependency::default::ApiDependencyAnalyzer,
         callgraph::{default::CallGraphAnalyzer, CallGraphAnalysis, CallGraphDisplay},
         dataflow::DataFlowAnalyzer,
         ownedheap_analysis::{default::OwnedHeapAnalyzer, OwnedHeapAnalysis},
         range_analysis::{default::RangeAnalyzer, RangeAnalysis},
-        ssa_pass_runner::SSATrans,
+        ssa_transform::SSATrans,
     },
     opt::Opt,
     rcanary::rCanary,
@@ -55,7 +55,7 @@ pub static RAP_DEFAULT_ARGS: &[&str] = &["-Zalways-encode-mir", "-Zmir-opt-level
 #[derive(Debug, Copy, Clone, Hash)]
 pub struct RapCallback {
     alias: bool,
-    api_dep: bool,
+    api_graph: bool,
     callgraph: bool,
     dataflow: usize,
     ownedheap: bool,
@@ -75,7 +75,7 @@ impl Default for RapCallback {
     fn default() -> Self {
         Self {
             alias: false,
-            api_dep: false,
+            api_graph: false,
             callgraph: false,
             dataflow: 0,
             ownedheap: false,
@@ -148,13 +148,13 @@ impl RapCallback {
     }
 
     /// Enable API-dependency graph generation.
-    pub fn enable_api_dep(&mut self) {
-        self.api_dep = true;
+    pub fn enable_api_graph(&mut self) {
+        self.api_graph = true;
     }
 
     /// Test if API-dependency graph generation is enabled.
-    pub fn is_api_dep_enabled(self) -> bool {
-        self.api_dep
+    pub fn is_api_graph_enabled(self) -> bool {
+        self.api_graph
     }
 
     /// Enable call-graph analysis.
@@ -300,17 +300,18 @@ impl RapCallback {
 /// Start the analysis with the features enabled.
 pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
     if callback.is_alias_enabled() {
-        let mut alias = AliasAnalyzer::new(tcx);
-        alias.run();
+        let mut analyzer = AliasAnalyzer::new(tcx);
+        analyzer.run();
     }
 
-    if callback.is_api_dep_enabled() {
-        ApiDep::new(tcx).start();
+    if callback.is_api_graph_enabled() {
+        let mut analyzer = ApiDependencyAnalyzer::new(tcx);
+        analyzer.run();
     }
 
     if callback.is_callgraph_enabled() {
         let mut analyzer = CallGraphAnalyzer::new(tcx);
-        analyzer.start();
+        analyzer.run();
         let callgraph = analyzer.get_callgraph();
         rap_info!(
             "{}",
@@ -332,14 +333,6 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
         let mut analyzer = OwnedHeapAnalyzer::new(tcx);
         analyzer.run();
         analyzer.output();
-    }
-
-    if callback.is_show_mir_enabled() {
-        ShowMir::new(tcx).start();
-    }
-
-    if callback.is_ssa_transform_enabled() {
-        SSATrans::new(tcx, false).start();
     }
 
     if callback.is_range_analysis_enabled() {
@@ -377,6 +370,14 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
 
     if callback.is_safedrop_enabled() {
         SafeDrop::new(tcx).start();
+    }
+
+    if callback.is_show_mir_enabled() {
+        ShowMir::new(tcx).start();
+    }
+
+    if callback.is_ssa_transform_enabled() {
+        SSATrans::new(tcx, false).start();
     }
 
     let x = callback.is_unsafety_isolation_enabled();

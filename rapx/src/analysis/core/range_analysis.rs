@@ -9,6 +9,7 @@ use crate::analysis::{
 };
 use intervals::Closed;
 use once_cell::sync::Lazy;
+
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{BasicBlock, BinOp, Place};
@@ -17,6 +18,8 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Debug},
 };
+/// This is the trait for range analysis. Range analysis is used to determine the value range of a
+/// given variable at particular program points.
 pub trait RangeAnalysis<'tcx, T: IntervalArithmetic + ConstConvert + Debug>: Analysis {
     /// Returns the range information for all local variables (Places) in a given function.
     ///

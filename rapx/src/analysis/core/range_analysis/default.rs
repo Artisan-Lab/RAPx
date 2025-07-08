@@ -9,7 +9,7 @@ use crate::analysis::{
             },
             Range, RangeAnalysis,
         },
-        ssa_pass_runner::*,
+        ssa_transform::*,
     },
     safedrop::graph::SafeDropGraph,
 };

@@ -48,7 +48,7 @@ fn region_str(region: ty::Region<'_>) -> String {
     region.get_name_or_anon().to_string()
 }
 
-fn constraint_str<'tcx>(constraint: Constraint<'tcx>, tcx: TyCtxt<'tcx>) -> String {
+fn constraint_str<'tcx>(constraint: Constraint<'tcx>, _tcx: TyCtxt<'tcx>) -> String {
     let (a, b) = match constraint {
         Constraint::VarSubVar(a, b) => (region_vid_str(a), region_vid_str(b)),
         Constraint::RegSubVar(a, b) => (region_str(a), region_vid_str(b)),
@@ -83,7 +83,7 @@ pub fn extract_constraints(fn_did: DefId, tcx: TyCtxt<'_>) {
     // rap_debug!("binder: {binder_with_vars:?}");
     rap_debug!("free binder: {binder_with_free_vars:?}");
     let region_constraint_data = infcx.take_and_reset_region_constraints();
-    for (constraint, origin) in region_constraint_data.constraints {
+    for (constraint, _origin) in region_constraint_data.constraints {
         rap_debug!("constraint: {}", constraint_str(constraint, tcx));
     }
 }
