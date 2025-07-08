@@ -522,6 +522,13 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> CallOp<'tcx, T> {
                     rap_debug!(" final return range {} ", return_range);
                     return return_range;
                 }
+                let Some(callee_varnodes_vec) = vars_map.get_mut(&self.def_id) else {
+                    panic!(
+                        "No variable map entry for this function {:?}, skipping Nuutila\n",
+                        self.def_id
+                    );
+                };
+                callee_cg.reset_vars(callee_varnodes_vec);
             } else {
                 // Recursive call detected or graph is already borrowed.
                 // Conservatively return a full range.

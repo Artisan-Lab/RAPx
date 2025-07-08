@@ -124,6 +124,21 @@ where
         self.final_vars = final_vars.clone();
         (final_vars, not_found)
     }
+    pub fn filter_final_vars(
+        vars: &VarNodes<'tcx, T>,
+        places_map: &HashMap<Place<'tcx>, HashSet<Place<'tcx>>>,
+    ) -> HashMap<Place<'tcx>, Range<T>> {
+        let mut final_vars = HashMap::new();
+
+        for (&_key_place, place_set) in places_map {
+            for &place in place_set {
+                if let Some(var_node) = vars.get(&place) {
+                    final_vars.insert(place, var_node.get_range().clone());
+                }
+            }
+        }
+        final_vars
+    }
     pub fn test_and_print_all_symbolic_expressions(&self) {
         rap_info!("\n==== Testing and Printing All Symbolic Expressions ====");
 
@@ -1387,10 +1402,13 @@ where
             }
         }
     }
-    pub fn store_and_reset_vars(&mut self, varnodes_vec: &mut Vec<RefCell<VarNodes<'tcx, T>>>) {
-        rap_trace!("Storing and resetting vars\n");
+    pub fn store_vars(&mut self, varnodes_vec: &mut Vec<RefCell<VarNodes<'tcx, T>>>) {
+        rap_trace!("Storing vars\n");
         let old_vars = self.vars.clone();
         varnodes_vec.push(RefCell::new(old_vars));
+    }
+    pub fn reset_vars(&mut self, varnodes_vec: &mut Vec<RefCell<VarNodes<'tcx, T>>>) {
+        rap_trace!("Resetting vars\n");
         self.vars = varnodes_vec[0].borrow_mut().clone();
     }
     pub fn find_intervals(
@@ -1400,14 +1418,6 @@ where
     ) {
         // let scc_list = Nuutila::new(&self.vars, &self.usemap, &self.symbmap,false,&self.oprs);
         // self.print_vars();
-        let Some(varnodes_vec) = vars_map.get_mut(&self.self_def_id) else {
-            rap_trace!(
-                "No variable map entry for this function {:?}, skipping Nuutila\n",
-                self.self_def_id
-            );
-            return;
-        };
-        self.store_and_reset_vars(varnodes_vec);
 
         self.solve_const_func_call(cg_map, vars_map);
         self.numSCCs = self.worklist.len();
@@ -1468,6 +1478,14 @@ where
             self.propagate_to_next_scc(&component, cg_map, vars_map);
         }
         self.merge_return_places();
+        let Some(varnodes_vec) = vars_map.get_mut(&self.self_def_id) else {
+            rap_trace!(
+                "No variable map entry for this function {:?}, skipping Nuutila\n",
+                self.self_def_id
+            );
+            return;
+        };
+        self.store_vars(varnodes_vec);
     }
     pub fn merge_return_places(&mut self) {
         rap_trace!("====Merging return places====\n");

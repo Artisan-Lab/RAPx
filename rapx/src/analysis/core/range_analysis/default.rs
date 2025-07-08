@@ -39,6 +39,7 @@ pub struct RangeAnalyzer<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub body_map: FxHashMap<DefId, Body<'tcx>>,
     pub cg_map: FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
     pub vars_map: FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
+    pub final_vars_vec: FxHashMap<DefId, Vec<HashMap<Place<'tcx>, Range<T>>>>,
 }
 impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> Analysis for RangeAnalyzer<'tcx, T>
 where
@@ -169,6 +170,7 @@ where
             body_map: FxHashMap::default(),
             cg_map: FxHashMap::default(),
             vars_map: FxHashMap::default(),
+            final_vars_vec: FxHashMap::default(),
         }
     }
 
@@ -331,6 +333,24 @@ where
                 for (&place, varnode) in final_vars_for_fn {
                     ranges_for_fn.insert(place, varnode.get_range().clone());
                 }
+                let Some(varnodes_vec) = self.vars_map.get_mut(&def_id) else {
+                    rap_info!(
+                        "Warning: No VarNodes found for DefId {:?} during analysis of call chain starts.",
+                        def_id
+                    );
+                    continue;
+                };
+                for varnodes in varnodes_vec.iter_mut() {
+                    let ranges_for_fn_recursive = ConstraintGraph::filter_final_vars(
+                        &varnodes.borrow(),
+                        &self.ssa_places_mapping[&def_id],
+                    );
+                    self.final_vars_vec
+                        .entry(def_id)
+                        .or_default()
+                        .push(ranges_for_fn_recursive);
+                }
+
                 self.final_vars.insert(def_id, ranges_for_fn);
             }
         }
@@ -338,6 +358,7 @@ where
         rap_info!("PHASE 2 Complete. Interval analysis finished for call chain start functions.");
         self.print_all_final_results();
     }
+
     pub fn print_all_final_results(&self) {
         rap_info!("==============================================");
         rap_info!("==== Final Analysis Results for All Functions ====");
@@ -353,17 +374,22 @@ where
         sorted_def_ids.sort_by_key(|def_id| self.tcx.def_path_str(*def_id));
 
         for def_id in sorted_def_ids {
-            if let Some(var_map) = self.final_vars.get(&def_id) {
+            if let Some(var_map_vec) = self.final_vars_vec.get(&def_id) {
                 rap_info!("\n--- Function: {} ---", self.tcx.def_path_str(def_id));
+                for (index, var_map) in var_map_vec.iter().enumerate() {
+                    if index == 0 {
+                        continue;
+                    }
+                    rap_info!("  Final Variables (Set {}):", index);
+                    if var_map.is_empty() {
+                        rap_info!("  No final variables tracked for this function.");
+                    } else {
+                        let mut sorted_vars: Vec<_> = var_map.iter().collect();
+                        sorted_vars.sort_by_key(|(place, _)| place.local.index());
 
-                if var_map.is_empty() {
-                    rap_info!("  No final variables tracked for this function.");
-                } else {
-                    let mut sorted_vars: Vec<_> = var_map.iter().collect();
-                    sorted_vars.sort_by_key(|(place, _)| place.local.index());
-
-                    for (place, range) in sorted_vars {
-                        rap_info!("Var: {:?}, {}", place, range);
+                        for (place, range) in sorted_vars {
+                            rap_info!("Var: {:?}, {}", place, range);
+                        }
                     }
                 }
             }
