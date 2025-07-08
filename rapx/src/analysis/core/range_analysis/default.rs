@@ -4,7 +4,7 @@ use crate::analysis::{
         ownedheap_analysis::OHAResult,
         range_analysis::{
             domain::{
-                domain::{ConstConvert, IntervalArithmetic},
+                domain::{ConstConvert, IntervalArithmetic, VarNodes},
                 ConstraintGraph::ConstraintGraph,
             },
             Range, RangeAnalysis,
@@ -38,6 +38,7 @@ pub struct RangeAnalyzer<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub callgraph: CallGraphInfo<'tcx>,
     pub body_map: FxHashMap<DefId, Body<'tcx>>,
     pub cg_map: FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+    pub vars_map: FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
 }
 impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> Analysis for RangeAnalyzer<'tcx, T>
 where
@@ -97,7 +98,7 @@ where
                     let body_mut_ref = unsafe { &mut *(&mut body as *mut Body<'tcx>) };
 
                     let mut cg: ConstraintGraph<'tcx, T> =
-                        ConstraintGraph::new(essa_def_id, ssa_def_id);
+                        ConstraintGraph::new(def_id, essa_def_id, ssa_def_id);
                     let mut safedrop_graph =
                         SafeDropGraph::new(&body, self.tcx, def_id, OHAResult::default());
                     safedrop_graph.solve_scc();
@@ -167,19 +168,25 @@ where
             callgraph: CallGraphInfo::new(),
             body_map: FxHashMap::default(),
             cg_map: FxHashMap::default(),
+            vars_map: FxHashMap::default(),
         }
     }
 
     fn build_constraintgraph(&mut self, body_mut_ref: &'tcx Body<'tcx>, def_id: DefId) {
         let ssa_def_id = self.ssa_def_id.expect("SSA definition ID is not set");
         let essa_def_id = self.essa_def_id.expect("ESSA definition ID is not set");
-        let mut cg: ConstraintGraph<'tcx, T> = ConstraintGraph::new(essa_def_id, ssa_def_id);
+        let mut cg: ConstraintGraph<'tcx, T> =
+            ConstraintGraph::new(def_id, essa_def_id, ssa_def_id);
         cg.build_graph(body_mut_ref);
         cg.build_nuutila(false);
         // cg.rap_print_vars();
         // cg.rap_print_final_vars();
+        let vars_map = cg.get_vars().clone();
 
         self.cg_map.insert(def_id, RefCell::new(cg));
+        let mut vec = Vec::new();
+        vec.push(RefCell::new(vars_map));
+        self.vars_map.insert(def_id, vec);
     }
     fn start(&mut self) {
         let ssa_def_id = self.ssa_def_id.expect("SSA definition ID is not set");
@@ -306,7 +313,7 @@ where
             );
             if let Some(cg_cell) = self.cg_map.get(&def_id) {
                 let mut cg = cg_cell.borrow_mut();
-                cg.find_intervals(&self.cg_map);
+                cg.find_intervals(&self.cg_map, &mut self.vars_map);
             } else {
                 rap_info!(
                     "Warning: No ConstraintGraph found for DefId {:?} during analysis of call chain starts.",

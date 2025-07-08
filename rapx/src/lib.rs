@@ -403,10 +403,6 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
         ShowMir::new(tcx).start();
     }
 
-    if callback.is_api_dep_enabled() {
-        ApiDep::new(tcx).start();
-    }
-
     match callback.is_dataflow_enabled() {
         1 => DataFlowAnalyzer::new(tcx, false).run(),
         2 => DataFlowAnalyzer::new(tcx, true).run(),

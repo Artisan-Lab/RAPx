@@ -421,10 +421,11 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> CallOp<'tcx, T> {
     pub fn eval_call(
         &self,
         caller_vars: &VarNodes<'tcx, T>,
-        all_cgs: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) -> Range<T> {
         // 1. Find the callee's ConstraintGraph in the map.
-        if let Some(callee_cg_cell) = all_cgs.get(&self.def_id) {
+        if let Some(callee_cg_cell) = cg_map.get(&self.def_id) {
             rap_debug!(
                 "Evaluating call to {:?} with args {:?}",
                 self.def_id,
@@ -507,7 +508,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> CallOp<'tcx, T> {
                 //    NOTE: This is a simplification. A full implementation would use memoization
                 //    or a bottom-up analysis order to avoid re-analyzing functions repeatedly.
                 //    For now, we re-run it to ensure argument values are propagated.
-                callee_cg.find_intervals(all_cgs);
+                callee_cg.find_intervals(cg_map, vars_map);
 
                 // 5. Retrieve the return value.
                 //    The return value is stored in `_0` (RETURN_PLACE).

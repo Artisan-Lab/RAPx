@@ -36,6 +36,7 @@ use std::{
 
 pub struct ConstraintGraph<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     // Protected fields
+    pub self_def_id: DefId,      // The DefId of the function being analyzed
     pub vars: VarNodes<'tcx, T>, // The variables of the source program
     pub oprs: Vec<BasicOpKind<'tcx, T>>, // The operations of the source program
 
@@ -72,8 +73,9 @@ where
     pub fn convert_const(c: &Const) -> Option<T> {
         T::from_const(c)
     }
-    pub fn new(essa: DefId, ssa: DefId) -> Self {
+    pub fn new(self_def_id: DefId, essa: DefId, ssa: DefId) -> Self {
         Self {
+            self_def_id,
             vars: VarNodes::new(),
             oprs: GenOprs::new(),
             // func: None,
@@ -237,8 +239,9 @@ where
     //     self.inst_rand_place_set.push(place);
     //     place
     // }
-    pub fn set_args_value(&mut self) {}
-
+    pub fn get_vars(&self) -> &VarNodes<'tcx, T> {
+        &self.vars
+    }
     pub fn add_varnode(&mut self, v: &'tcx Place<'tcx>) -> &mut VarNode<'tcx, T> {
         let node = VarNode::new(v);
         let node_ref: &mut VarNode<'tcx, T> = self.vars.entry(v).or_insert(node);
@@ -1102,7 +1105,8 @@ where
     pub fn widen(
         &mut self,
         op: usize,
-        all_cgs: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) -> bool {
         // use crate::range_util::{get_first_less_from_vector, get_first_greater_from_vector};
         // assert!(!constant_vector.is_empty(), "Invalid constant vector");
@@ -1115,7 +1119,7 @@ where
         let estimated_interval = match op_kind {
             BasicOpKind::Call(call_op) => {
                 // For a call, use the special inter-procedural eval.
-                call_op.eval_call(&self.vars, all_cgs)
+                call_op.eval_call(&self.vars, cg_map, vars_map)
             }
             _ => {
                 // For all other operations, use the simple, generic eval.
@@ -1169,7 +1173,8 @@ where
     pub fn narrow(
         &mut self,
         op: usize,
-        all_cgs: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) -> bool {
         let op_kind = &self.oprs[op];
         let sink = op_kind.get_sink();
@@ -1179,7 +1184,7 @@ where
         let estimated_interval = match op_kind {
             BasicOpKind::Call(call_op) => {
                 // For a call, use the special inter-procedural eval.
-                call_op.eval_call(&self.vars, all_cgs)
+                call_op.eval_call(&self.vars, cg_map, vars_map)
             }
             _ => {
                 // For all other operations, use the simple, generic eval.
@@ -1238,13 +1243,14 @@ where
         comp_use_map: &HashMap<&'tcx Place<'tcx>, HashSet<usize>>,
         entry_points: &HashSet<&'tcx Place<'tcx>>,
         cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) {
         let mut worklist: Vec<&'tcx Place<'tcx>> = entry_points.iter().cloned().collect();
 
         while let Some(place) = worklist.pop() {
             if let Some(op_set) = comp_use_map.get(place) {
                 for &op in op_set {
-                    if self.widen(op, cg_map) {
+                    if self.widen(op, cg_map, vars_map) {
                         let sink = self.oprs[op].get_sink();
                         rap_trace!("W {:?}\n", sink);
                         // let sink_node = self.vars.get_mut(sink).unwrap();
@@ -1260,6 +1266,7 @@ where
         comp_use_map: &HashMap<&'tcx Place<'tcx>, HashSet<usize>>,
         entry_points: &HashSet<&'tcx Place<'tcx>>,
         cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) {
         let mut worklist: Vec<&'tcx Place<'tcx>> = entry_points.iter().cloned().collect();
         let mut iteration = 0;
@@ -1272,7 +1279,7 @@ where
 
             if let Some(op_set) = comp_use_map.get(place) {
                 for &op in op_set {
-                    if self.narrow(op, cg_map) {
+                    if self.narrow(op, cg_map, vars_map) {
                         let sink = self.oprs[op].get_sink();
                         rap_trace!("N {:?}\n", sink);
 
@@ -1289,6 +1296,7 @@ where
         component: &HashSet<&'tcx Place<'tcx>>,
         active_vars: &mut HashSet<&'tcx Place<'tcx>>,
         cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) {
         for place in component {
             let node = self.vars.get(place).unwrap();
@@ -1299,6 +1307,7 @@ where
         component: &HashSet<&'tcx Place<'tcx>>,
         entry_points: &mut HashSet<&'tcx Place<'tcx>>,
         cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) {
         for &place in component {
             let op = self.defmap.get(place).unwrap();
@@ -1320,6 +1329,7 @@ where
         &mut self,
         component: &HashSet<&'tcx Place<'tcx>>,
         cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) {
         for &place in component.iter() {
             let node = self.vars.get_mut(place).unwrap();
@@ -1329,7 +1339,9 @@ where
                 if !component.contains(sink) {
                     let new_range = op_kind.eval(&self.vars);
                     let new_range = match op_kind {
-                        BasicOpKind::Call(call_op) => call_op.eval_call(&self.vars, cg_map),
+                        BasicOpKind::Call(call_op) => {
+                            call_op.eval_call(&self.vars, cg_map, vars_map)
+                        }
                         _ => {
                             // For all other operations, use the simple, generic eval.
                             op_kind.eval(&self.vars)
@@ -1360,6 +1372,7 @@ where
     pub fn solve_const_func_call(
         &mut self,
         cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) {
         for (&sink, op) in &self.const_func_place {
             rap_trace!(
@@ -1368,16 +1381,35 @@ where
                 op
             );
             if let BasicOpKind::Call(call_op) = &self.oprs[*op] {
-                let new_range = call_op.eval_call(&self.vars, cg_map);
+                let new_range = call_op.eval_call(&self.vars, cg_map, vars_map);
                 rap_trace!("Setting range for {:?} to {:?}\n", sink, new_range);
                 self.vars.get_mut(sink).unwrap().set_range(new_range);
             }
         }
     }
-    pub fn find_intervals(&mut self, cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>) {
+    pub fn store_and_reset_vars(&mut self, varnodes_vec: &mut Vec<RefCell<VarNodes<'tcx, T>>>) {
+        rap_trace!("Storing and resetting vars\n");
+        let old_vars = self.vars.clone();
+        varnodes_vec.push(RefCell::new(old_vars));
+        self.vars = varnodes_vec[0].borrow_mut().clone();
+    }
+    pub fn find_intervals(
+        &mut self,
+        cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
+    ) {
         // let scc_list = Nuutila::new(&self.vars, &self.usemap, &self.symbmap,false,&self.oprs);
         // self.print_vars();
-        self.solve_const_func_call(cg_map);
+        let Some(varnodes_vec) = vars_map.get_mut(&self.self_def_id) else {
+            rap_trace!(
+                "No variable map entry for this function {:?}, skipping Nuutila\n",
+                self.self_def_id
+            );
+            return;
+        };
+        self.store_and_reset_vars(varnodes_vec);
+
+        self.solve_const_func_call(cg_map, vars_map);
         self.numSCCs = self.worklist.len();
         let mut seen = HashSet::new();
         let mut components = Vec::new();
@@ -1416,10 +1448,10 @@ where
                 let mut entry_points = HashSet::new();
                 // self.print_vars();
 
-                self.generate_entry_points(&component, &mut entry_points, cg_map);
+                self.generate_entry_points(&component, &mut entry_points, cg_map, vars_map);
                 rap_trace!("entry_points {:?}  \n", entry_points);
                 // rap_trace!("comp_use_map {:?}  \n ", comp_use_map);
-                self.pre_update(&comp_use_map, &entry_points, cg_map);
+                self.pre_update(&comp_use_map, &entry_points, cg_map, vars_map);
                 self.fix_intersects(&component);
 
                 // for &variable in &component {
@@ -1430,10 +1462,10 @@ where
                 // }
 
                 let mut active_vars = HashSet::new();
-                self.generate_active_vars(&component, &mut active_vars, cg_map);
-                self.pos_update(&comp_use_map, &entry_points, cg_map);
+                self.generate_active_vars(&component, &mut active_vars, cg_map, vars_map);
+                self.pos_update(&comp_use_map, &entry_points, cg_map, vars_map);
             }
-            self.propagate_to_next_scc(&component, cg_map);
+            self.propagate_to_next_scc(&component, cg_map, vars_map);
         }
         self.merge_return_places();
     }
