@@ -357,7 +357,6 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
         }
     }
 
-
     match callback.is_opt_enabled() {
         0 => Opt::new(tcx, 0).start(),
         1 => Opt::new(tcx, 1).start(),
@@ -450,5 +449,4 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
             _ => {}
         }
     }
-
 }

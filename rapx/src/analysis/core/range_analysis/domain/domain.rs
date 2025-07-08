@@ -264,8 +264,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<T>
 
 // Define the basic operation trait
 pub trait Operation<T: IntervalArithmetic + ConstConvert + Debug> {
-    fn get_value_id(&self) -> u32; // Placeholder for an operation identifier
-    fn eval(&self) -> Range<T>; // Method to evaluate the result of the operation
+    fn eval(&self) -> Range<T>; // Method to evaluate the range of the operation
     fn print(&self, os: &mut dyn fmt::Write);
 }
 

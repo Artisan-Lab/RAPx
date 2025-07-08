@@ -11,7 +11,10 @@ use rustc_middle::mir::{BinOp, UnOp};
 // use std::ops::Range;
 use std::ops::{Add, Mul, Sub};
 
-use crate::{analysis::core::range_analysis::{Range, RangeType}, rap_trace};
+use crate::{
+    analysis::core::range_analysis::{Range, RangeType},
+    rap_trace,
+};
 
 use super::domain::*;
 

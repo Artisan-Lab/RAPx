@@ -44,12 +44,12 @@ pub struct ConstraintGraph<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub usemap: UseMap<'tcx>, // Map from variables to operations where variables are used
     pub symbmap: SymbMap<'tcx>, // Map from variables to operations where they appear as bounds
     pub values_branchmap: HashMap<&'tcx Place<'tcx>, ValueBranchMap<'tcx, T>>, // Store intervals, basic blocks, and branches
-    // values_switchmap: ValuesSwitchMap<'tcx, T>, // Store intervals for switch branches
     constant_vector: Vec<T>, // Vector for constants from an SCC
 
     pub inst_rand_place_set: Vec<Place<'tcx>>,
     pub essa: DefId,
     pub ssa: DefId,
+    // values_switchmap: ValuesSwitchMap<'tcx, T>, // Store intervals for switch branches
 
     pub index: i32,
     pub dfs: HashMap<&'tcx Place<'tcx>, i32>,

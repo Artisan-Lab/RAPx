@@ -17,10 +17,7 @@ use rustc_middle::{mir::*, ty::Ty};
 use std::ops::{Add, Mul, Sub};
 
 use crate::{
-    analysis::core::range_analysis::domain::{
-        domain::{ConstConvert, IntervalArithmetic},
-    },
-
+    analysis::core::range_analysis::domain::domain::{ConstConvert, IntervalArithmetic},
     rap_trace,
 };
 #[derive(Debug, Clone, PartialEq, Eq)]

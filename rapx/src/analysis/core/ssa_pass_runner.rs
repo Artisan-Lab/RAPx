@@ -144,6 +144,7 @@ pub fn print_mir_graph<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>, def_id: DefId
     let mut file = File::create(&output_path).expect("cannot create file");
     let _ = file.write_all(dot_graph.as_bytes());
 }
+//for f in *.dot; do dot -Tpng "$f" -o "${f%.dot}.png"; done
 fn mir_to_dot<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>) -> String {
     let mut dot = String::new();
     dot.push_str("digraph MIR {\n");
@@ -153,16 +154,33 @@ fn mir_to_dot<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>) -> String {
         let statements_str = bb_data
             .statements
             .iter()
+            .filter(|stmt| {
+                !matches!(
+                    stmt.kind,
+                    StatementKind::StorageLive(_) | StatementKind::StorageDead(_)
+                )
+            })
             .map(|stmt| format!("{:?}", stmt).replace('\n', " "))
             .collect::<Vec<_>>()
             .join("\\l");
 
+        let terminator_str = match &bb_data.terminator {
+            Some(term) => match term.kind {
+                TerminatorKind::Assert { .. } => String::new(),
+                _ => format!("{:?}", term.kind).replace("->", "-->"),
+            },
+            None => "NoTerminator".to_string(),
+        };
+
+        let label = format!("{}\\l{}\\l", statements_str, terminator_str);
+
         dot.push_str(&format!(
-            "  {} [label=\"{:?}:\\l{}\\l\"];\n",
+            "  {} [label=\"{:?}:\\l{}\"];\n",
             bb.index(),
             bb,
-            statements_str
+            label
         ));
+
         if let Some(terminator) = &bb_data.terminator {
             for successor in terminator.successors() {
                 dot.push_str(&format!("  {} -> {};\n", bb.index(), successor.index()));
@@ -173,6 +191,7 @@ fn mir_to_dot<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>) -> String {
     dot.push_str("}\n");
     dot
 }
+
 impl<'tcx> PassRunner<'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>) -> Self {
         Self {

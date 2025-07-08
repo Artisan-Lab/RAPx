@@ -3,13 +3,13 @@
 #![allow(dead_code)]
 pub mod default;
 pub mod domain;
-use crate::analysis::{core::range_analysis::domain::domain::{ConstConvert, IntervalArithmetic}, Analysis
+use crate::analysis::{
+    core::range_analysis::domain::domain::{ConstConvert, IntervalArithmetic},
+    Analysis,
 };
+use intervals::Closed;
 use once_cell::sync::Lazy;
-use intervals::{
-    Closed,
-};
-
+use std;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{BasicBlock, BinOp, Place};
@@ -18,7 +18,6 @@ use std::{
     fmt::{self, Debug},
 };
 pub trait RangeAnalysis<'tcx, T: IntervalArithmetic + ConstConvert + Debug>: Analysis {
-
     /// Returns the range information for all local variables (Places) in a given function.
     ///
     /// Parameters:
@@ -117,7 +116,3 @@ where
         write!(f, "{} [{}, {}]", self.rtype, lower, upper)
     }
 }
-
-
-
-

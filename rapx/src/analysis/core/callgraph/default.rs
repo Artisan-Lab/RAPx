@@ -10,7 +10,6 @@ use super::visitor::CallGraphVisitor;
 use crate::{
     analysis::core::callgraph::{CallGraph, CallGraphAnalysis},
     rap_debug, rap_info, Analysis,
-
 };
 
 pub struct CallGraphAnalyzer<'tcx> {
