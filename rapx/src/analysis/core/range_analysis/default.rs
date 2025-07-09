@@ -42,6 +42,7 @@ pub struct RangeAnalyzer<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub final_vars_vec: FxHashMap<DefId, Vec<HashMap<Place<'tcx>, Range<T>>>>,
     pub path_constraints:
         FxHashMap<DefId, HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>>>,
+
 }
 impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> Analysis for RangeAnalyzer<'tcx, T>
 where
@@ -90,6 +91,7 @@ where
             .get(&def_id)
             .cloned()
             .unwrap_or_default()
+
     }
 }
 
@@ -135,6 +137,7 @@ where
             vars_map: FxHashMap::default(),
             final_vars_vec: FxHashMap::default(),
             path_constraints: FxHashMap::default(),
+
         }
     }
 
@@ -361,6 +364,7 @@ where
             }
         }
     }
+
     pub fn print_all_final_results(&self) {
         rap_info!("==============================================");
         rap_info!("==== Final Analysis Results for All Functions ====");

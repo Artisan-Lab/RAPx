@@ -35,6 +35,7 @@ use analysis::{
     rcanary::rCanary,
     safedrop::SafeDrop,
     senryx::{CheckLevel, SenryxCheck},
+    test::Test,
     unsafety_isolation::{UigInstruction, UnsafetyIsolationCheck},
     utils::show_mir::ShowMir,
     Analysis,
@@ -55,12 +56,13 @@ pub static RAP_DEFAULT_ARGS: &[&str] = &["-Zalways-encode-mir", "-Zmir-opt-level
 #[derive(Debug, Copy, Clone, Hash)]
 pub struct RapCallback {
     alias: bool,
-    api_graph: bool,
+    api_dependency: bool,
     callgraph: bool,
     dataflow: usize,
     ownedheap: bool,
     range: usize,
     ssa: bool,
+    test: bool,
     infer: bool,
     opt: usize,
     rcanary: bool,
@@ -75,12 +77,13 @@ impl Default for RapCallback {
     fn default() -> Self {
         Self {
             alias: false,
-            api_graph: false,
+            api_dependency: false,
             callgraph: false,
             dataflow: 0,
             ownedheap: false,
             range: 0,
             ssa: false,
+            test: false,
             infer: false,
             opt: usize::MAX,
             rcanary: false,
@@ -148,13 +151,13 @@ impl RapCallback {
     }
 
     /// Enable API-dependency graph generation.
-    pub fn enable_api_graph(&mut self) {
-        self.api_graph = true;
+    pub fn enable_api_dependency(&mut self) {
+        self.api_dependency = true;
     }
 
     /// Test if API-dependency graph generation is enabled.
-    pub fn is_api_graph_enabled(self) -> bool {
-        self.api_graph
+    pub fn is_api_dependency_enabled(self) -> bool {
+        self.api_dependency
     }
 
     /// Enable call-graph analysis.
@@ -195,6 +198,16 @@ impl RapCallback {
     /// Test if range analysis is enabled.
     pub fn is_range_analysis_enabled(self) -> bool {
         self.range > 0
+    }
+
+    /// Enable test of features provided by the core analysis traits.
+    pub fn enable_test(&mut self) {
+        self.test = true;
+    }
+
+    /// Check if test is enabled.
+    pub fn is_test_enabled(self) -> bool {
+        self.test
     }
 
     /// Enable ssa transformation
@@ -304,7 +317,7 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
         analyzer.run();
     }
 
-    if callback.is_api_graph_enabled() {
+    if callback.is_api_dependency_enabled() {
         let mut analyzer = ApiDependencyAnalyzer::new(tcx);
         analyzer.run();
     }
@@ -348,6 +361,11 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
             }
             _ => {}
         }
+    }
+
+    if callback.is_test_enabled() {
+        let test = Test::new(tcx);
+        test.start();
     }
 
     match callback.is_opt_enabled() {

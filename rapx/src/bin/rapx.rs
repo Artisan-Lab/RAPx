@@ -26,22 +26,23 @@ fn main() {
     let mut compiler = RapCallback::default();
     for arg in env::args() {
         match arg.as_str() {
+            "-alias" | "-alias0" | "-alias1" | "-alias2" => compiler.enable_alias(arg),
+            "-adg" => compiler.enable_api_dependency(), // api dependency graph
+            "-callgraph" => compiler.enable_callgraph(),
+            "-dataflow" => compiler.enable_dataflow(1),
+            "-dataflow=debug" => compiler.enable_dataflow(2),
+            "-ownedheap" => compiler.enable_ownedheap(),
+            "-range" => compiler.enable_range_analysis(1),
+            "-range=print_mir" => compiler.enable_range_analysis(2),
+            "-test" => compiler.enable_test(),
             "-F" | "-F0" | "-F1" | "-F2" | "-uaf" => compiler.enable_safedrop(arg),
-            "-M" | "-mleak" => compiler.enable_rcanary(),
             "-I" | "-infer" => compiler.enable_infer(),
+            "-M" | "-mleak" => compiler.enable_rcanary(),
             "-V" | "-verify" => compiler.enable_verify(),
             "-O" | "-opt" => compiler.enable_opt(1),
             "-opt=all" => compiler.enable_opt(2),
             "-opt=report" => compiler.enable_opt(0),
-            "-alias" | "-alias0" | "-alias1" | "-alias2" => compiler.enable_alias(arg),
-            "-ownedheap" => compiler.enable_ownedheap(),
-            "-adg" => compiler.enable_api_graph(), // api dependency graph
-            "-callgraph" => compiler.enable_callgraph(),
-            "-dataflow" => compiler.enable_dataflow(1),
             "-ssa" => compiler.enable_ssa_transform(),
-            "-range" => compiler.enable_range_analysis(1),
-            "-range=print_mir" => compiler.enable_range_analysis(2),
-            "-dataflow=debug" => compiler.enable_dataflow(2),
             "-audit" => compiler.enable_unsafety_isolation(1),
             "-doc" => compiler.enable_unsafety_isolation(2),
             "-upg" => compiler.enable_unsafety_isolation(3),
