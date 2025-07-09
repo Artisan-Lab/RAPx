@@ -27,6 +27,7 @@ use rustc_span::source_map::Spanned;
 use rustc_span::sym::var;
 
 use std::cell::RefCell;
+use std::rc::Rc;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     default,
@@ -1120,7 +1121,7 @@ where
     pub fn widen(
         &mut self,
         op: usize,
-        cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        cg_map: &FxHashMap<DefId, Rc<RefCell<ConstraintGraph<'tcx, T>>>>,
         vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) -> bool {
         // use crate::range_util::{get_first_less_from_vector, get_first_greater_from_vector};
@@ -1188,7 +1189,7 @@ where
     pub fn narrow(
         &mut self,
         op: usize,
-        cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        cg_map: &FxHashMap<DefId, Rc<RefCell<ConstraintGraph<'tcx, T>>>>,
         vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) -> bool {
         let op_kind = &self.oprs[op];
@@ -1257,7 +1258,7 @@ where
         &mut self,
         comp_use_map: &HashMap<&'tcx Place<'tcx>, HashSet<usize>>,
         entry_points: &HashSet<&'tcx Place<'tcx>>,
-        cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        cg_map: &FxHashMap<DefId, Rc<RefCell<ConstraintGraph<'tcx, T>>>>,
         vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) {
         let mut worklist: Vec<&'tcx Place<'tcx>> = entry_points.iter().cloned().collect();
@@ -1280,7 +1281,7 @@ where
         &mut self,
         comp_use_map: &HashMap<&'tcx Place<'tcx>, HashSet<usize>>,
         entry_points: &HashSet<&'tcx Place<'tcx>>,
-        cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        cg_map: &FxHashMap<DefId, Rc<RefCell<ConstraintGraph<'tcx, T>>>>,
         vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) {
         let mut worklist: Vec<&'tcx Place<'tcx>> = entry_points.iter().cloned().collect();
@@ -1310,7 +1311,7 @@ where
         &mut self,
         component: &HashSet<&'tcx Place<'tcx>>,
         active_vars: &mut HashSet<&'tcx Place<'tcx>>,
-        cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        cg_map: &FxHashMap<DefId, Rc<RefCell<ConstraintGraph<'tcx, T>>>>,
         vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) {
         for place in component {
@@ -1321,7 +1322,7 @@ where
         &mut self,
         component: &HashSet<&'tcx Place<'tcx>>,
         entry_points: &mut HashSet<&'tcx Place<'tcx>>,
-        cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        cg_map: &FxHashMap<DefId, Rc<RefCell<ConstraintGraph<'tcx, T>>>>,
         vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) {
         for &place in component {
@@ -1343,7 +1344,7 @@ where
     fn propagate_to_next_scc(
         &mut self,
         component: &HashSet<&'tcx Place<'tcx>>,
-        cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        cg_map: &FxHashMap<DefId, Rc<RefCell<ConstraintGraph<'tcx, T>>>>,
         vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) {
         for &place in component.iter() {
@@ -1386,7 +1387,7 @@ where
     }
     pub fn solve_const_func_call(
         &mut self,
-        cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        cg_map: &FxHashMap<DefId, Rc<RefCell<ConstraintGraph<'tcx, T>>>>,
         vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) {
         for (&sink, op) in &self.const_func_place {
@@ -1413,7 +1414,7 @@ where
     }
     pub fn find_intervals(
         &mut self,
-        cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        cg_map: &FxHashMap<DefId, Rc<RefCell<ConstraintGraph<'tcx, T>>>>,
         vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) {
         // let scc_list = Nuutila::new(&self.vars, &self.usemap, &self.symbmap,false,&self.oprs);

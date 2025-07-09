@@ -22,7 +22,7 @@ use rustc_hir::def_id::DefId;
 use rustc_middle::mir::Place;
 use rustc_middle::mir::{BasicBlock, BinOp, Body};
 use rustc_middle::ty::TyCtxt;
-use std::cell::RefCell;
+use std::{cell::RefCell, rc::Rc};
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
@@ -37,7 +37,7 @@ pub struct RangeAnalyzer<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub fn_ConstraintGraph_mapping: FxHashMap<DefId, ConstraintGraph<'tcx, T>>,
     pub callgraph: CallGraphInfo<'tcx>,
     pub body_map: FxHashMap<DefId, Body<'tcx>>,
-    pub cg_map: FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+    pub cg_map: FxHashMap<DefId, Rc<RefCell<ConstraintGraph<'tcx, T>>>>,
     pub vars_map: FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     pub final_vars_vec: FxHashMap<DefId, Vec<HashMap<Place<'tcx>, Range<T>>>>,
 }
@@ -185,7 +185,7 @@ where
         // cg.rap_print_final_vars();
         let vars_map = cg.get_vars().clone();
 
-        self.cg_map.insert(def_id, RefCell::new(cg));
+        self.cg_map.insert(def_id, Rc::new(RefCell::new(cg)));
         let mut vec = Vec::new();
         vec.push(RefCell::new(vars_map));
         self.vars_map.insert(def_id, vec);

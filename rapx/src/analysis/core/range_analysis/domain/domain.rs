@@ -26,6 +26,7 @@ use std::fmt;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::ops::{Add, Mul, Sub};
+use std::rc::Rc;
 pub trait ConstConvert: Sized {
     fn from_const(c: &Const) -> Option<Self>;
 }
@@ -421,11 +422,11 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> CallOp<'tcx, T> {
     pub fn eval_call(
         &self,
         caller_vars: &VarNodes<'tcx, T>,
-        cg_map: &FxHashMap<DefId, RefCell<ConstraintGraph<'tcx, T>>>,
+        cg_map: &FxHashMap<DefId, Rc<RefCell<ConstraintGraph<'tcx, T>>>>,
         vars_map: &mut FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     ) -> Range<T> {
         // 1. Find the callee's ConstraintGraph in the map.
-        if let Some(callee_cg_cell) = cg_map.get(&self.def_id) {
+        if let Some(rc_callee_cg_cell) = cg_map.get(&self.def_id) {
             rap_debug!(
                 "Evaluating call to {:?} with args {:?}",
                 self.def_id,
@@ -433,7 +434,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> CallOp<'tcx, T> {
             );
             // 2. Try to get a mutable borrow of the callee's graph.
             //    Using `try_borrow_mut` is safer than `borrow_mut` to avoid panicking on recursive calls.
-            if let Ok(mut callee_cg) = callee_cg_cell.try_borrow_mut() {
+            if let Ok(mut callee_cg) = rc_callee_cg_cell.try_borrow_mut() {
                 // 3. Pass arguments from caller to callee.
                 //    This assumes arguments are in order and `_1`, `_2`, ... in the callee MIR.
                 for (i, caller_arg_operand) in self.args.iter().enumerate() {
