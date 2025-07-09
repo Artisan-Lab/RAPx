@@ -12,10 +12,10 @@ use once_cell::sync::Lazy;
 
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
-use rustc_middle::mir::{BasicBlock, BinOp, Place};
+use rustc_middle::mir::{BinOp, Place};
 use std;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt::{self, Debug},
 };
 /// This is the trait for range analysis. Range analysis is used to determine the value range of a
@@ -47,18 +47,15 @@ pub trait RangeAnalysis<'tcx, T: IntervalArithmetic + ConstConvert + Debug>: Ana
     fn get_fn_local_range(&self, def_id: DefId, local: Place<'tcx>) -> Option<Range<T>>;
 
     /// Returns:
-    /// - A set of basic blocks containing `SwitchInt` (branch) terminators.
     /// - A mapping from paths (as sequences of basic block indices) to their corresponding
     ///   control-flow constraints expressed as (Place, Place, BinOp).
     ///
     /// This supports path-sensitive pruning by allowing reasoning over feasible paths.
 
-    fn use_path_constraints_analysis(
+    fn get_path_constraints(
         &self,
-    ) -> (
-        HashSet<BasicBlock>,
-        HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>>,
-    );
+        def_id: DefId,
+    ) -> HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>>;
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]

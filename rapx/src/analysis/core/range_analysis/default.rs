@@ -20,7 +20,7 @@ use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::Place;
-use rustc_middle::mir::{BasicBlock, BinOp, Body};
+use rustc_middle::mir::{BinOp, Body};
 use rustc_middle::ty::TyCtxt;
 use std::{cell::RefCell, rc::Rc};
 use std::{
@@ -40,6 +40,8 @@ pub struct RangeAnalyzer<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub cg_map: FxHashMap<DefId, Rc<RefCell<ConstraintGraph<'tcx, T>>>>,
     pub vars_map: FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
     pub final_vars_vec: FxHashMap<DefId, Vec<HashMap<Place<'tcx>, Range<T>>>>,
+    pub path_constraints:
+        FxHashMap<DefId, HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>>>,
 }
 impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> Analysis for RangeAnalyzer<'tcx, T>
 where
@@ -80,53 +82,14 @@ where
             .get(&def_id)
             .and_then(|vars| vars.get(&place).cloned())
     }
-    fn use_path_constraints_analysis(
+    fn get_path_constraints(
         &self,
-    ) -> (
-        HashSet<BasicBlock>,
-        HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>>,
-    ) {
-        let ssa_def_id = self.ssa_def_id.expect("SSA definition ID is not set");
-        let essa_def_id = self.essa_def_id.expect("ESSA definition ID is not set");
-        let mut result = HashMap::new();
-        let mut switchblocks: HashSet<BasicBlock> = HashSet::new();
-        for local_def_id in self.tcx.iter_local_def_id() {
-            if matches!(self.tcx.def_kind(local_def_id), DefKind::Fn) {
-                let def_id = local_def_id.to_def_id();
-
-                if self.tcx.is_mir_available(def_id) {
-                    let mut body = self.tcx.optimized_mir(def_id).clone();
-                    let body_mut_ref = unsafe { &mut *(&mut body as *mut Body<'tcx>) };
-
-                    let mut cg: ConstraintGraph<'tcx, T> =
-                        ConstraintGraph::new(def_id, essa_def_id, ssa_def_id);
-                    let mut safedrop_graph =
-                        SafeDropGraph::new(&body, self.tcx, def_id, OHAResult::default());
-                    safedrop_graph.solve_scc();
-                    let paths: Vec<Vec<usize>> = safedrop_graph.get_paths();
-                    result = cg.start_analyze_path_constraints(body_mut_ref, &paths);
-
-                    rap_info!(
-                        "SafeDropGraph Paths for function {}: {:?}",
-                        self.tcx.def_path_str(def_id),
-                        paths
-                    );
-                    let switchbbs = cg.switchbbs.clone();
-                    rap_info!(
-                        "Switch BBS for function {}: {:?}",
-                        self.tcx.def_path_str(def_id),
-                        switchbbs
-                    );
-                    rap_info!(
-                        "Path Constraints Analysis Result for function {}: {:?}",
-                        self.tcx.def_path_str(def_id),
-                        result
-                    );
-                    switchblocks = switchbbs.keys().cloned().collect();
-                }
-            }
-        }
-        return (switchblocks, result);
+        def_id: DefId,
+    ) -> HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>> {
+        self.path_constraints
+            .get(&def_id)
+            .cloned()
+            .unwrap_or_default()
     }
 }
 
@@ -171,6 +134,7 @@ where
             cg_map: FxHashMap::default(),
             vars_map: FxHashMap::default(),
             final_vars_vec: FxHashMap::default(),
+            path_constraints: FxHashMap::default(),
         }
     }
 
@@ -358,7 +322,45 @@ where
         rap_info!("PHASE 2 Complete. Interval analysis finished for call chain start functions.");
         self.print_all_final_results();
     }
+    pub fn use_path_constraints_analysis(&mut self) {
+        let ssa_def_id = self.ssa_def_id.expect("SSA definition ID is not set");
+        let essa_def_id = self.essa_def_id.expect("ESSA definition ID is not set");
+        for local_def_id in self.tcx.iter_local_def_id() {
+            if matches!(self.tcx.def_kind(local_def_id), DefKind::Fn) {
+                let def_id = local_def_id.to_def_id();
 
+                if self.tcx.is_mir_available(def_id) {
+                    let mut body = self.tcx.optimized_mir(def_id).clone();
+                    let body_mut_ref = unsafe { &mut *(&mut body as *mut Body<'tcx>) };
+
+                    let mut cg: ConstraintGraph<'tcx, T> =
+                        ConstraintGraph::new(def_id, essa_def_id, ssa_def_id);
+                    let mut safedrop_graph =
+                        SafeDropGraph::new(&body, self.tcx, def_id, OHAResult::default());
+                    safedrop_graph.solve_scc();
+                    let paths: Vec<Vec<usize>> = safedrop_graph.get_paths();
+                    let result = cg.start_analyze_path_constraints(body_mut_ref, &paths);
+                    rap_info!(
+                        "SafeDropGraph Paths for function {}: {:?}",
+                        self.tcx.def_path_str(def_id),
+                        paths
+                    );
+                    let switchbbs = cg.switchbbs.clone();
+                    rap_info!(
+                        "Switch BBS for function {}: {:?}",
+                        self.tcx.def_path_str(def_id),
+                        switchbbs
+                    );
+                    rap_info!(
+                        "Path Constraints Analysis Result for function {}: {:?}",
+                        self.tcx.def_path_str(def_id),
+                        result
+                    );
+                    self.path_constraints.insert(def_id, result);
+                }
+            }
+        }
+    }
     pub fn print_all_final_results(&self) {
         rap_info!("==============================================");
         rap_info!("==== Final Analysis Results for All Functions ====");
