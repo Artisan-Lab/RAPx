@@ -24,7 +24,7 @@ impl<'tcx> Test<'tcx> {
     pub fn start(&self) {
         let mut alias_analysis = AliasAnalyzer::new(self.tcx);
         alias_analysis.run();
-        let result = alias_analysis.get_all_fn_alias();
+        let result = alias_analysis.get_local_fn_alias();
         rap_info!("{}", AAResultMapWrapper(result));
 
         let mut heap_analysis = OwnedHeapAnalyzer::new(self.tcx);

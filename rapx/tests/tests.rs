@@ -107,11 +107,11 @@ fn test_uaf_swithint_diffbranch() {
 }
 
 #[test]
-fn test_alias_nonptr() {
-    let output = running_tests_with_arg("alias/false_alias_iter", "-alias");
+fn test_alias_not_alias_iter() {
+    let output = running_tests_with_arg("alias/not_alias_iter", "-alias");
     assert_eq!(
-        output.contains("Alias found in Some(\"::foo\"): {(0,1)}"),
-        false
+        output.contains("foo): null"),
+        true
     );
 }
 
@@ -119,8 +119,7 @@ fn test_alias_nonptr() {
 fn test_alias_field() {
     let output = running_tests_with_arg("alias/alias_field", "-alias");
     assert_eq!(
-        output.contains("Alias found in Some(\"::foo\"): {(0,1.1),(0,1.0)}")
-            || output.contains("Alias found in Some(\"::foo\"): {(0,1.0),(0,1.1)}"),
+        output.contains("foo): (0,1.0), (0,1.1)"),
         true
     );
 }
@@ -129,7 +128,7 @@ fn test_alias_field() {
 fn test_alias_lib_no_caller() {
     let output = running_tests_with_arg("alias/alias_lib_no_caller", "-alias");
     assert_eq!(
-        output.contains("Alias found in Some(\"::{impl#0}::new\"): {(0,1.0)}"),
+        output.contains("new): (0,1.0)"),
         true
     );
 }
@@ -138,7 +137,7 @@ fn test_alias_lib_no_caller() {
 fn test_alias_scc() {
     let output = running_tests_with_arg("alias/alias_scc", "-alias");
     assert_eq!(
-        output.contains("Alias found in Some(\"::foo\"): {(0,1)}"),
+        output.contains("foo): (0,1)"),
         true
     );
 }
@@ -147,7 +146,7 @@ fn test_alias_scc() {
 fn test_alias_switch() {
     let output = running_tests_with_arg("alias/alias_switch", "-alias");
     assert_eq!(
-        output.contains("Alias found in Some(\"::foo\"): {(0,1)}"),
+        output.contains("foo): (0,1)"),
         true
     );
 }
@@ -156,7 +155,7 @@ fn test_alias_switch() {
 fn test_alias_copy_on_deref() {
     let output = running_tests_with_arg("alias/alias_copy_for_deref", "-alias");
     assert_eq!(
-        output.contains("Alias found in Some(\"::{impl#0}::new\"): {(0,1.0)}"),
+        output.contains("new): (0,1.0)"),
         true
     );
 }
@@ -165,7 +164,8 @@ fn test_alias_copy_on_deref() {
 fn test_alias_indirect() {
     let output = running_tests_with_arg("alias/alias_indirect", "-alias");
     assert_eq!(
-        output.contains("Alias found in Some(\"::{impl#1}::iter_prop\"): {(0,1.0)}"),
+        output
+            .contains("iter_prop): (0,1.0)"),
         true
     );
 }

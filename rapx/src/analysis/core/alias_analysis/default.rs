@@ -11,7 +11,7 @@ use crate::{
         },
         Analysis,
     },
-    rap_debug, rap_info, rap_trace,
+    rap_debug, rap_trace,
     utils::source::*,
 };
 use graph::MopGraph;
@@ -78,7 +78,7 @@ impl MopAAFact {
 
 impl From<MopAAFact> for AAFact {
     fn from(m: MopAAFact) -> Self {
-        m.fact // 假设你只关心内部的 `fact` 字段
+        m.fact
     }
 }
 
@@ -174,7 +174,7 @@ impl<'tcx> Analysis for AliasAnalyzer<'tcx> {
             let fn_name = get_fn_name(self.tcx, *fn_id);
             fn_alias.sort_alias_index();
             if fn_alias.len() > 0 {
-                rap_info!("Alias found in {:?}: {}", fn_name, fn_alias);
+                rap_debug!("Alias found in {:?}: {}", fn_name, fn_alias);
             }
         }
         self.handle_conor_cases();

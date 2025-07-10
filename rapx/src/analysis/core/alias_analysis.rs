@@ -2,6 +2,7 @@ pub mod default;
 use super::super::Analysis;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
+use rustc_span::def_id::LOCAL_CRATE;
 use std::{collections::HashSet, fmt};
 
 /// The data structure to store aliases for a set of functions.
@@ -16,6 +17,15 @@ pub trait AliasAnalysis: Analysis {
     fn get_fn_alias(&mut self, def_id: DefId) -> AAResult;
     /// Return the aliases among the function arguments and return value for all functions.
     fn get_all_fn_alias(&mut self) -> AAResultMap;
+    /// Return the aliases among the function arguments and return value for functions of the local
+    /// crate.
+    fn get_local_fn_alias(&mut self) -> AAResultMap {
+        self.get_all_fn_alias()
+            .iter()
+            .filter(|(def_id, _)| def_id.krate == LOCAL_CRATE)
+            .map(|(k, v)| (*k, v.clone()))
+            .collect()
+    }
 }
 
 /// To store the alias relationships among arguments and return values.
@@ -66,27 +76,26 @@ impl AAResult {
 
 impl fmt::Display for AAResult {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{{{}}}",
-            self.aliases()
+        if self.aliases().is_empty() {
+            write!(f, "null")?;
+        } else {
+            let joined = self
+                .aliases()
                 .iter()
-                .map(|alias| format!("{}", alias))
-                .collect::<Vec<String>>()
-                .join(",")
-        )
+                .map(|fact| format!("{}", fact))
+                .collect::<Vec<_>>()
+                .join(", ");
+            write!(f, "{joined}")?;
+        }
+        Ok(())
     }
 }
 
 impl fmt::Display for AAResultMapWrapper {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (def_id, result) in &self.0 {
-            writeln!(f, "Function {:?}:", def_id)?;
-            writeln!(f, "  Arg size: {}", result.arg_size)?;
-            writeln!(f, "  Alias facts:")?;
-            for fact in &result.alias_set {
-                writeln!(f, "    - {}", fact)?;
-            }
+            write!(f, "Alias of {:?}: {} ", def_id, result)?;
+            writeln!(f)?;
         }
         Ok(())
     }
@@ -135,6 +144,17 @@ impl AAFact {
     }
 }
 
+impl fmt::Display for AAFact {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "({},{})",
+            aa_place_desc_str(self.lhs_no, &self.lhs_fields, true),
+            aa_place_desc_str(self.rhs_no, &self.rhs_fields, true)
+        )
+    }
+}
+
 fn aa_place_desc_str(no: usize, fields: &[usize], field_sensitive: bool) -> String {
     let mut result = String::new();
     result.push_str(&no.to_string());
@@ -146,15 +166,4 @@ fn aa_place_desc_str(no: usize, fields: &[usize], field_sensitive: bool) -> Stri
         result.push_str(&num.to_string());
     }
     result
-}
-
-impl fmt::Display for AAFact {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "({},{})",
-            aa_place_desc_str(self.lhs_no, &self.lhs_fields, true),
-            aa_place_desc_str(self.rhs_no, &self.rhs_fields, true)
-        )
-    }
 }

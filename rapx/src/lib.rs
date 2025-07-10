@@ -23,7 +23,7 @@ extern crate stable_mir;
 extern crate thin_vec;
 use analysis::{
     core::{
-        alias_analysis::default::AliasAnalyzer,
+        alias_analysis::{default::AliasAnalyzer, AAResultMapWrapper, AliasAnalysis},
         api_dependency::default::ApiDependencyAnalyzer,
         callgraph::{default::CallGraphAnalyzer, CallGraphAnalysis, CallGraphDisplay},
         dataflow::DataFlowAnalyzer,
@@ -326,6 +326,8 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
     if callback.is_alias_enabled() {
         let mut analyzer = AliasAnalyzer::new(tcx);
         analyzer.run();
+        let alias = analyzer.get_local_fn_alias();
+        rap_info!("{}", AAResultMapWrapper(alias));
     }
 
     if callback.is_api_dependency_enabled() {
