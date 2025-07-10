@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 use super::SSATransformer::SSATransformer;
 use rustc_abi::FieldIdx;
+use rustc_hir::def_id::DefIdMap;
 use rustc_index::IndexVec;
 use rustc_middle::ty::TyCtxt;
 use rustc_middle::{mir::*, ty::GenericArgs};

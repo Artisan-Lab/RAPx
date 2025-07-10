@@ -1,6 +1,3 @@
-
-pub struct SSAstmt;
-pub struct ESSAstmt;
 // testcase for the path constraints analysis
 fn main() {
     let x = 1;

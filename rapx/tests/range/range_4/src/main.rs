@@ -1,6 +1,3 @@
-
-pub struct SSAstmt;
-pub struct ESSAstmt;
 // testcase for the path constraints analysis
 fn countdown(n: i32) -> i32 {
     if n <= 0 {

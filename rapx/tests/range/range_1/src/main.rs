@@ -1,5 +1,3 @@
-pub struct SSAstmt;
-pub struct ESSAstmt;
 
 fn main() {
     let mut k = 0;

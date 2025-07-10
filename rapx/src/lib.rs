@@ -4,7 +4,7 @@
 #[macro_use]
 pub mod utils;
 pub mod analysis;
-
+pub mod preprocess;
 extern crate intervals;
 extern crate rustc_abi;
 extern crate rustc_ast;
@@ -20,7 +20,7 @@ extern crate rustc_session;
 extern crate rustc_span;
 extern crate rustc_target;
 extern crate stable_mir;
-
+extern crate thin_vec;
 use analysis::{
     core::{
         alias_analysis::default::AliasAnalyzer,
@@ -40,8 +40,12 @@ use analysis::{
     utils::show_mir::ShowMir,
     Analysis,
 };
+use rustc_ast::ast;
 use rustc_driver::{Callbacks, Compilation};
-use rustc_interface::{interface::Compiler, Config};
+use rustc_interface::{
+    interface::{self, Compiler},
+    Config,
+};
 use rustc_middle::{ty::TyCtxt, util::Providers};
 use rustc_session::search_paths::PathKind;
 use std::path::PathBuf;
@@ -110,7 +114,14 @@ impl Callbacks for RapCallback {
             };
         });
     }
-
+    fn after_crate_root_parsing(
+        &mut self,
+        _compiler: &interface::Compiler,
+        _krate: &mut ast::Crate,
+    ) -> Compilation {
+        preprocess::ssa_preprocess::create_ssa_struct(_krate);
+        Compilation::Continue
+    }
     fn after_analysis<'tcx>(&mut self, _compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
         rap_trace!("Execute after_analysis() of compiler callbacks");
         start_analyzer(tcx, *self);
