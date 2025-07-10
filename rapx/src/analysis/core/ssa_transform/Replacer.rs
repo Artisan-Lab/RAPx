@@ -207,6 +207,21 @@ impl<'tcx> Replacer<'tcx> {
             user_ty: None,
             const_: Const::from_usize(self.tcx, 4),
         }));
+        let Eq_operand = Operand::Constant(Box::new(ConstOperand {
+            span: rustc_span::DUMMY_SP,
+            user_ty: None,
+            const_: Const::from_usize(self.tcx, 5),
+        }));
+        let Ne_operand = Operand::Constant(Box::new(ConstOperand {
+            span: rustc_span::DUMMY_SP,
+            user_ty: None,
+            const_: Const::from_usize(self.tcx, 6),
+        }));
+        let other_operand = Operand::Constant(Box::new(ConstOperand {
+            span: rustc_span::DUMMY_SP,
+            user_ty: None,
+            const_: Const::from_usize(self.tcx, 7),
+        }));
         if let Operand::Copy(switch_place) | Operand::Move(switch_place) = discr {
             if let Some((op1, op2, cmp_op)) =
                 self.extract_condition(switch_place, switch_block_data)
@@ -220,7 +235,10 @@ impl<'tcx> Replacer<'tcx> {
                     BinOp::Le => Le_operand.clone(),
                     BinOp::Gt => Gt_operand.clone(),
                     BinOp::Ge => Ge_operand.clone(),
-                    _ => panic!("not a comparison operator"),
+                    BinOp::Ne => Ne_operand.clone(),
+                    BinOp::Eq => Eq_operand.clone(),
+
+                    _ => other_operand.clone(),
                 };
 
                 let flip_cmp_operand: Operand<'_> = match Self::flip(cmp_op) {
@@ -228,14 +246,20 @@ impl<'tcx> Replacer<'tcx> {
                     BinOp::Le => Le_operand.clone(),
                     BinOp::Gt => Gt_operand.clone(),
                     BinOp::Ge => Ge_operand.clone(),
-                    _ => panic!("not a comparison operator"),
+                    BinOp::Eq => Ne_operand.clone(),
+                    BinOp::Ne => Eq_operand.clone(),
+
+                    _ => other_operand.clone(),
                 };
                 let reverse_cmp_operand: Operand<'_> = match Self::reverse(cmp_op) {
                     BinOp::Lt => Lt_operand.clone(),
                     BinOp::Le => Le_operand.clone(),
                     BinOp::Gt => Gt_operand.clone(),
                     BinOp::Ge => Ge_operand.clone(),
-                    _ => panic!("not a comparison operator"),
+                    BinOp::Ne => Ne_operand.clone(),
+                    BinOp::Eq => Eq_operand.clone(),
+
+                    _ => other_operand.clone(),
                 };
                 let flip_reverse_cmp_operand: Operand<'_> = match Self::flip(Self::reverse(cmp_op))
                 {
@@ -243,7 +267,10 @@ impl<'tcx> Replacer<'tcx> {
                     BinOp::Le => Le_operand.clone(),
                     BinOp::Gt => Gt_operand.clone(),
                     BinOp::Ge => Ge_operand.clone(),
-                    _ => panic!("not a comparison operator"),
+                    BinOp::Eq => Ne_operand.clone(),
+                    BinOp::Ne => Eq_operand.clone(),
+
+                    _ => other_operand.clone(),
                 };
                 match (const_op1, const_op2) {
                     (None, None) => {
@@ -369,6 +396,8 @@ impl<'tcx> Replacer<'tcx> {
             BinOp::Le => BinOp::Gt,
             BinOp::Gt => BinOp::Le,
             BinOp::Ge => BinOp::Lt,
+            BinOp::Eq => BinOp::Ne,
+            BinOp::Ne => BinOp::Eq,
             _ => panic!("flip() called on non-comparison operator"),
         }
     }
@@ -378,6 +407,8 @@ impl<'tcx> Replacer<'tcx> {
             BinOp::Le => BinOp::Ge,
             BinOp::Gt => BinOp::Lt,
             BinOp::Ge => BinOp::Le,
+            BinOp::Eq => BinOp::Ne,
+            BinOp::Ne => BinOp::Eq,
             _ => panic!("flip() called on non-comparison operator"),
         }
     }
