@@ -104,6 +104,36 @@ where
             const_func_place: HashMap::new(),
         }
     }
+    pub fn new_without_ssa(self_def_id: DefId) -> Self {
+        Self {
+            self_def_id,
+            vars: VarNodes::new(),
+            oprs: GenOprs::new(),
+            // func: None,
+            defmap: DefMap::new(),
+            usemap: UseMap::new(),
+            symbmap: SymbMap::new(),
+            values_branchmap: ValuesBranchMap::new(),
+            // values_switchmap: ValuesSwitchMap::new(),
+            constant_vector: Vec::new(),
+            inst_rand_place_set: Vec::new(),
+            essa: self_def_id, // Assuming essa is the same as self_def_id
+            ssa: self_def_id,  // Assuming ssa is the same as self_def_id
+            index: 0,
+            dfs: HashMap::new(),
+            root: HashMap::new(),
+            in_component: HashSet::new(),
+            components: HashMap::new(),
+            worklist: VecDeque::new(),
+            numAloneSCCs: 0,
+            numSCCs: 0,
+            final_vars: VarNodes::new(),
+            arg_count: 0,
+            rerurn_places: HashSet::new(),
+            switchbbs: HashMap::new(),
+            const_func_place: HashMap::new(),
+        }
+    }
     pub fn build_final_vars(
         &mut self,
         places_map: &HashMap<Place<'tcx>, HashSet<Place<'tcx>>>,

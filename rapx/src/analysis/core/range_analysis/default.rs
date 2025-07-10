@@ -323,8 +323,6 @@ where
         self.print_all_final_results();
     }
     pub fn use_path_constraints_analysis(&mut self) {
-        let ssa_def_id = self.ssa_def_id.expect("SSA definition ID is not set");
-        let essa_def_id = self.essa_def_id.expect("ESSA definition ID is not set");
         for local_def_id in self.tcx.iter_local_def_id() {
             if matches!(self.tcx.def_kind(local_def_id), DefKind::Fn) {
                 let def_id = local_def_id.to_def_id();
@@ -333,8 +331,7 @@ where
                     let mut body = self.tcx.optimized_mir(def_id).clone();
                     let body_mut_ref = unsafe { &mut *(&mut body as *mut Body<'tcx>) };
 
-                    let mut cg: ConstraintGraph<'tcx, T> =
-                        ConstraintGraph::new(def_id, essa_def_id, ssa_def_id);
+                    let mut cg: ConstraintGraph<'tcx, T> = ConstraintGraph::new_without_ssa(def_id);
                     let mut safedrop_graph =
                         SafeDropGraph::new(&body, self.tcx, def_id, OHAResult::default());
                     safedrop_graph.solve_scc();

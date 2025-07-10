@@ -156,6 +156,19 @@ impl<'tcx> SSATransformer<'tcx> {
                     _ => {}
                 }
             }
+            if let Some(terminator) = &block_data.terminator {
+                match &terminator.kind {
+                    TerminatorKind::Call { destination, .. } => {
+                        if let Some(local) = destination.as_local() {
+                            if local.as_u32() == 0 {
+                                continue; // Skip the return place
+                            }
+                            local_to_block_map.entry(local).or_insert(bb);
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
 
         local_to_block_map

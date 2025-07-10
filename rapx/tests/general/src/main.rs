@@ -1,4 +1,6 @@
 use std::slice;
+pub struct SSAstmt;
+pub struct ESSAstmt;
 
 fn main() {
     let mut buf = vec![10u8, 20, 30];

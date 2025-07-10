@@ -357,6 +357,9 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
             2 => {
                 let mut analyzer = RangeAnalyzer::<i128>::new(tcx, true);
                 analyzer.run();
+            }
+            3 => {
+                let mut analyzer = RangeAnalyzer::<i128>::new(tcx, false);
                 analyzer.use_path_constraints_analysis();
             }
             _ => {}
