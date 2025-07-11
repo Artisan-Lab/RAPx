@@ -39,9 +39,11 @@ pub struct Graph {
 
 impl From<Graph> for DataFlowGraph {
     fn from(graph: Graph) -> Self {
+        let param_ret_deps = graph.param_return_deps();
         DataFlowGraph {
             nodes: graph.nodes,
             edges: graph.edges,
+            param_ret_deps: param_ret_deps,
         }
     }
 }
@@ -408,7 +410,7 @@ impl Graph {
             Direction::Downside,
             &mut node_operator,
             &mut Self::always_true_edge_validator,
-            false,
+            true,
             &mut seen,
         );
         seen.clear();
@@ -418,7 +420,7 @@ impl Graph {
                 Direction::Upside,
                 &mut node_operator,
                 &mut Self::always_true_edge_validator,
-                false,
+                true,
                 &mut seen,
             );
         }
