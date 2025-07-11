@@ -1,4 +1,5 @@
 use std::slice;
+
 fn main() {
     let mut buf = vec![10u8, 20, 30];
     let ptr = buf.as_mut_ptr();
