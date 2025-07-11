@@ -3,7 +3,7 @@ use crate::{
         core::{
             alias_analysis::{default::AliasAnalyzer, AAResultMapWrapper, AliasAnalysis},
             dataflow::{default::DataFlowAnalyzer, DataFlowAnalysis, DataFlowGraphMapWrapper},
-            ownedheap_analysis::default::OwnedHeapAnalyzer,
+            ownedheap_analysis::{default::OwnedHeapAnalyzer, OHAResultMapWrapper, OwnedHeapAnalysis},
             range_analysis::{default::RangeAnalyzer, PathConstraintMapWrapper, RangeAnalysis},
         },
         Analysis,
@@ -35,6 +35,8 @@ impl<'tcx> Test<'tcx> {
 
         let mut heap_analysis = OwnedHeapAnalyzer::new(self.tcx);
         heap_analysis.run();
+        let result = heap_analysis.get_all_items();
+        rap_info!("{}", OHAResultMapWrapper(result));
 
         let mut range_analysis = RangeAnalyzer::<i128>::new(self.tcx, false);
         range_analysis.run();

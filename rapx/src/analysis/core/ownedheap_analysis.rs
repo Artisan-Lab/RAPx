@@ -5,7 +5,7 @@ use rustc_span::def_id::DefId;
 
 use std::{
     collections::{HashMap, HashSet},
-    env, fmt,
+    env, fmt::{self, Display},
 };
 
 use crate::{rap_info, Analysis};
@@ -33,7 +33,7 @@ impl OwnedHeap {
     }
 }
 
-impl fmt::Display for OwnedHeap {
+impl Display for OwnedHeap {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let name = match self {
             OwnedHeap::False => "0",
@@ -51,16 +51,42 @@ impl fmt::Display for OwnedHeap {
 /// information of each variant.
 /// Also, because it may contain type parameters or generic types,
 /// the heap information is a tuple containing the information of each type parameter.
-pub type OHAResult = HashMap<DefId, Vec<(OwnedHeap, Vec<bool>)>>;
+pub type OHAResultMap = HashMap<DefId, Vec<(OwnedHeap, Vec<bool>)>>;
+pub struct OHAResultMapWrapper(pub HashMap<DefId, Vec<(OwnedHeap, Vec<bool>)>>);
 
+impl Display for OHAResultMapWrapper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (def_id, units) in &self.0 {
+            let name = format!("{:?}", def_id);
+            let owning = units
+                .iter()
+                .map(Self::format_heap_unit)
+                .collect::<Vec<_>>()
+                .join(", ");
+            writeln!(f, "{} {}", name, owning)?;
+        }
+        Ok(())
+    }
+}
+
+impl OHAResultMapWrapper {
+      fn format_heap_unit((heap, bits): &(OwnedHeap, Vec<bool>)) -> String {
+        let bit_str = bits
+            .iter()
+            .map(|b| if *b { "1" } else { "0" })
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("{:?}, [{}]", heap, bit_str)
+    }
+}
 /// This trait provides features for owned heap analysis, which is used to determine if a type owns
 /// memory on heap. Owned heap should be automatically released by default.
 pub trait OwnedHeapAnalysis: Analysis {
     /// Return the result of owned heap analysis for all types.
-    fn get_all_items(&mut self) -> OHAResult;
+    fn get_all_items(&self) -> OHAResultMap;
     /// If a type is a heap owner, the function returns Result<true>. If the specified type is
     /// illegal, the function returns Err.
-    fn is_heapowner<'tcx>(hares: OHAResult, ty: Ty<'tcx>) -> Result<bool, &'static str> {
+    fn is_heapowner<'tcx>(hares: OHAResultMap, ty: Ty<'tcx>) -> Result<bool, &'static str> {
         match ty.kind() {
             TyKind::Adt(adtdef, ..) => {
                 let heapinfo = hares.get(&adtdef.0 .0.did).unwrap();
@@ -76,7 +102,7 @@ pub trait OwnedHeapAnalysis: Analysis {
     }
     /// A type might be a heap owner if it is not a heap owner directly but contains type
     /// parameters that may make the type become a heap owner after monomorphization.
-    fn maybe_heapowner<'tcx>(hares: OHAResult, ty: Ty<'tcx>) -> Result<bool, &'static str> {
+    fn maybe_heapowner<'tcx>(hares: OHAResultMap, ty: Ty<'tcx>) -> Result<bool, &'static str> {
         match ty.kind() {
             TyKind::Adt(adtdef, ..) => {
                 let heapinfo = hares.get(&adtdef.0 .0.did).unwrap();

@@ -17,7 +17,7 @@ use crate::rap_debug;
 
 pub struct OwnedHeapAnalyzer<'tcx> {
     tcx: TyCtxt<'tcx>,
-    adt_heap: OHAResult,
+    adt_heap: OHAResultMap,
     fn_set: HashSet<DefId>,
     ty_map: HashMap<Ty<'tcx>, String>,
     adt_recorder: HashSet<DefId>,
@@ -36,7 +36,7 @@ impl<'tcx> Analysis for OwnedHeapAnalyzer<'tcx> {
 }
 
 impl<'tcx> OwnedHeapAnalysis for OwnedHeapAnalyzer<'tcx> {
-    fn get_all_items(&mut self) -> OHAResult {
+    fn get_all_items(&self) -> OHAResultMap {
         self.adt_heap.clone()
     }
 }
@@ -89,11 +89,11 @@ impl<'tcx> OwnedHeapAnalyzer<'tcx> {
         &mut self.adt_recorder
     }
 
-    pub fn adt_heap(&self) -> &OHAResult {
+    pub fn adt_heap(&self) -> &OHAResultMap {
         &self.adt_heap
     }
 
-    pub fn adt_heap_mut(&mut self) -> &mut OHAResult {
+    pub fn adt_heap_mut(&mut self) -> &mut OHAResultMap {
         &mut self.adt_heap
     }
 
@@ -773,7 +773,7 @@ impl<'tcx> Encoder {
     pub fn encode(
         tcx: TyCtxt<'tcx>,
         ty: Ty<'tcx>,
-        adt_heap: OHAResult,
+        adt_heap: OHAResultMap,
         variant: Option<VariantIdx>,
     ) -> OwnershipLayoutResult {
         match ty.kind() {
@@ -888,7 +888,7 @@ struct IsolatedParamPropagation<'tcx, 'a> {
     record: Vec<bool>,
     unique: HashSet<DefId>,
     source_enum: bool,
-    ref_adt_heap: &'a OHAResult,
+    ref_adt_heap: &'a OHAResultMap,
 }
 
 impl<'tcx, 'a> IsolatedParamPropagation<'tcx, 'a> {
@@ -896,7 +896,7 @@ impl<'tcx, 'a> IsolatedParamPropagation<'tcx, 'a> {
         tcx: TyCtxt<'tcx>,
         record: Vec<bool>,
         source_enum: bool,
-        ref_adt_heap: &'a OHAResult,
+        ref_adt_heap: &'a OHAResultMap,
     ) -> Self {
         Self {
             tcx,
@@ -919,7 +919,7 @@ impl<'tcx, 'a> IsolatedParamPropagation<'tcx, 'a> {
         self.source_enum
     }
 
-    pub fn heap(&self) -> &'a OHAResult {
+    pub fn heap(&self) -> &'a OHAResultMap {
         self.ref_adt_heap
     }
 }
@@ -929,11 +929,11 @@ struct HeapPropagation<'tcx, 'a> {
     tcx: TyCtxt<'tcx>,
     heap: OwnedHeap,
     unique: HashSet<DefId>,
-    heap_res: &'a OHAResult,
+    heap_res: &'a OHAResultMap,
 }
 
 impl<'tcx, 'a> HeapPropagation<'tcx, 'a> {
-    pub fn new(tcx: TyCtxt<'tcx>, heap: OwnedHeap, heap_res: &'a OHAResult) -> Self {
+    pub fn new(tcx: TyCtxt<'tcx>, heap: OwnedHeap, heap_res: &'a OHAResultMap) -> Self {
         Self {
             tcx,
             heap,
@@ -950,7 +950,7 @@ impl<'tcx, 'a> HeapPropagation<'tcx, 'a> {
         &mut self.unique
     }
 
-    pub fn heap_res(&self) -> &'a OHAResult {
+    pub fn heap_res(&self) -> &'a OHAResultMap {
         self.heap_res
     }
 }
@@ -976,14 +976,14 @@ impl IsolatedParam {
 pub struct DefaultOwnership<'tcx, 'a> {
     tcx: TyCtxt<'tcx>,
     unique: HashSet<DefId>,
-    ref_adt_heap: &'a OHAResult,
+    ref_adt_heap: &'a OHAResultMap,
     res: OwnedHeap,
     param: bool,
     ptr: bool,
 }
 
 impl<'tcx, 'a> DefaultOwnership<'tcx, 'a> {
-    pub fn new(tcx: TyCtxt<'tcx>, ref_adt_heap: &'a OHAResult) -> Self {
+    pub fn new(tcx: TyCtxt<'tcx>, ref_adt_heap: &'a OHAResultMap) -> Self {
         Self {
             tcx,
             unique: HashSet::new(),
@@ -1042,7 +1042,7 @@ impl<'tcx, 'a> DefaultOwnership<'tcx, 'a> {
         self.ptr == true
     }
 
-    pub fn heap(&self) -> &'a OHAResult {
+    pub fn heap(&self) -> &'a OHAResultMap {
         self.ref_adt_heap
     }
 }

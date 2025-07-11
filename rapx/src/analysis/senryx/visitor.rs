@@ -1,6 +1,6 @@
 use crate::{
     analysis::{
-        core::{alias_analysis::AAResult, ownedheap_analysis::OHAResult},
+        core::{alias_analysis::AAResult, ownedheap_analysis::OHAResultMap},
         safedrop::graph::SafeDropGraph,
         utils::{
             fn_info::{
@@ -116,7 +116,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         Self {
             tcx,
             def_id,
-            safedrop_graph: SafeDropGraph::new(body, tcx, def_id, OHAResult::default()),
+            safedrop_graph: SafeDropGraph::new(body, tcx, def_id, OHAResultMap::default()),
             abstract_states: HashMap::new(),
             unsafe_callee_report: HashMap::new(),
             local_ty: HashMap::new(),

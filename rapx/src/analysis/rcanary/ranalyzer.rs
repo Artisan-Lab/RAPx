@@ -3,13 +3,14 @@ pub mod intra_visitor;
 pub mod order;
 pub mod ownership;
 
-use rustc_middle::mir::{Body, Terminator};
-use rustc_middle::ty::{InstanceKind::Item, TyCtxt};
+use rustc_middle::{
+    mir::{Body, Terminator},
+    ty::{InstanceKind::Item, TyCtxt}
+};
 use rustc_span::def_id::DefId;
 
 use super::{rCanary, IcxMut, IcxSliceMut, Rcx, RcxMut};
-use crate::analysis::core::ownedheap_analysis::OwnedHeap;
-use crate::analysis::core::ownedheap_analysis::{default::TyWithIndex, OHAResult};
+use crate::analysis::core::ownedheap_analysis::{OwnedHeap,default::TyWithIndex, OHAResultMap};
 use ownership::{IntraVar, Taint};
 
 use std::{
@@ -194,7 +195,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         }
     }
 
-    pub fn owner(&self) -> &OHAResult {
+    pub fn owner(&self) -> &OHAResultMap {
         self.rcx.adt_owner()
     }
 

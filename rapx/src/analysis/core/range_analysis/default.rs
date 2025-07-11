@@ -2,7 +2,7 @@ use crate::{
     analysis::{
         core::{
             callgraph::{default::CallGraphInfo, visitor::CallGraphVisitor},
-            ownedheap_analysis::OHAResult,
+            alias_analysis::default::graph::MopGraph,
             range_analysis::{
                 domain::{
                     domain::{ConstConvert, IntervalArithmetic, VarNodes},
@@ -12,7 +12,6 @@ use crate::{
             },
             ssa_transform::*,
         },
-        safedrop::graph::SafeDropGraph,
         Analysis,
     },
     rap_debug,
@@ -295,10 +294,10 @@ where
                     let body_mut_ref = unsafe { &mut *(&mut body as *mut Body<'tcx>) };
 
                     let mut cg: ConstraintGraph<'tcx, T> = ConstraintGraph::new_without_ssa(def_id);
-                    let mut safedrop_graph =
-                        SafeDropGraph::new(&body, self.tcx, def_id, OHAResult::default());
-                    safedrop_graph.solve_scc();
-                    let paths: Vec<Vec<usize>> = safedrop_graph.get_paths();
+                    let mut graph =
+                        MopGraph::new(self.tcx, def_id);
+                    graph.solve_scc();
+                    let paths: Vec<Vec<usize>> = graph.get_paths();
                     let result = cg.start_analyze_path_constraints(body_mut_ref, &paths);
                     rap_debug!(
                         "Paths for function {}: {:?}",

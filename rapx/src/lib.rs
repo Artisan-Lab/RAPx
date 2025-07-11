@@ -27,7 +27,7 @@ use analysis::{
         api_dependency::default::ApiDependencyAnalyzer,
         callgraph::{default::CallGraphAnalyzer, CallGraphAnalysis, CallGraphDisplay},
         dataflow::default::DataFlowAnalyzer,
-        ownedheap_analysis::{default::OwnedHeapAnalyzer, OwnedHeapAnalysis},
+        ownedheap_analysis::{default::OwnedHeapAnalyzer, OHAResultMapWrapper, OwnedHeapAnalysis},
         range_analysis::{
             default::RangeAnalyzer, PathConstraintMapWrapper, RAResultMapWrapper, RangeAnalysis,
         },
@@ -360,7 +360,8 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
     if callback.is_ownedheap_enabled() {
         let mut analyzer = OwnedHeapAnalyzer::new(tcx);
         analyzer.run();
-        analyzer.output();
+        let result = analyzer.get_all_items();
+        rap_info!("{}", OHAResultMapWrapper(result));
     }
 
     if callback.is_range_analysis_enabled() {

@@ -1,6 +1,6 @@
 use super::bug_records::*;
 use crate::analysis::{
-    core::alias_analysis::default::types::*, core::ownedheap_analysis::OHAResult,
+    core::alias_analysis::default::types::*, core::ownedheap_analysis::OHAResultMap,
     utils::intrinsic_id::*,
 };
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
@@ -168,7 +168,7 @@ pub struct SafeDropGraph<'tcx> {
     pub alias_set: Vec<usize>,
     pub dead_record: Vec<bool>,
     // analysis of heap item
-    pub adt_owner: OHAResult,
+    pub adt_owner: OHAResultMap,
     pub child_scc: FxHashMap<
         usize,
         (
@@ -186,7 +186,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
         body: &Body<'tcx>,
         tcx: TyCtxt<'tcx>,
         def_id: DefId,
-        adt_owner: OHAResult,
+        adt_owner: OHAResultMap,
     ) -> SafeDropGraph<'tcx> {
         // handle variables
         let locals = &body.local_decls;

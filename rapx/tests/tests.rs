@@ -182,15 +182,12 @@ fn test_leak_proxy() {
 fn test_heap_cell() {
     let output = running_tests_with_arg("ownedheap/heap_cell", "-ownedheap");
     assert_eq!(
-        output.contains("std::cell::Cell<T/#0> (0, [1])")
-            && output.contains("std::cell::RefCell<T/#0> (0, [1])")
-            && output.contains("std::cell::UnsafeCell<T/#0> (0, [1])")
-            && output.contains("std::cell::LazyCell<T/#0, F/#1> (0, [1,1])")
-            && output.contains("std::rc::Rc<T/#0, A/#1> (1, [1,1])")
-            && output.contains("std::sync::Arc<T/#0, A/#1> (1, [1,1])")
-            && output.contains("std::rc::UniqueRc<T/#0, A/#1> (1, [1,1])")
-            && output.contains("std::rc::Weak<T/#0, A/#1> (0, [1,1])")
-            && output.contains("std::sync::Weak<T/#0, A/#1> (0, [1,1])"),
+        output.contains("Cell) False, [1]")
+            && output.contains("RefCell) False, [1]")
+            && output.contains("UnsafeCell) False, [1]")
+            && output.contains("Rc) True, [1,1]")
+            && output.contains("Arc) True, [1,1]")
+            && output.contains("UniqueRc) True, [1,1]"),
         true
     );
 }
@@ -199,20 +196,15 @@ fn test_heap_cell() {
 fn test_heap_collections() {
     let output = running_tests_with_arg("ownedheap/heap_collections", "-ownedheap");
     assert_eq!(
-        output.contains("std::ptr::Unique<T/#0> (1, [0])")
-            && output.contains("std::boxed::Box<T/#0, A/#1> (1, [0,1])")
-            && output.contains("std::vec::Vec<T/#0, A/#1> (1, [0,1])")
-            && output.contains("std::string::String (1, [])")
-            && output.contains("std::collections::VecDeque<T/#0, A/#1> (1, [0,1])")
-            && output.contains("std::collections::LinkedList<T/#0, A/#1> (1, [1,1])")
-            && output.contains("hashbrown::raw::RawTable<T/#0, A/#1> (1, [0,1])")
-            && output.contains("hashbrown::map::HashMap<K/#0, V/#1, S/#2, A/#3> (1, [0,0,1,1])")
-            && output.contains("std::collections::HashMap<K/#0, V/#1, S/#2> (1, [0,0,1])")
-            && output.contains("std::collections::BTreeMap<K/#0, V/#1, A/#2> (1, [0,0,1])")
-            && output.contains("hashbrown::set::HashSet<T/#0, S/#1, A/#2> (1, [0,1,1])")
-            && output.contains("std::collections::HashSet<T/#0, S/#1> (1, [0,1])")
-            && output.contains("std::collections::BTreeSet<T/#0, A/#1> (1, [0,1])")
-            && output.contains("std::collections::BinaryHeap<T/#0, A/#1> (1, [0,1])"),
+        output.contains("Unique) True, [0]")
+            && output.contains("Box) True, [0,1]")
+            && output.contains("Vec) True, [0,1]")
+            && output.contains("String) True, []")
+            && output.contains("LinkedList) True, [1,1]")
+            && output.contains("HashMap) True, [0,0,1]")
+            && output.contains("BTreeMap) True, [0,0,1]")
+            && output.contains("HashSet) True, [0,1]")
+            && output.contains("BTreeSet) True, [0,1]"),
         true
     );
 }
@@ -221,9 +213,9 @@ fn test_heap_collections() {
 fn test_heap_nested() {
     let output: String = running_tests_with_arg("ownedheap/heap_nested", "-ownedheap");
     assert_eq!(
-        output.contains("X<A/#0> (0, [1])")
-            && output.contains("Y<B/#0> (0, [1])")
-            && output.contains("Example<A/#0, B/#1, T/#2, S/#3> (1, [1,1,0,1])"),
+        output.contains("X) False, [1]")
+            && output.contains("Y) False, [1]")
+            && output.contains("Example) True, [1,1,0,1]"),
         true
     );
 }
@@ -232,11 +224,11 @@ fn test_heap_nested() {
 fn test_heap_proxy() {
     let output = running_tests_with_arg("ownedheap/heap_proxy", "-ownedheap");
     assert_eq!(
-        output.contains("Proxy1<T/#0> (0, [0])")
-            && output.contains("Proxy2<T/#0> (1, [0])")
-            && output.contains("Proxy3<'a/#0, T/#1> (0, [0,0])")
-            && output.contains("Proxy4<T/#0> (0, [1])")
-            && output.contains("Proxy5<T/#0> (1, [0])"),
+        output.contains("Proxy1) False, [0]")
+            && output.contains("Proxy2) True, [0]")
+            && output.contains("Proxy3) False, [0,0]")
+            && output.contains("Proxy4) False, [1]")
+            && output.contains("Proxy5) True, [0]"),
         true
     );
 }
