@@ -15,7 +15,7 @@ use crate::{
         safedrop::graph::SafeDropGraph,
         Analysis,
     },
-    rap_debug, rap_info,
+    rap_debug,
 };
 
 use rustc_data_structures::fx::FxHashMap;
@@ -31,7 +31,7 @@ use std::{
     rc::Rc,
 };
 
-use super::{PathConstraint, PathConstraintMap, RAResult, RAResultMap};
+use super::{PathConstraint, PathConstraintMap, RAResult, RAResultMap, RAVecResultMap};
 pub struct RangeAnalyzer<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub tcx: TyCtxt<'tcx>,
     pub debug: bool,
@@ -44,7 +44,7 @@ pub struct RangeAnalyzer<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub body_map: FxHashMap<DefId, Body<'tcx>>,
     pub cg_map: FxHashMap<DefId, Rc<RefCell<ConstraintGraph<'tcx, T>>>>,
     pub vars_map: FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
-    pub final_vars_vec: FxHashMap<DefId, Vec<HashMap<Place<'tcx>, Range<T>>>>,
+    pub final_vars_vec: RAVecResultMap<'tcx, T>,
     pub path_constraints: PathConstraintMap<'tcx>,
 }
 impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> Analysis for RangeAnalyzer<'tcx, T>
@@ -75,10 +75,15 @@ where
     fn get_fn_range(&self, def_id: DefId) -> Option<RAResult<'tcx, T>> {
         self.final_vars.get(&def_id).cloned()
     }
-
+    fn get_per_call_fn_ranges(&self, def_id: DefId) -> Option<Vec<RAResult<'tcx, T>>> {
+        self.final_vars_vec.get(&def_id).cloned()
+    }
     fn get_all_fn_ranges(&self) -> RAResultMap<'tcx, T> {
         // REFACTOR: Using `.clone()` is more explicit that a copy is being returned.
         self.final_vars.clone()
+    }
+    fn get_per_call_all_fn_ranges(&self) -> RAVecResultMap<'tcx, T> {
+        self.final_vars_vec.clone()
     }
 
     // REFACTOR: This lookup is now much more efficient.
@@ -159,54 +164,7 @@ where
         self.vars_map.insert(def_id, vec);
     }
 
-    fn start(&mut self) {
-        let ssa_def_id = self.ssa_def_id.expect("SSA definition ID is not set");
-        let essa_def_id = self.essa_def_id.expect("ESSA definition ID is not set");
 
-        for local_def_id in self.tcx.iter_local_def_id() {
-            if matches!(self.tcx.def_kind(local_def_id), DefKind::Fn) {
-                let def_id = local_def_id.to_def_id();
-
-                if self.tcx.is_mir_available(def_id) {
-                    rap_debug!(
-                        "Analyzing function: {}",
-                        self.tcx.def_path_str(local_def_id)
-                    );
-                    let def_kind = self.tcx.def_kind(def_id);
-                    let mut body = match def_kind {
-                        DefKind::Const | DefKind::Static { .. } => {
-                            // Compile Time Function Evaluation
-                            self.tcx.mir_for_ctfe(def_id).clone()
-                        }
-                        _ => self.tcx.optimized_mir(def_id).clone(),
-                    };
-                    {
-                        let body_mut_ref = unsafe { &mut *(&mut body as *mut Body<'tcx>) };
-
-                        let mut passrunner = PassRunner::new(self.tcx);
-                        passrunner.run_pass(body_mut_ref, ssa_def_id, essa_def_id);
-                        self.body_map.insert(def_id.into(), body);
-
-                        // SSAPassRunner::print_diff(self.tcx, body_mut_ref, def_id.into());
-                        // SSAPassRunner::print_mir_graph(self.tcx, body_mut_ref, def_id.into());
-                        self.ssa_places_mapping
-                            .insert(def_id.into(), passrunner.places_map.clone());
-                        self.build_constraintgraph(body_mut_ref, def_id.into());
-
-                        let mut call_graph_visitor = CallGraphVisitor::new(
-                            self.tcx,
-                            def_id.into(),
-                            body_mut_ref,
-                            &mut self.callgraph,
-                        );
-                        call_graph_visitor.visit();
-                    }
-                }
-            }
-        }
-        // print!("{:?}", self.callgraph.get_callers_map());
-        // self.callgraph.print_call_graph();
-    }
 
     fn only_caller_range_analysis(&mut self) {
         let ssa_def_id = self.ssa_def_id.expect("SSA definition ID is not set");
@@ -325,7 +283,6 @@ where
         }
 
         rap_debug!("PHASE 2 Complete. Interval analysis finished for call chain start functions.");
-        self.print_all_final_results();
     }
 
     pub fn start_path_constraints_analysis(&mut self) {
@@ -360,43 +317,6 @@ where
                         result
                     );
                     self.path_constraints.insert(def_id, result);
-                }
-            }
-        }
-    }
-
-    pub fn print_all_final_results(&self) {
-        rap_debug!("==============================================");
-        rap_debug!("==== Final Analysis Results for All Functions ====");
-        rap_debug!("==============================================");
-
-        if self.final_vars.is_empty() {
-            rap_info!("No final results available to display.");
-            rap_info!("==============================================");
-            return;
-        }
-
-        let mut sorted_def_ids: Vec<DefId> = self.final_vars.keys().cloned().collect();
-        sorted_def_ids.sort_by_key(|def_id| self.tcx.def_path_str(*def_id));
-
-        for def_id in sorted_def_ids {
-            if let Some(var_map_vec) = self.final_vars_vec.get(&def_id) {
-                rap_debug!("\n--- Function: {} ---", self.tcx.def_path_str(def_id));
-                for (index, var_map) in var_map_vec.iter().enumerate() {
-                    if index == 0 {
-                        continue;
-                    }
-                    rap_debug!("  Final Variables (Set {}):", index);
-                    if var_map.is_empty() {
-                        rap_debug!("  No final variables tracked for this function.");
-                    } else {
-                        let mut sorted_vars: Vec<_> = var_map.iter().collect();
-                        sorted_vars.sort_by_key(|(place, _)| place.local.index());
-
-                        for (place, range) in sorted_vars {
-                            rap_debug!("Var: {:?}, {}", place, range);
-                        }
-                    }
                 }
             }
         }

@@ -379,7 +379,7 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
             }
             3 => {
                 let mut analyzer = RangeAnalyzer::<i128>::new(tcx, false);
-                analyzer.run();
+                analyzer.start_path_constraints_analysis();
                 let result = analyzer.get_all_path_constraints();
                 rap_info!("{}", PathConstraintMapWrapper(result));
             }

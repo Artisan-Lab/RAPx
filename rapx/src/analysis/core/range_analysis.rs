@@ -22,52 +22,85 @@ use std::{
 
 pub type RAResult<'tcx, T> = HashMap<Place<'tcx>, Range<T>>;
 pub type RAResultMap<'tcx, T> = FxHashMap<DefId, HashMap<Place<'tcx>, Range<T>>>;
+pub type RAVecResultMap<'tcx, T> = FxHashMap<DefId, Vec<HashMap<Place<'tcx>, Range<T>>>>;
+
 pub type PathConstraint<'tcx> = HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>>;
 pub type PathConstraintMap<'tcx> =
     FxHashMap<DefId, HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>>>;
 pub struct RAResultWrapper<'tcx, T: Clone + PartialOrd>(pub RAResult<'tcx, T>);
 pub struct RAResultMapWrapper<'tcx, T: Clone + PartialOrd>(pub RAResultMap<'tcx, T>);
+pub struct RAVecResultMapWrapper<'tcx, T: Clone + PartialOrd>(pub RAVecResultMap<'tcx, T>);
 pub struct PathConstraintWrapper<'tcx>(pub PathConstraint<'tcx>);
 pub struct PathConstraintMapWrapper<'tcx>(pub PathConstraintMap<'tcx>);
 
-/// This is the trait for range analysis. Range analysis is used to determine the value range of a
-/// given variable at particular program points.
+/// The core trait for performing range analysis over Rust MIR.
+///
+/// This trait provides access to both intra-procedural and inter-procedural
+/// range results inferred through static interval analysis.
 pub trait RangeAnalysis<'tcx, T: IntervalArithmetic + ConstConvert + Debug>: Analysis {
     /// Returns the range information for all local variables (Places) in a given function.
     ///
     /// Parameters:
-    /// - def_id: The function's unique identifier (DefId)
+    /// - `def_id`: The function's unique identifier (DefId).
     ///
     /// Returns:
-    /// - A HashMap mapping each Place (variable) in the function to its inferred Range<T>.
+    /// - A `HashMap` mapping each `Place` (variable) in the function to its inferred `Range<T>`.
     fn get_fn_range(&self, def_id: DefId) -> Option<RAResult<'tcx, T>>;
+
+    /// Returns the range analysis results for **each call instance** of the specified function.
+    ///
+    /// This is useful in interprocedural or context-sensitive analyses,
+    /// where a function might be analyzed multiple times under different calling contexts.
+    ///
+    /// Parameters:
+    /// - `def_id`: The target function's `DefId`.
+    ///
+    /// Returns:
+    /// - A `Vec<HashMap<Place, Range<T>>>`, where each entry corresponds to one invocation context.
+    fn get_per_call_fn_ranges(&self, def_id: DefId) -> Option<Vec<RAResult<'tcx, T>>>;
 
     /// Returns the complete mapping of range information for all functions in the crate.
     ///
     /// Returns:
-    /// - A map from DefId (function) to a HashMap of Places and their corresponding ranges.
+    /// - A map from `DefId` (function) to a `HashMap` of `Place`s and their corresponding `Range<T>`.
     fn get_all_fn_ranges(&self) -> RAResultMap<'tcx, T>;
 
-    /// Returns the range for a specific local variable in a specific function.
+    /// Returns the range results for **every call instance** of every function in the crate.
+    ///
+    /// Returns:
+    /// - A map from `DefId` to a `Vec<HashMap<Place, Range<T>>>`,
+    ///   where each `Vec` element corresponds to a different call context.
+    fn get_per_call_all_fn_ranges(&self) -> RAVecResultMap<'tcx, T>;
+
+    /// Returns the inferred range for a specific variable (Place) in a specific function.
     ///
     /// Parameters:
-    /// - def_id: The function's identifier
-    /// - local: The target Place (local variable) within the function
+    /// - `def_id`: The target function's `DefId`.
+    /// - `local`: The target `Place` (local variable) within the function.
     ///
     /// Returns:
-    /// - The inferred Range<T> if available, otherwise None.
+    /// - The inferred `Range<T>` if available, otherwise `None`.
     fn get_fn_local_range(&self, def_id: DefId, local: Place<'tcx>) -> Option<Range<T>>;
 
-    /// Returns:
-    /// - A mapping from paths (as sequences of basic block indices) to their corresponding
-    ///   control-flow constraints expressed as (Place, Place, BinOp).
+    /// Returns a mapping from feasible control-flow paths to symbolic constraints.
     ///
-    /// This supports path-sensitive pruning by allowing reasoning over feasible paths.
-
+    /// Each constraint is a triple of (`Place`, `Place`, `BinOp`) representing
+    /// path-sensitive relational information useful for pruning infeasible paths.
+    ///
+    /// Parameters:
+    /// - `def_id`: The target function's `DefId`.
+    ///
+    /// Returns:
+    /// - An optional `PathConstraint`, mapping paths to symbolic conditions.
     fn get_fn_path_constraints(&self, def_id: DefId) -> Option<PathConstraint<'tcx>>;
 
+    /// Returns path constraints for all functions in the crate.
+    ///
+    /// Returns:
+    /// - A mapping from `DefId` to their corresponding `PathConstraint` information.
     fn get_all_path_constraints(&self) -> PathConstraintMap<'tcx>;
 }
+
 
 impl<'tcx, T> Display for RAResultWrapper<'tcx, T>
 where
@@ -90,8 +123,36 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (def_id, ra_result) in &self.0 {
             writeln!(f, "DefId: {:?} =>", def_id)?;
-            for (place, range) in ra_result {
+
+            let mut sorted: Vec<_> = ra_result.iter().collect();
+            sorted.sort_by_key(|(place, _)| place.local.as_usize());
+
+            for (place, range) in sorted {
                 writeln!(f, "  {:?} => {}", place, range)?;
+            }
+        }
+        Ok(())
+    }
+}
+impl<'tcx, T> Display for RAVecResultMapWrapper<'tcx, T>
+where
+    DefId: Debug,
+    Place<'tcx>: Debug,
+    T: IntervalArithmetic + Clone + PartialOrd + Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (def_id, vec_of_maps) in &self.0 {
+            writeln!(f, "DefId: {:?} =>", def_id)?;
+
+            for (i, map) in vec_of_maps.iter().enumerate() {
+                writeln!(f, "  Result Set #{}:", i)?;
+
+                let mut sorted: Vec<_> = map.iter().collect();
+                sorted.sort_by_key(|(place, _)| place.local.as_usize());
+
+                for (place, range) in sorted {
+                    writeln!(f, "    {:?} => {}", place, range)?;
+                }
             }
         }
         Ok(())
