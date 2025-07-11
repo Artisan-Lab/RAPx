@@ -28,6 +28,11 @@ impl<'tcx> DataFlowAnalysis for DataFlowAnalyzer<'tcx> {
         let graph = self.graphs.get(&def_id).unwrap();
         graph.collect_equivalent_locals(local, true)
     }
+
+    fn param_return_deps(&self, def_id: DefId) -> IndexVec<Local, bool> {
+        let graph = self.graphs.get(&def_id).unwrap();
+        graph.param_return_deps()
+    }
 }
 
 impl<'tcx> Analysis for DataFlowAnalyzer<'tcx> {
@@ -37,6 +42,9 @@ impl<'tcx> Analysis for DataFlowAnalyzer<'tcx> {
 
     fn run(&mut self) {
         self.build_graphs();
+        if self.debug {
+            self.draw_graphs();
+        }
     }
 
     fn reset(&mut self) {

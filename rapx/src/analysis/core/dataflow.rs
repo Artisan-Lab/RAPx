@@ -4,7 +4,7 @@ pub mod graph;
 
 use std::{
     collections::{HashMap, HashSet},
-    fmt::{self, Display},
+    fmt::{self, Display, Debug},
     fs::File,
     io::Write,
     process::Command,
@@ -23,6 +23,7 @@ use rustc_span::Span;
 pub struct DataFlowGraph {
     pub nodes: GraphNodes,
     pub edges: GraphEdges,
+    pub param_ret_deps: IndexVec<Local, bool>,
 }
 pub type DataFlowGraphMap = HashMap<DefId, DataFlowGraph>;
 pub struct DataFlowGraphWrapper(pub DataFlowGraph);
@@ -59,9 +60,49 @@ pub trait DataFlowAnalysis: Analysis {
 
     /// The function returns a set of Locals that are equivelent to the given `local`.
     fn collect_equivalent_locals(&self, def_id: DefId, local: Local) -> HashSet<Local>;
+
+    /// The function returns an IndexVec of whether the returned Local depends on the parameter Local.
+    fn param_return_deps(&self, def_id: DefId) -> IndexVec<Local, bool>;
 }
 
 impl Display for DataFlowGraphWrapper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let graph = &self.0;
+        write!(
+            f,
+            "Graph statistics: {} nodes, {} edges.\n",
+            graph.nodes.len(),
+            graph.edges.len()
+        )?;
+        if graph.param_ret_deps.len() > 1 {
+            write!(f, "Return value dependencies: \n")?;
+        }
+        for (node_idx, deps) in graph.param_ret_deps.iter_enumerated() {
+            if node_idx.as_u32() > 0 {
+                if *deps {
+                    write!(f, "Parameter {:?} ---> Return value _0.\n", node_idx)?;
+                }
+                else {
+                    write!(f, "Parameter {:?} -x-> Return value _0.\n", node_idx)?;
+                }
+            }
+        }
+
+        for (node_idx, node) in graph.nodes.iter_enumerated() {
+            let node_adj: Vec<Local> = node
+                .out_edges
+                .iter()
+                .map(|edge_idx| graph.edges[*edge_idx].dst)
+                .collect();
+            if !node_adj.is_empty() {
+                write!(f, "Node {:?} -> Node {:?}\n", node_idx, node_adj)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Debug for DataFlowGraphWrapper {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Nodes:")?;
         for node in &self.0.nodes {
@@ -82,6 +123,20 @@ impl Display for DataFlowGraphMapWrapper {
             writeln!(
                 f,
                 "DefId: {:?}\n{}",
+                def_id,
+                DataFlowGraphWrapper(dfg.clone())
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl Debug for DataFlowGraphMapWrapper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (def_id, dfg) in &self.0 {
+            writeln!(
+                f,
+                "DefId: {:?}\n{:?}",
                 def_id,
                 DataFlowGraphWrapper(dfg.clone())
             )?;
