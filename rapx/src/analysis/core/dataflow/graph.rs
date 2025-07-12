@@ -410,7 +410,7 @@ impl Graph {
             Direction::Downside,
             &mut node_operator,
             &mut Self::always_true_edge_validator,
-            true,
+            false,
             &mut seen,
         );
         seen.clear();
@@ -420,7 +420,7 @@ impl Graph {
                 Direction::Upside,
                 &mut node_operator,
                 &mut Self::always_true_edge_validator,
-                true,
+                false,
                 &mut seen,
             );
         }
@@ -452,13 +452,13 @@ impl Graph {
         edge_validator: &mut G,
         traverse_all: bool,
         seen: &mut HashSet<Local>,
-    ) -> DFSStatus
+    ) -> (DFSStatus, bool)
     where
         F: FnMut(&Graph, Local) -> DFSStatus,
         G: FnMut(&Graph, EdgeIdx) -> DFSStatus,
     {
         if seen.contains(&now) {
-            return DFSStatus::Stop;
+            return (DFSStatus::Stop, false);
         }
         seen.insert(now);
         macro_rules! traverse {
@@ -466,7 +466,7 @@ impl Graph {
                 for edge_idx in self.nodes[now].$edges.iter() {
                     let edge = &self.edges[*edge_idx];
                     if matches!(edge_validator(self, *edge_idx), DFSStatus::Continue) {
-                        let result = self.dfs(
+                        let (dfs_status, result) = self.dfs(
                             edge.$field,
                             direction,
                             node_operator,
@@ -474,8 +474,9 @@ impl Graph {
                             traverse_all,
                             seen,
                         );
-                        if matches!(result, DFSStatus::Stop) && !traverse_all {
-                            return DFSStatus::Stop;
+
+                        if matches!(dfs_status, DFSStatus::Stop) && result && !traverse_all {
+                            return (DFSStatus::Stop, true);
                         }
                     }
                 }
@@ -495,9 +496,9 @@ impl Graph {
                     traverse!(out_edges, dst);
                 }
             };
-            DFSStatus::Continue
+            (DFSStatus::Continue, false)
         } else {
-            DFSStatus::Stop
+            (DFSStatus::Stop, true)
         }
     }
 
