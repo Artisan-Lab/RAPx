@@ -22,8 +22,8 @@ use super::contracts::abstract_state::{
     AbstractStateItem, AlignState, PathInfo, StateType, VType, Value,
 };
 use super::contracts::contract::Contract;
-use super::dominated_chain::DominatedGraph;
-use super::dominated_chain::InterResultNode;
+use super::dominated_graph::DominatedGraph;
+use super::dominated_graph::InterResultNode;
 use super::generic_check::GenericChecker;
 use super::inter_record::InterAnalysisRecord;
 use super::matcher::UnsafeApi;

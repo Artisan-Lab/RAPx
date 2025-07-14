@@ -253,6 +253,12 @@ fn test_init() {
 }
 
 #[test]
+fn test_cis() {
+    let output = running_tests_with_arg("safety_check/verify_case1", "-verify");
+    assert_eq!(output.contains("ValidPtr"), true);
+}
+
+#[test]
 fn test_ssa_transform() {
     let output = running_tests_with_arg("ssa/ssa_transform", "-ssa");
     assert_eq!(output.contains("ssa lvalue check true"), true);

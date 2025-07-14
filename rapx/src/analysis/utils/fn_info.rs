@@ -1,7 +1,10 @@
+use crate::analysis::senryx::contracts::property::PropertyContract;
 use crate::analysis::senryx::matcher::parse_unsafe_api;
 use crate::analysis::unsafety_isolation::generate_dot::NodeType;
+use crate::rap_warn;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::DefId;
+use rustc_hir::Attribute;
 use rustc_hir::ImplItemKind;
 use rustc_middle::mir::Local;
 use rustc_middle::mir::{BasicBlock, Terminator};
@@ -17,6 +20,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
+use syn::Expr;
 
 pub fn generate_node_ty(tcx: TyCtxt<'_>, def_id: DefId) -> NodeType {
     (def_id, check_safety(tcx, def_id), get_type(tcx, def_id))
@@ -483,3 +487,376 @@ pub fn is_strict_ty<'tcx>(tcx: TyCtxt<'tcx>, ori_ty: Ty<'tcx>) -> bool {
     }
     ty.is_bool() || ty.is_str() || flag
 }
+
+/// Get the annotation in tag-std style.
+/// Then generate the contractual invariant states (CIS) for the args.
+/// This function will recognize the args name and record states to MIR variable (represent by usize).
+/// Return value means Vec<(local_id, fields of this local, contracts)>
+pub fn generate_contract_from_annotation(
+    tcx: TyCtxt<'_>,
+    def_id: DefId,
+) -> Vec<(usize, Vec<usize>, PropertyContract)> {
+    const REGISTER_TOOL: &str = "rapx";
+    let tool_attrs = tcx.get_all_attrs(def_id).filter(|attr| {
+        if let Attribute::Unparsed(tool_attr) = attr
+            && tool_attr.path.segments[0].as_str() == REGISTER_TOOL
+        {
+            return true;
+        }
+        false
+    });
+    let mut results = Vec::new();
+    for attr in tool_attrs {
+        let attr_str = rustc_hir_pretty::attribute_to_string(&tcx, attr);
+        let safety_attr =
+            safety_parser::property_attr::parse_inner_attr_from_str(attr_str.as_str()).unwrap();
+        let attr_name = safety_attr.name;
+        let attr_kind = safety_attr.kind;
+        let contract = PropertyContract::new(tcx, def_id, attr_kind, attr_name, &safety_attr.expr);
+        let (local, fields) = parse_cis_local(tcx, def_id, &safety_attr.expr);
+        results.push((local, fields, contract));
+    }
+    if results.len() > 0 {
+        rap_warn!("results:\n{:?}", results);
+    }
+    results
+}
+
+/// Parse attr.expr into local id and local fields.
+///
+/// Example:
+/// ```
+/// #[rapx::inner(property = ValidPtr(ptr, u32, 1), kind = "precond")]
+/// #[rapx::inner(property = ValidNum(region.size>=0), kind = "precond")]
+/// pub fn xor_secret_region(ptr: *mut u32, region:SecretRegion) -> u32 {...}
+/// ```
+///
+/// The first attribute will be parsed as (1, []).
+///     -> "1" means the first arg "ptr", "[]" means no fields.
+/// The second attribute will be parsed as (2, [1]).
+///     -> "2" means the second arg "region", "[1]" means "size" is region's second field.
+///
+/// If this function doesn't have args, then it will return default pattern: (0, Vec::new())
+pub fn parse_cis_local(tcx: TyCtxt<'_>, def_id: DefId, expr: &Vec<Expr>) -> (usize, Vec<usize>) {
+    // match expr with cis local
+    for e in expr {
+        if let Some((base, fields, _ty)) = parse_expr_into_local_and_ty(tcx, def_id, e.clone()) {
+            return (base, fields);
+        }
+    }
+
+    (0, Vec::new())
+}
+
+/// parse single expr into (local, fields, ty)
+pub fn parse_expr_into_local_and_ty(
+    tcx: TyCtxt<'_>,
+    def_id: DefId,
+    expr: Expr,
+) -> Option<(usize, Vec<usize>, Ty)> {
+    if let Some((base_ident, fields)) = access_ident_recursive(&expr) {
+        let (param_names, param_tys) = parse_signature(tcx, def_id);
+        if param_names[0] == "0".to_string() {
+            return None;
+        }
+        if let Some(param_index) = param_names.iter().position(|name| name == &base_ident) {
+            let mut current_ty = param_tys[param_index];
+            let mut field_indices = Vec::new();
+            for field_name in fields {
+                current_ty = current_ty.peel_refs();
+                if let rustc_middle::ty::TyKind::Adt(adt_def, arg_list) = *current_ty.kind() {
+                    let variant = adt_def.non_enum_variant();
+                    // 1. if field_name is number, then parse it as usize
+                    if let Ok(field_idx) = field_name.parse::<usize>() {
+                        if field_idx < variant.fields.len() {
+                            field_indices.push(field_idx);
+                            current_ty = variant.fields[rustc_abi::FieldIdx::from_usize(field_idx)]
+                                .ty(tcx, arg_list);
+                            continue;
+                        }
+                    }
+                    // 2. if field_name is String, then compare it with current ty's field names
+                    if let Some((idx, _)) = variant
+                        .fields
+                        .iter()
+                        .enumerate()
+                        .find(|(_, f)| f.ident(tcx).name.to_string() == field_name.clone())
+                    {
+                        field_indices.push(idx);
+                        current_ty =
+                            variant.fields[rustc_abi::FieldIdx::from_usize(idx)].ty(tcx, arg_list);
+                    }
+                    // 3. if field_name can not match any fields, then break
+                    else {
+                        break; // TODO:
+                    }
+                }
+                // if current ty is not Adt, then break the loop
+                else {
+                    break; // TODO:
+                }
+            }
+            // It's different from default one, we return the result as param_index+1 because param_index count from 0.
+            // But 0 in MIR is the ret index, the args' indexes begin from 1.
+            return Some((param_index + 1, field_indices, current_ty));
+        }
+    }
+    None
+}
+
+/// return the Vecs of params' name and types
+pub fn parse_signature(tcx: TyCtxt<'_>, def_id: DefId) -> (Vec<String>, Vec<Ty>) {
+    // 0. pre-handle local def id
+    let local_def_id = if let Some(local_def_id) = def_id.as_local() {
+        local_def_id
+    } else {
+        return (vec!["0".to_string()], Vec::new());
+    };
+    // 1. parse local def_id and get arg list
+    let hir_body = tcx.hir_body_owned_by(local_def_id);
+    if hir_body.params.len() == 0 {
+        return (vec!["0".to_string()], Vec::new());
+    }
+    // 2. contruct the vec of param and param ty
+    let params = hir_body.params;
+    let typeck_results = tcx.typeck_body(hir_body.id());
+    let mut param_names = Vec::new();
+    let mut param_tys = Vec::new();
+    for param in params {
+        match param.pat.kind {
+            rustc_hir::PatKind::Binding(_, _, ident, _) => {
+                param_names.push(ident.name.to_string());
+                let ty = typeck_results.pat_ty(param.pat);
+                param_tys.push(ty);
+            }
+            _ => {
+                param_names.push(String::new());
+                param_tys.push(typeck_results.pat_ty(param.pat));
+            }
+        }
+    }
+    (param_names, param_tys)
+}
+
+/// return the (ident, its fields) of the expr.
+/// illustrated cases :
+///    ptr	("ptr", [])
+///    region.size	("region", ["size"])
+///    tuple.0.value	("tuple", ["0", "value"])
+pub fn access_ident_recursive(expr: &Expr) -> Option<(String, Vec<String>)> {
+    match expr {
+        Expr::Path(syn::ExprPath { path, .. }) => {
+            if path.segments.len() == 1 {
+                let ident = path.segments[0].ident.to_string();
+                Some((ident, Vec::new()))
+            } else {
+                None
+            }
+        }
+        // get the base and fields recursively
+        Expr::Field(syn::ExprField { base, member, .. }) => {
+            let (base_ident, mut fields) =
+                if let Some((base_ident, fields)) = access_ident_recursive(base) {
+                    (base_ident, fields)
+                } else {
+                    return None;
+                };
+            let field_name = match member {
+                syn::Member::Named(ident) => ident.to_string(),
+                syn::Member::Unnamed(index) => index.index.to_string(),
+            };
+            fields.push(field_name);
+            Some((base_ident, fields))
+        }
+        _ => None,
+    }
+}
+
+/// parse expr into number.
+pub fn parse_expr_into_number(expr: &Expr) -> Option<usize> {
+    if let Expr::Lit(expr_lit) = expr {
+        if let syn::Lit::Int(lit_int) = &expr_lit.lit {
+            return lit_int.base10_parse::<usize>().ok();
+        }
+    }
+    None
+}
+
+/// Match a type identifier string to a concrete Rust type
+///
+/// This function attempts to match a given type identifier (e.g., "u32", "T", "MyStruct")
+/// to a type in the provided parameter type list. It handles:
+/// 1. Built-in primitive types (u32, usize, etc.)
+/// 2. Generic type parameters (T, U, etc.)
+/// 3. User-defined types found in the parameter list
+///
+/// Arguments:
+/// - `tcx`: Type context for querying compiler information
+/// - `type_ident`: String representing the type identifier to match
+/// - `param_ty`: List of parameter types from the function signature
+///
+/// Returns:
+/// - `Some(Ty)` if a matching type is found
+/// - `None` if no match is found
+pub fn match_ty_with_ident(tcx: TyCtxt<'_>, def_id: DefId, type_ident: String) -> Option<Ty> {
+    // 1. First check for built-in primitive types
+    if let Some(primitive_ty) = match_primitive_type(tcx, type_ident.clone()) {
+        return Some(primitive_ty);
+    }
+    // 2. Check if the identifier matches any generic type parameter
+    if let Some(generic_ty) = find_generic_param(tcx, def_id, type_ident.clone()) {
+        return Some(generic_ty);
+    }
+    // 3. Check if the identifier matches any user-defined type in the parameters
+    find_user_defined_type(tcx, def_id, type_ident)
+}
+
+/// Match built-in primitive types from String
+fn match_primitive_type(tcx: TyCtxt<'_>, type_ident: String) -> Option<Ty> {
+    match type_ident.as_str() {
+        "i8" => Some(tcx.types.i8),
+        "i16" => Some(tcx.types.i16),
+        "i32" => Some(tcx.types.i32),
+        "i64" => Some(tcx.types.i64),
+        "i128" => Some(tcx.types.i128),
+        "isize" => Some(tcx.types.isize),
+        "u8" => Some(tcx.types.u8),
+        "u16" => Some(tcx.types.u16),
+        "u32" => Some(tcx.types.u32),
+        "u64" => Some(tcx.types.u64),
+        "u128" => Some(tcx.types.u128),
+        "usize" => Some(tcx.types.usize),
+        "f16" => Some(tcx.types.f16),
+        "f32" => Some(tcx.types.f32),
+        "f64" => Some(tcx.types.f64),
+        "f128" => Some(tcx.types.f128),
+        "bool" => Some(tcx.types.bool),
+        "char" => Some(tcx.types.char),
+        "str" => Some(tcx.types.str_),
+        _ => None,
+    }
+}
+
+/// Find generic type parameters in the parameter list
+fn find_generic_param(tcx: TyCtxt<'_>, def_id: DefId, type_ident: String) -> Option<Ty> {
+    let param_ty = parse_signature(tcx, def_id).1;
+    param_ty.iter().find_map(|&ty| {
+        if let TyKind::Param(param) = ty.kind() {
+            // Compare the parameter name to our identifier
+            if param.name.to_string() == type_ident {
+                return Some(ty);
+            }
+        }
+        None
+    })
+}
+
+/// Find user-defined types in the parameter list
+fn find_user_defined_type(tcx: TyCtxt<'_>, def_id: DefId, type_ident: String) -> Option<Ty> {
+    let param_ty = parse_signature(tcx, def_id).1;
+    param_ty.iter().find_map(|&ty| {
+        // Peel off references and pointers to get to the underlying type
+        let peeled_ty = ty.peel_refs();
+        match peeled_ty.kind() {
+            TyKind::Adt(_adt_def, _raw_list) => {
+                // Compare the type name to our identifier
+                let name = tcx.item_name(def_id).to_string();
+                if name == type_ident {
+                    return Some(peeled_ty);
+                }
+                // for variant in adt_def.variants() {
+                //     for field in variant.fields.iter() {
+                //         let field_ty = field.ty(tcx, raw_list);
+                //         if let Some(found_ty) = find_user_defined_type(tcx, def_id, type_ident) {
+                //             return Some(found_ty);
+                //         }
+                //     }
+                // }
+            }
+            // TyKind::Tuple(fields) => {
+            //     // Check each field type in the tuple
+            //     for field_ty in fields.iter() {
+
+            //     }
+            // }
+            _ => {}
+        }
+        None
+    })
+}
+
+// fn find_first_chain_in_expr(expr: &Expr, param_names: &[String]) -> Option<(String, Vec<String>)> {
+//     if let Some(chain) = access_ident_recursive(expr) {
+//         if param_names.contains(&chain.0) {
+//             return Some(chain);
+//         }
+//     }
+
+//     let mut children = Vec::new();
+//     match expr {
+//         Expr::Array(expr) => children.extend(expr.elems.iter()),
+//         Expr::Assign(expr) => {
+//             children.push(&expr.left);
+//             children.push(&expr.right);
+//         }
+//         Expr::Binary(expr) => {
+//             children.push(&expr.left);
+//             children.push(&expr.right);
+//         }
+//         Expr::Call(expr) => {
+//             children.push(&expr.func);
+//             children.extend(expr.args.iter());
+//         }
+//         Expr::Cast(expr) => children.push(&expr.expr),
+//         Expr::Field(expr) => children.push(&expr.base),
+//         Expr::Group(expr) => children.push(&expr.expr),
+//         Expr::Index(expr) => {
+//             children.push(&expr.expr);
+//             children.push(&expr.index);
+//         }
+//         Expr::Let(expr) => children.push(&expr.expr),
+//         // Expr::Lit(expr) => children.push(&expr.lit),
+//         Expr::MethodCall(expr) => {
+//             children.push(&expr.receiver);
+//             children.extend(expr.args.iter());
+//         }
+//         Expr::Paren(expr) => children.push(&expr.expr),
+//         Expr::Range(expr) => {
+//             if let Some(start) = &expr.start {
+//                 children.push(start);
+//             }
+//             if let Some(end) = &expr.end {
+//                 children.push(end);
+//             }
+//             // if let Some(limits) = &expr.limits {
+//             //     let _ = limits;
+//             // }
+//         }
+//         Expr::Reference(expr) => children.push(&expr.expr),
+//         Expr::Repeat(expr) => {
+//             children.push(&expr.expr);
+//             children.push(&expr.len);
+//         }
+//         // Expr::Struct(expr) => {
+//         //     children.push(&expr.path);
+//         //     for field in &expr.fields {
+//         //         children.push(&field.expr);
+//         //     }
+//         //     if let Some(rest) = &expr.rest {
+//         //         children.push(rest);
+//         //     }
+//         // }
+//         Expr::Try(expr) => children.push(&expr.expr),
+//         Expr::Tuple(expr) => children.extend(expr.elems.iter()),
+//         Expr::Unary(expr) => children.push(&expr.expr),
+//         _ => {}
+//     }
+
+//     for child in children {
+//         if let Some(chain) = find_first_chain_in_expr(child, param_names) {
+//             return Some(chain);
+//         }
+//     }
+
+//     None
+// }

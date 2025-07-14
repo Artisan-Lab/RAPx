@@ -488,9 +488,11 @@ dependencies = [
  "petgraph",
  "regex",
  "rustc-demangle",
+ "safety-parser",
  "serde",
  "serde_json",
  "snafu",
+ "syn 2.0.100",
  "wait-timeout",
  "walkdir",
  "z3",
@@ -548,6 +550,17 @@ name = "ryu"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
+
+[[package]]
+name = "safety-parser"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "35fba53248af65ceb85d145e54fed4da4b7d8c27e2fd995a23580581b4ec34c6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+]
 
 [[package]]
 name = "same-file"

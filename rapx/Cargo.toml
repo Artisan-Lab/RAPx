@@ -41,6 +41,9 @@ petgraph = "0.7.0"
 if_chain = "1.0"
 num-traits = "0.2.19"
 intervals = "2.1"
+safety-parser = "0.2.0"
+syn = { version = "2", features = ["extra-traits", "full"] }
+
 [features]
 backtraces = ["snafu/backtraces", "snafu/backtraces-impl-backtrace-crate"]
 

@@ -1,11 +1,18 @@
 use crate::{
-    analysis::utils::fn_info::{display_hashmap, get_pointee, is_ptr, is_ref},
+    analysis::{
+        senryx::contracts::{
+            contract,
+            property::{ContractualInvariantState, PropertyContract},
+        },
+        utils::fn_info::{display_hashmap, get_pointee, is_ptr, is_ref},
+    },
     rap_warn,
 };
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::Local;
 use rustc_middle::ty::TyKind;
 use rustc_middle::ty::{Ty, TyCtxt};
+use serde::de;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,6 +142,7 @@ pub struct VariableNode<'tcx> {
     pub is_dropped: bool,
     pub states: States,
     pub const_value: usize,
+    pub cis: ContractualInvariantState<'tcx>,
 }
 
 impl<'tcx> VariableNode<'tcx> {
@@ -155,6 +163,7 @@ impl<'tcx> VariableNode<'tcx> {
             is_dropped: false,
             states,
             const_value: 0,
+            cis: ContractualInvariantState::new_default(),
         }
     }
 
@@ -169,6 +178,7 @@ impl<'tcx> VariableNode<'tcx> {
             is_dropped: false,
             states: States::new(),
             const_value: 0,
+            cis: ContractualInvariantState::new_default(),
         }
     }
 
@@ -183,6 +193,7 @@ impl<'tcx> VariableNode<'tcx> {
             is_dropped: false,
             states,
             const_value: 0,
+            cis: ContractualInvariantState::new_default(),
         }
     }
 }
@@ -199,6 +210,7 @@ impl<'tcx> DominatedGraph<'tcx> {
     // This constructor will init all the local arguments' node states.
     // If input argument is ptr or ref, it will point to a corresponding obj node.
     pub fn new(tcx: TyCtxt<'tcx>, def_id: DefId) -> Self {
+        crate::analysis::utils::fn_info::generate_contract_from_annotation(tcx, def_id);
         let body = tcx.optimized_mir(def_id);
         let locals = body.local_decls.clone();
         let fn_sig = tcx.fn_sig(def_id).skip_binder();

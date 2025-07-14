@@ -1,13 +1,13 @@
 pub mod contracts;
 #[allow(unused)]
-pub mod dominated_chain;
+pub mod dominated_graph;
 pub mod generic_check;
 pub mod inter_record;
 pub mod matcher;
 #[allow(unused)]
 pub mod visitor;
 pub mod visitor_check;
-use dominated_chain::InterResultNode;
+use dominated_graph::InterResultNode;
 use inter_record::InterAnalysisRecord;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;

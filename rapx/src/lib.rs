@@ -1,6 +1,6 @@
 #![feature(rustc_private)]
 #![feature(box_patterns)]
-
+#![feature(let_chains)]
 #[macro_use]
 pub mod utils;
 pub mod analysis;
@@ -12,6 +12,7 @@ extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_errors;
 extern crate rustc_hir;
+extern crate rustc_hir_pretty;
 extern crate rustc_index;
 extern crate rustc_interface;
 extern crate rustc_metadata;
