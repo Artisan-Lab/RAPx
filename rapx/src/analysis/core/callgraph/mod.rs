@@ -1,5 +1,5 @@
-pub mod default;
 pub mod visitor;
+pub mod default;
 
 use crate::Analysis;
 use rustc_hir::def_id::DefId;
