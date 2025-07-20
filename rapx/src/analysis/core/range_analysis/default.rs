@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 use crate::{
     analysis::{
         core::{
@@ -14,7 +16,7 @@ use crate::{
         },
         Analysis,
     },
-    rap_debug,
+    rap_debug, rap_info,
 };
 
 use rustc_data_structures::fx::FxHashMap;
@@ -294,7 +296,10 @@ where
                     let mut cg: ConstraintGraph<'tcx, T> = ConstraintGraph::new_without_ssa(def_id);
                     let mut graph = MopGraph::new(self.tcx, def_id);
                     graph.solve_scc();
-                    let paths: Vec<Vec<usize>> = graph.get_paths();
+                    // rap_info!("child_scc: {:?}\n", graph.child_scc);
+                    // rap_info!("scc_indices: {:?}\n", graph.scc_indices);
+                    // rap_info!("blocks: {:?}\n", graph.blocks);
+                    let paths: Vec<Vec<usize>> = graph.get_all_branch_sub_blocks_paths();
                     let result = cg.start_analyze_path_constraints(body_mut_ref, &paths);
                     rap_debug!(
                         "Paths for function {}: {:?}",

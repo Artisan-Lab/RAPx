@@ -13,16 +13,25 @@ pub(crate) fn create_ssa_struct(_krate: &mut ast::Crate) {
     let ssa_struct = create_struct(
         "SSAstmt",
         vec![
-            ("id", Symbol::intern("u64")),
-            ("name", Symbol::intern("String")),
+            ("para1", Symbol::intern("i128")),
+            ("para2", Symbol::intern("i128")),
+            ("para3", Symbol::intern("i128")),
+            ("para4", Symbol::intern("i128")),
+            ("para5", Symbol::intern("i128")),
+            ("para6", Symbol::intern("i128")),
+            ("para7", Symbol::intern("i128")),
+            ("para8", Symbol::intern("i128")),
+            ("para9", Symbol::intern("i128")),
+            ("para10", Symbol::intern("i128")),
         ],
     );
 
     let essa_struct = create_struct(
         "ESSAstmt",
         vec![
-            ("sku", Symbol::intern("u32")),
-            ("price", Symbol::intern("f64")),
+            ("op1", Symbol::intern("i128")),
+            ("op2", Symbol::intern("i128")),
+            ("cmp", Symbol::intern("i128")),
         ],
     );
 

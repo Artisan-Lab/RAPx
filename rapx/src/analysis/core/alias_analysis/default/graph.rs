@@ -579,6 +579,68 @@ impl<'tcx> MopGraph<'tcx> {
         self.dfs_on_spanning_tree(0, &mut stack, &mut paths);
         paths
     }
+    pub fn get_all_branch_sub_blocks_paths(&self) -> Vec<Vec<usize>> {
+        // 1. Get all execution paths
+        let all_paths = self.get_paths();
+
+        // Use FxHashSet to collect all unique lists of scc_sub_blocks.
+        // Vec<usize> implements Hash, so it can be inserted directly into the set.
+        let mut unique_branch_sub_blocks = FxHashSet::<Vec<usize>>::default();
+
+        // 2. Iterate over each path
+        for path in all_paths {
+            // 3. For the current path, get the corresponding scc_sub_blocks for branch nodes
+            let branch_blocks_for_this_path = self.get_branch_sub_blocks_for_path(&path);
+            rap_debug!(
+                "Branch blocks for path {:?}: {:?}",
+                path,
+                branch_blocks_for_this_path
+            );
+            // 4. Add these scc_sub_blocks to the set
+            //    Use insert to avoid duplicates
+            unique_branch_sub_blocks.insert(branch_blocks_for_this_path);
+        }
+
+        // 5. Convert the set of unique results back to a Vec and return
+        unique_branch_sub_blocks.into_iter().collect()
+    }
+
+    pub fn get_branch_sub_blocks_for_path(&self, path: &[usize]) -> Vec<usize> {
+        let mut expanded_path = Vec::new();
+        // Use FxHashSet to track which SCCs have already been expanded in this path,
+        // preventing repeated expansion due to cycles.
+        let mut processed_scc_indices = FxHashSet::default();
+
+        for &block_idx in path {
+            // 1. Get the representative SCC index of the current basic block
+            let scc_idx = self.scc_indices[block_idx];
+
+            // 2. Try inserting scc_idx into the set. If successful (returns true),
+            // it means this SCC is encountered for the first time.
+            if processed_scc_indices.insert(scc_idx) {
+                // First time encountering this SCC: perform full expansion
+
+                // a. First, add the SCC representative itself to the path
+                expanded_path.push(scc_idx);
+
+                // b. Then, retrieve the SCC node information
+                let scc_node = &self.blocks[scc_idx];
+
+                // c. If it has sub-blocks (i.e., it’s a multi-node SCC),
+                // append all sub-blocks to the path.
+                // scc_sub_blocks are already ordered (topologically or near-topologically)
+                if !scc_node.scc_sub_blocks.is_empty() {
+                    expanded_path.extend_from_slice(&scc_node.scc_sub_blocks);
+                }
+            } else {
+                // SCC already seen before (e.g., due to a cycle in the path):
+                // Only add the representative node as a connector, skip internal blocks.
+                expanded_path.push(scc_idx);
+            }
+        }
+
+        expanded_path
+    }
 
     pub fn switch_target(&mut self, block_index: usize) -> Option<usize> {
         let block = &self.blocks[block_index];
