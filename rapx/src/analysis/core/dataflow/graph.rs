@@ -309,7 +309,7 @@ impl Graph {
     // For the later, if only one op meets the condition, we still take it into consideration.
     pub fn collect_equivalent_locals(&self, local: Local, strict: bool) -> HashSet<Local> {
         let mut set = HashSet::new();
-        let mut root = local;
+        let root = Cell::new(local);
         let reduce_func = if strict {
             DFSStatus::and
         } else {
@@ -323,8 +323,14 @@ impl Graph {
                     match op {
                         NodeOp::Nop | NodeOp::Use | NodeOp::Ref => {
                             //Nop means an orphan node or a parameter
-                            root = idx;
+                            root.set(idx);
                             DFSStatus::Continue
+                        }
+                        NodeOp::Call(_) => {
+                            //We are moving towards upside. Thus we can record the call node and stop dfs.
+                            //We stop because the return value does not equal to parameters
+                            root.set(idx);
+                            DFSStatus::Stop
                         }
                         _ => DFSStatus::Stop,
                     }
@@ -344,6 +350,15 @@ impl Graph {
                         set.insert(idx);
                         DFSStatus::Continue
                     }
+                    NodeOp::Call(_) => {
+                        if idx == root.get() {
+                            set.insert(idx);
+                            DFSStatus::Continue
+                        } else {
+                            // We are moving towards downside. Thus we stop dfs right now.
+                            DFSStatus::Stop
+                        }
+                    }
                     _ => DFSStatus::Stop,
                 })
                 .reduce(reduce_func)
@@ -361,7 +376,7 @@ impl Graph {
         );
         seen.clear();
         self.dfs(
-            root,
+            root.get(),
             Direction::Downside,
             &mut find_equivalent_operator,
             &mut Self::equivalent_edge_validator,
