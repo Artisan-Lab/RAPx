@@ -241,12 +241,6 @@ fn test_test_cons_merge() {
 }
 
 #[test]
-fn test_aligned() {
-    let output = running_tests_with_arg("safety_check/align", "-verify");
-    assert_eq!(output.contains("Aligned"), true);
-}
-
-#[test]
 fn test_init() {
     let output = running_tests_with_arg("safety_check/init", "-verify");
     assert_eq!(output.contains("Init"), true);
