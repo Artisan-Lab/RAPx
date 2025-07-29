@@ -89,7 +89,7 @@ impl<'tcx> DataFlowAnalyzer<'tcx> {
         }
     }
 
-    fn build_graph(&mut self, def_id: DefId) {
+    pub fn build_graph(&mut self, def_id: DefId) {
         if self.graphs.contains_key(&def_id) {
             return;
         }

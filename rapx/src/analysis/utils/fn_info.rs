@@ -1,11 +1,15 @@
+#[allow(unused)]
 use crate::analysis::senryx::contracts::property::PropertyContract;
 use crate::analysis::senryx::matcher::parse_unsafe_api;
 use crate::analysis::unsafety_isolation::generate_dot::NodeType;
+use crate::rap_debug;
 use crate::rap_warn;
+use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::DefId;
 use rustc_hir::Attribute;
 use rustc_hir::ImplItemKind;
+use rustc_middle::mir::BinOp;
 use rustc_middle::mir::Local;
 use rustc_middle::mir::{BasicBlock, Terminator};
 use rustc_middle::ty::{AssocKind, Mutability, Ty, TyCtxt, TyKind};
@@ -109,6 +113,13 @@ pub fn get_cleaned_def_path_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
 pub fn get_sp_json() -> serde_json::Value {
     let json_data: serde_json::Value =
         serde_json::from_str(include_str!("../unsafety_isolation/data/std_sps.json"))
+            .expect("Unable to parse JSON");
+    json_data
+}
+
+pub fn get_std_api_signature_json() -> serde_json::Value {
+    let json_data: serde_json::Value =
+        serde_json::from_str(include_str!("../unsafety_isolation/data/std_sig.json"))
             .expect("Unable to parse JSON");
     json_data
 }
@@ -345,6 +356,13 @@ pub fn is_ref(matched_ty: Ty<'_>) -> bool {
     false
 }
 
+pub fn is_slice(matched_ty: Ty<'_>) -> Option<Ty> {
+    if let ty::Slice(inner) = matched_ty.kind() {
+        return Some(*inner);
+    }
+    None
+}
+
 pub fn has_mut_self_param(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
     if let Some(assoc_item) = tcx.opt_associated_item(def_id) {
         match assoc_item.kind {
@@ -488,6 +506,37 @@ pub fn is_strict_ty<'tcx>(tcx: TyCtxt<'tcx>, ori_ty: Ty<'tcx>) -> bool {
     ty.is_bool() || ty.is_str() || flag
 }
 
+pub fn reverse_op(op: BinOp) -> BinOp {
+    match op {
+        BinOp::Lt => BinOp::Ge,
+        BinOp::Ge => BinOp::Lt,
+        BinOp::Le => BinOp::Gt,
+        BinOp::Gt => BinOp::Le,
+        BinOp::Eq => BinOp::Eq,
+        BinOp::Ne => BinOp::Ne,
+        _ => op,
+    }
+}
+
+/// Same with `generate_contract_from_annotation` but does not contain field types.
+pub fn generate_contract_from_annotation_without_field_types(
+    tcx: TyCtxt<'_>,
+    def_id: DefId,
+) -> Vec<(usize, Vec<usize>, PropertyContract)> {
+    let contracts_with_ty = generate_contract_from_annotation(tcx, def_id);
+
+    contracts_with_ty
+        .into_iter()
+        .map(|(local_id, fields_with_ty, contract)| {
+            let fields: Vec<usize> = fields_with_ty
+                .into_iter()
+                .map(|(field_idx, _)| field_idx)
+                .collect();
+            (local_id, fields, contract)
+        })
+        .collect()
+}
+
 /// Get the annotation in tag-std style.
 /// Then generate the contractual invariant states (CIS) for the args.
 /// This function will recognize the args name and record states to MIR variable (represent by usize).
@@ -495,7 +544,7 @@ pub fn is_strict_ty<'tcx>(tcx: TyCtxt<'tcx>, ori_ty: Ty<'tcx>) -> bool {
 pub fn generate_contract_from_annotation(
     tcx: TyCtxt<'_>,
     def_id: DefId,
-) -> Vec<(usize, Vec<usize>, PropertyContract)> {
+) -> Vec<(usize, Vec<(usize, Ty)>, PropertyContract)> {
     const REGISTER_TOOL: &str = "rapx";
     let tool_attrs = tcx.get_all_attrs(def_id).filter(|attr| {
         if let Attribute::Unparsed(tool_attr) = attr
@@ -513,12 +562,12 @@ pub fn generate_contract_from_annotation(
         let attr_name = safety_attr.name;
         let attr_kind = safety_attr.kind;
         let contract = PropertyContract::new(tcx, def_id, attr_kind, attr_name, &safety_attr.expr);
-        let (local, fields) = parse_cis_local(tcx, def_id, &safety_attr.expr);
+        let (local, fields) = parse_cis_local(tcx, def_id, safety_attr.expr);
         results.push((local, fields, contract));
     }
-    if results.len() > 0 {
-        rap_warn!("results:\n{:?}", results);
-    }
+    // if results.len() > 0 {
+    //     rap_warn!("results:\n{:?}", results);
+    // }
     results
 }
 
@@ -537,23 +586,26 @@ pub fn generate_contract_from_annotation(
 ///     -> "2" means the second arg "region", "[1]" means "size" is region's second field.
 ///
 /// If this function doesn't have args, then it will return default pattern: (0, Vec::new())
-pub fn parse_cis_local(tcx: TyCtxt<'_>, def_id: DefId, expr: &Vec<Expr>) -> (usize, Vec<usize>) {
+pub fn parse_cis_local(
+    tcx: TyCtxt<'_>,
+    def_id: DefId,
+    expr: Vec<Expr>,
+) -> (usize, Vec<(usize, Ty<'_>)>) {
     // match expr with cis local
     for e in expr {
-        if let Some((base, fields, _ty)) = parse_expr_into_local_and_ty(tcx, def_id, e.clone()) {
+        if let Some((base, fields, _ty)) = parse_expr_into_local_and_ty(tcx, def_id, &e) {
             return (base, fields);
         }
     }
-
     (0, Vec::new())
 }
 
 /// parse single expr into (local, fields, ty)
-pub fn parse_expr_into_local_and_ty(
-    tcx: TyCtxt<'_>,
+pub fn parse_expr_into_local_and_ty<'tcx>(
+    tcx: TyCtxt<'tcx>,
     def_id: DefId,
-    expr: Expr,
-) -> Option<(usize, Vec<usize>, Ty)> {
+    expr: &Expr,
+) -> Option<(usize, Vec<(usize, Ty<'tcx>)>, Ty<'tcx>)> {
     if let Some((base_ident, fields)) = access_ident_recursive(&expr) {
         let (param_names, param_tys) = parse_signature(tcx, def_id);
         if param_names[0] == "0".to_string() {
@@ -563,15 +615,16 @@ pub fn parse_expr_into_local_and_ty(
             let mut current_ty = param_tys[param_index];
             let mut field_indices = Vec::new();
             for field_name in fields {
-                current_ty = current_ty.peel_refs();
-                if let rustc_middle::ty::TyKind::Adt(adt_def, arg_list) = *current_ty.kind() {
+                // peel the ref and ptr
+                let peeled_ty = current_ty.peel_refs();
+                if let rustc_middle::ty::TyKind::Adt(adt_def, arg_list) = *peeled_ty.kind() {
                     let variant = adt_def.non_enum_variant();
                     // 1. if field_name is number, then parse it as usize
                     if let Ok(field_idx) = field_name.parse::<usize>() {
                         if field_idx < variant.fields.len() {
-                            field_indices.push(field_idx);
                             current_ty = variant.fields[rustc_abi::FieldIdx::from_usize(field_idx)]
                                 .ty(tcx, arg_list);
+                            field_indices.push((field_idx, current_ty));
                             continue;
                         }
                     }
@@ -582,9 +635,9 @@ pub fn parse_expr_into_local_and_ty(
                         .enumerate()
                         .find(|(_, f)| f.ident(tcx).name.to_string() == field_name.clone())
                     {
-                        field_indices.push(idx);
                         current_ty =
                             variant.fields[rustc_abi::FieldIdx::from_usize(idx)].ty(tcx, arg_list);
+                        field_indices.push((idx, current_ty));
                     }
                     // 3. if field_name can not match any fields, then break
                     else {
@@ -604,15 +657,75 @@ pub fn parse_expr_into_local_and_ty(
     None
 }
 
-/// return the Vecs of params' name and types
-pub fn parse_signature(tcx: TyCtxt<'_>, def_id: DefId) -> (Vec<String>, Vec<Ty>) {
-    // 0. pre-handle local def id
-    let local_def_id = if let Some(local_def_id) = def_id.as_local() {
-        local_def_id
+/// Return the Vecs of args' names and types
+/// This function will handle outside def_id by different way.
+pub fn parse_signature<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> (Vec<String>, Vec<Ty<'tcx>>) {
+    // 0. If the def id is local
+    if def_id.as_local().is_some() {
+        return parse_local_signature(tcx, def_id);
     } else {
-        return (vec!["0".to_string()], Vec::new());
+        rap_debug!("{:?} is not local def id.", def_id);
+        return parse_outside_signature(tcx, def_id);
     };
+}
+
+/// Return the Vecs of args' names and types of outside functions.
+fn parse_outside_signature<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> (Vec<String>, Vec<Ty<'tcx>>) {
+    let sig = tcx.fn_sig(def_id).skip_binder();
+    let param_tys: Vec<Ty<'tcx>> = sig.inputs().skip_binder().iter().copied().collect();
+
+    // 1. check pre-defined std unsafe api signature
+    if let Some(args_name) = get_known_std_names(tcx, def_id) {
+        // rap_warn!(
+        //     "function {:?} has arg: {:?}, arg types: {:?}",
+        //     def_id,
+        //     args_name,
+        //     param_tys
+        // );
+        return (args_name, param_tys);
+    }
+
+    // 2. TODO: If can not find known std apis, then use numbers like `0`,`1`,... to represent args.
+    let args_name = (0..param_tys.len()).map(|i| format!("{}", i)).collect();
+    rap_debug!(
+        "function {:?} has arg: {:?}, arg types: {:?}",
+        def_id,
+        args_name,
+        param_tys
+    );
+    return (args_name, param_tys);
+}
+
+/// We use a json to record known std apis' arg names.
+/// This function will search the json and return the names.
+/// Notes: If std gets updated, the json may still record old ones.
+fn get_known_std_names<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> Option<Vec<String>> {
+    let std_func_name = get_cleaned_def_path_name(tcx, def_id);
+    let json_data: serde_json::Value = get_std_api_signature_json();
+
+    if let Some(arg_info) = json_data.get(&std_func_name) {
+        if let Some(args_name) = arg_info.as_array() {
+            // set default value to arg name
+            if args_name.len() == 0 {
+                return Some(vec!["0".to_string()]);
+            }
+            // iterate and collect
+            let mut result = Vec::new();
+            for arg in args_name {
+                if let Some(sp_name) = arg.as_str() {
+                    result.push(sp_name.to_string());
+                }
+            }
+            return Some(result);
+        }
+    }
+    None
+}
+
+/// Return the Vecs of args' names and types of local functions.
+pub fn parse_local_signature(tcx: TyCtxt<'_>, def_id: DefId) -> (Vec<String>, Vec<Ty>) {
     // 1. parse local def_id and get arg list
+    let local_def_id = def_id.as_local().unwrap();
     let hir_body = tcx.hir_body_owned_by(local_def_id);
     if hir_body.params.len() == 0 {
         return (vec!["0".to_string()], Vec::new());
@@ -639,14 +752,16 @@ pub fn parse_signature(tcx: TyCtxt<'_>, def_id: DefId) -> (Vec<String>, Vec<Ty>)
 }
 
 /// return the (ident, its fields) of the expr.
+///
 /// illustrated cases :
-///    ptr	("ptr", [])
-///    region.size	("region", ["size"])
-///    tuple.0.value	("tuple", ["0", "value"])
+///    ptr	-> ("ptr", [])
+///    region.size	-> ("region", ["size"])
+///    tuple.0.value -> ("tuple", ["0", "value"])
 pub fn access_ident_recursive(expr: &Expr) -> Option<(String, Vec<String>)> {
     match expr {
         Expr::Path(syn::ExprPath { path, .. }) => {
             if path.segments.len() == 1 {
+                rap_debug!("expr2 {:?}", expr);
                 let ident = path.segments[0].ident.to_string();
                 Some((ident, Vec::new()))
             } else {
@@ -704,11 +819,9 @@ pub fn match_ty_with_ident(tcx: TyCtxt<'_>, def_id: DefId, type_ident: String) -
         return Some(primitive_ty);
     }
     // 2. Check if the identifier matches any generic type parameter
-    if let Some(generic_ty) = find_generic_param(tcx, def_id, type_ident.clone()) {
-        return Some(generic_ty);
-    }
+    return find_generic_param(tcx, def_id, type_ident.clone());
     // 3. Check if the identifier matches any user-defined type in the parameters
-    find_user_defined_type(tcx, def_id, type_ident)
+    // find_user_defined_type(tcx, def_id, type_ident)
 }
 
 /// Match built-in primitive types from String
@@ -739,50 +852,97 @@ fn match_primitive_type(tcx: TyCtxt<'_>, type_ident: String) -> Option<Ty> {
 
 /// Find generic type parameters in the parameter list
 fn find_generic_param(tcx: TyCtxt<'_>, def_id: DefId, type_ident: String) -> Option<Ty> {
-    let param_ty = parse_signature(tcx, def_id).1;
-    param_ty.iter().find_map(|&ty| {
-        if let TyKind::Param(param) = ty.kind() {
-            // Compare the parameter name to our identifier
-            if param.name.to_string() == type_ident {
+    rap_debug!(
+        "Searching for generic param: {} in {:?}",
+        type_ident,
+        def_id
+    );
+    let (_, param_tys) = parse_signature(tcx, def_id);
+    rap_debug!("Function parameter types: {:?} of {:?}", param_tys, def_id);
+    // 递归查找泛型参数
+    for &ty in &param_tys {
+        if let Some(found) = find_generic_in_ty(tcx, ty, &type_ident) {
+            return Some(found);
+        }
+    }
+
+    None
+}
+
+/// Iterate the args' types recursively and find the matched generic one.
+fn find_generic_in_ty<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>, type_ident: &str) -> Option<Ty<'tcx>> {
+    match ty.kind() {
+        TyKind::Param(param_ty) => {
+            if param_ty.name.as_str() == type_ident {
                 return Some(ty);
             }
         }
-        None
-    })
+        TyKind::RawPtr(ty, _)
+        | TyKind::Ref(_, ty, _)
+        | TyKind::Slice(ty)
+        | TyKind::Array(ty, _) => {
+            if let Some(found) = find_generic_in_ty(tcx, *ty, type_ident) {
+                return Some(found);
+            }
+        }
+        TyKind::Tuple(tys) => {
+            for tuple_ty in tys.iter() {
+                if let Some(found) = find_generic_in_ty(tcx, tuple_ty, type_ident) {
+                    return Some(found);
+                }
+            }
+        }
+        TyKind::Adt(adt_def, substs) => {
+            let name = tcx.item_name(adt_def.did()).to_string();
+            if name == type_ident {
+                return Some(ty);
+            }
+            for field in adt_def.all_fields() {
+                let field_ty = field.ty(tcx, substs);
+                if let Some(found) = find_generic_in_ty(tcx, field_ty, type_ident) {
+                    return Some(found);
+                }
+            }
+        }
+        _ => {}
+    }
+    None
 }
 
-/// Find user-defined types in the parameter list
-fn find_user_defined_type(tcx: TyCtxt<'_>, def_id: DefId, type_ident: String) -> Option<Ty> {
-    let param_ty = parse_signature(tcx, def_id).1;
-    param_ty.iter().find_map(|&ty| {
-        // Peel off references and pointers to get to the underlying type
-        let peeled_ty = ty.peel_refs();
-        match peeled_ty.kind() {
-            TyKind::Adt(_adt_def, _raw_list) => {
-                // Compare the type name to our identifier
-                let name = tcx.item_name(def_id).to_string();
-                if name == type_ident {
-                    return Some(peeled_ty);
-                }
-                // for variant in adt_def.variants() {
-                //     for field in variant.fields.iter() {
-                //         let field_ty = field.ty(tcx, raw_list);
-                //         if let Some(found_ty) = find_user_defined_type(tcx, def_id, type_ident) {
-                //             return Some(found_ty);
-                //         }
-                //     }
-                // }
-            }
-            // TyKind::Tuple(fields) => {
-            //     // Check each field type in the tuple
-            //     for field_ty in fields.iter() {
+// /// Find user-defined types in the parameter list
+// fn find_user_defined_type(tcx: TyCtxt<'_>, def_id: DefId, type_ident: String) -> Option<Ty> {
+//     let param_ty = parse_signature(tcx, def_id).1;
+//     param_ty.iter().find_map(|&ty| {
+//         // Peel off references and pointers to get to the underlying type
+//         let peeled_ty = ty.peel_refs();
+//         match peeled_ty.kind() {
+//             TyKind::Adt(adt_def, _raw_list) => {
+//                 // Compare the type name to our identifier
+//                 let name = tcx.item_name(adt_def.did()).to_string();
+//                 if name == type_ident {
+//                     return Some(peeled_ty);
+//                 }
+//             }
+//             _ => {}
+//         }
+//         None
+//     })
+// }
 
-            //     }
-            // }
-            _ => {}
+pub fn reflect_generic<'tcx>(
+    generic_mapping: &FxHashMap<String, Ty<'tcx>>,
+    ty: Ty<'tcx>,
+) -> Ty<'tcx> {
+    match ty.kind() {
+        TyKind::Param(param_ty) => {
+            let generic_name = param_ty.name.to_string();
+            if let Some(actual_ty) = generic_mapping.get(&generic_name) {
+                return *actual_ty;
+            }
         }
-        None
-    })
+        _ => {}
+    }
+    ty
 }
 
 // fn find_first_chain_in_expr(expr: &Expr, param_names: &[String]) -> Option<(String, Vec<String>)> {

@@ -141,9 +141,13 @@ pub fn test7(a: &mut [u8], b: &[u32; 20]) {
     }
 }
 
-fn main() {
+fn test() {
     unsafe {test5(3)};
-    let mut x = [0u8;40];
-    let y = [0u32;20];
-    test7(&mut x[1..32], &y);
+    let mut x = [0i8;40];
+    let y = [0i8;20];
+    test6(&mut x[1..32], &y);
+}
+
+fn main() {
+    
 }

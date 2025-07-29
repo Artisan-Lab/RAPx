@@ -283,7 +283,41 @@ where
 
         rap_debug!("PHASE 2 Complete. Interval analysis finished for call chain start functions.");
     }
+    pub fn start_path_constraints_analysis_for_defid(
+        &mut self,
+        def_id: DefId,
+    ) -> Option<PathConstraint<'tcx>> {
+        if self.tcx.is_mir_available(def_id) {
+            let mut body = self.tcx.optimized_mir(def_id).clone();
+            let body_mut_ref = unsafe { &mut *(&mut body as *mut Body<'tcx>) };
 
+            let mut cg: ConstraintGraph<'tcx, T> = ConstraintGraph::new_without_ssa(def_id);
+            let mut graph = MopGraph::new(self.tcx, def_id);
+            graph.solve_scc();
+            let paths: Vec<Vec<usize>> = graph.get_all_branch_sub_blocks_paths();
+            let result = cg.start_analyze_path_constraints(body_mut_ref, &paths);
+            rap_debug!(
+                "Paths for function {}: {:?}",
+                self.tcx.def_path_str(def_id),
+                paths
+            );
+            let switchbbs = cg.switchbbs.clone();
+            rap_debug!(
+                "Switch basicblocks for function {}: {:?}",
+                self.tcx.def_path_str(def_id),
+                switchbbs
+            );
+            rap_debug!(
+                "Path Constraints Analysis Result for function {}: {:?}",
+                self.tcx.def_path_str(def_id),
+                result
+            );
+            self.path_constraints.insert(def_id, result.clone());
+            Some(result)
+        } else {
+            None
+        }
+    }
     pub fn start_path_constraints_analysis(&mut self) {
         for local_def_id in self.tcx.iter_local_def_id() {
             if matches!(self.tcx.def_kind(local_def_id), DefKind::Fn) {
@@ -308,7 +342,7 @@ where
                     );
                     let switchbbs = cg.switchbbs.clone();
                     rap_debug!(
-                        "Switch BBS for function {}: {:?}",
+                        "Switch basicblocks for function {}: {:?}",
                         self.tcx.def_path_str(def_id),
                         switchbbs
                     );

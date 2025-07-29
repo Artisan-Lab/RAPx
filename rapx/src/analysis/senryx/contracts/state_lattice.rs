@@ -193,7 +193,7 @@ impl<'tcx> Lattice for AlignState<'tcx> {
                         return false;
                     }
                     for &s_align in &src_aligns {
-                        if s_align > d_align {
+                        if s_align < d_align {
                             return false;
                         }
                     }

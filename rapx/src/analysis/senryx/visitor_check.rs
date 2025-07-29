@@ -7,19 +7,28 @@ use super::{
 };
 use crate::{
     analysis::{
-        core::alias_analysis::AAResult,
-        utils::fn_info::{display_hashmap, get_cleaned_def_path_name, is_strict_ty_convert},
+        core::{
+            alias_analysis::AAResult,
+            dataflow::{default::DataFlowAnalyzer, DataFlowAnalysis},
+        },
+        senryx::contracts::property::{CisRange, CisRangeItem, PropertyContract},
+        utils::fn_info::{
+            display_hashmap, generate_contract_from_annotation_without_field_types,
+            get_cleaned_def_path_name, is_strict_ty_convert, reflect_generic,
+        },
     },
-    rap_warn,
+    rap_debug, rap_error, rap_info, rap_warn,
 };
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
+use rustc_middle::mir::BinOp;
 use rustc_middle::mir::Operand;
 use rustc_middle::mir::Place;
+use rustc_middle::ty::Ty;
 use rustc_span::source_map::Spanned;
 use rustc_span::Span;
 
-impl BodyVisitor<'_> {
+impl<'tcx> BodyVisitor<'tcx> {
     pub fn handle_std_unsafe_call(
         &mut self,
         _dst_place: &Place<'_>,
@@ -29,7 +38,42 @@ impl BodyVisitor<'_> {
         _fn_map: &FxHashMap<DefId, AAResult>,
         fn_span: Span,
         fn_result: UnsafeApi,
+        generic_mapping: FxHashMap<String, Ty<'tcx>>,
     ) {
+        let func_name = get_cleaned_def_path_name(self.tcx, *def_id);
+        let args_with_contracts =
+            generate_contract_from_annotation_without_field_types(self.tcx, *def_id);
+        rap_debug!(
+            "Checking contracts {:?} for {:?}",
+            args_with_contracts,
+            def_id
+        );
+        let mut count = 0;
+        for (base, fields, contract) in args_with_contracts {
+            rap_debug!("Find contract for {:?}, {base}: {:?}", def_id, contract);
+            if base == 0 {
+                rap_warn!("Wrong base index for {:?}, with {:?}", def_id, contract);
+                continue;
+            }
+            let arg_tuple = get_arg_place(&args[base - 1].node);
+            // if this arg is a constant
+            if arg_tuple.0 {
+                continue; //TODO: check the constant value
+            } else {
+                let arg_place = self.chains.find_var_id_with_fields_seq(arg_tuple.1, fields);
+                self.check_contract(
+                    arg_place,
+                    args,
+                    contract,
+                    &generic_mapping,
+                    func_name.clone(),
+                    fn_span,
+                    count,
+                );
+            }
+            count += 1;
+        }
+
         for (idx, sp_set) in fn_result.sps.iter().enumerate() {
             if args.is_empty() {
                 break;
@@ -44,23 +88,6 @@ impl BodyVisitor<'_> {
             let func_name = get_cleaned_def_path_name(self.tcx, *def_id);
             for sp in sp_set {
                 match sp.sp_name.as_str() {
-                    "Aligned" => {
-                        if !self.check_align(arg_place) {
-                            self.insert_failed_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "Aligned",
-                            );
-                        } else {
-                            self.insert_successful_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "Aligned",
-                            );
-                        }
-                    }
                     "NonNull" => {
                         if !self.check_non_null(arg_place) {
                             self.insert_failed_check_result(
@@ -143,23 +170,6 @@ impl BodyVisitor<'_> {
                                 fn_span,
                                 idx + 1,
                                 "Allocated",
-                            );
-                        }
-                    }
-                    "InBounded" => {
-                        if !self.check_inbounded(arg_place) {
-                            self.insert_failed_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "InBounded",
-                            );
-                        } else {
-                            self.insert_successful_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "InBounded",
                             );
                         }
                     }
@@ -343,34 +353,101 @@ impl BodyVisitor<'_> {
         }
     }
 
+    pub fn insert_checking_result(
+        &mut self,
+        sp: &str,
+        is_passed: bool,
+        func_name: String,
+        fn_span: Span,
+        idx: usize,
+    ) {
+        if is_passed {
+            self.insert_successful_check_result(func_name.clone(), fn_span, idx + 1, sp);
+        } else {
+            self.insert_failed_check_result(func_name.clone(), fn_span, idx + 1, sp);
+        }
+    }
+
+    pub fn check_contract(
+        &mut self,
+        arg: usize,
+        args: &[Spanned<Operand>],
+        contract: PropertyContract<'tcx>,
+        generic_mapping: &FxHashMap<String, Ty<'tcx>>,
+        func_name: String,
+        fn_span: Span,
+        idx: usize,
+    ) -> bool {
+        match contract {
+            PropertyContract::Align(ty) => {
+                let contract_required_ty = reflect_generic(generic_mapping, ty);
+                rap_debug!(
+                    "peel generic ty for {:?}, actual_ty is {:?}",
+                    func_name.clone(),
+                    contract_required_ty
+                );
+                if !self.check_align(arg, contract_required_ty) {
+                    self.insert_checking_result("Align", false, func_name, fn_span, idx);
+                } else {
+                    rap_debug!("Checking Align passed for {func_name} in {:?}!", fn_span);
+                    self.insert_checking_result("Align", true, func_name, fn_span, idx);
+                }
+            }
+            PropertyContract::InBound(ty, contract_len) => {
+                let contract_ty = reflect_generic(generic_mapping, ty);
+                if let CisRangeItem::Var(base, len_fields) = contract_len {
+                    let base_tuple = get_arg_place(&args[base - 1].node);
+                    let length_arg = self
+                        .chains
+                        .find_var_id_with_fields_seq(base_tuple.1, len_fields);
+                    if !self.check_inbound(arg, length_arg, contract_ty) {
+                        self.insert_checking_result("InBound", false, func_name, fn_span, idx);
+                    } else {
+                        rap_info!("Checking InBound passed for {func_name} in {:?}!", fn_span);
+                        self.insert_checking_result("InBound", true, func_name, fn_span, idx);
+                    }
+                } else {
+                    rap_error!("Wrong arg {:?} in Inbound safety check!", contract_len);
+                }
+            }
+            PropertyContract::NonNull => {
+                self.check_non_null(arg);
+            }
+            _ => {}
+        }
+        true
+    }
+
     // ----------------------Sp checking functions--------------------------
 
     // TODO: Currently can not support unaligned offset checking
-    pub fn check_align(&self, arg: usize) -> bool {
-        let obj_ty = self.chains.get_obj_ty_through_chain(arg);
-        let var = self.chains.get_var_node(arg);
-        if obj_ty.is_none() || var.is_none() {
-            rap_warn!(
-                "In func {:?}, visitor checker error! Can't get {arg} in chain!",
-                get_cleaned_def_path_name(self.tcx, self.def_id)
-            );
-            display_hashmap(&self.chains.variables, 1);
+    pub fn check_align(&self, arg: usize, contract_required_ty: Ty<'tcx>) -> bool {
+        // rap_warn!("Checking Align {arg}!");
+        // display_hashmap(&self.chains.variables, 1);
+        // 1. Check the var's cis.
+        let var = self.chains.get_var_node(arg).unwrap();
+        let required_ty = self.visit_ty_and_get_layout(contract_required_ty);
+        for cis in &var.cis.contracts {
+            if let PropertyContract::Align(cis_ty) = cis {
+                let ori_ty = self.visit_ty_and_get_layout(*cis_ty);
+                return AlignState::Cast(ori_ty, required_ty).check();
+            }
         }
-        let ori_ty = self.visit_ty_and_get_layout(obj_ty.unwrap());
-        let cur_ty = self.visit_ty_and_get_layout(var.unwrap().ty.unwrap());
+        // 2. If the var does not have cis, then check its type and the value type
+        let mem = self.chains.get_obj_ty_through_chain(arg);
+        let mem_ty = self.visit_ty_and_get_layout(mem.unwrap());
+        let cur_ty = self.visit_ty_and_get_layout(var.ty.unwrap());
         let point_to_id = self.chains.get_point_to_id(arg);
         let var_ty = self.chains.get_var_node(point_to_id);
-        return AlignState::Cast(ori_ty, cur_ty).check() && var_ty.unwrap().states.align;
+        // display_hashmap(&self.chains.variables, 1);
+        // rap_warn!("{:?}, {:?}, {:?}, {:?}", arg, cur_ty, point_to_id, mem_ty);
+        return AlignState::Cast(mem_ty, cur_ty).check() && var_ty.unwrap().ots.align;
     }
 
     pub fn check_non_zst(&self, arg: usize) -> bool {
         let obj_ty = self.chains.get_obj_ty_through_chain(arg);
         if obj_ty.is_none() {
-            rap_warn!(
-                "In func {:?}, visitor checker error! Can't get {arg} in chain!",
-                get_cleaned_def_path_name(self.tcx, self.def_id)
-            );
-            display_hashmap(&self.chains.variables, 1);
+            self.show_error_info(arg);
         }
         let ori_ty = self.visit_ty_and_get_layout(obj_ty.unwrap());
         match ori_ty {
@@ -406,12 +483,9 @@ impl BodyVisitor<'_> {
         let point_to_id = self.chains.get_point_to_id(arg);
         let var_ty = self.chains.get_var_node(point_to_id);
         if var_ty.is_none() {
-            rap_warn!(
-                "In func {:?}, visitor checker error! Can't get {arg} in chain!",
-                get_cleaned_def_path_name(self.tcx, self.def_id)
-            );
+            self.show_error_info(arg);
         }
-        var_ty.unwrap().states.nonnull
+        var_ty.unwrap().ots.nonnull
     }
 
     // check each field's init state in the tree.
@@ -427,7 +501,7 @@ impl BodyVisitor<'_> {
             }
             init_flag
         } else {
-            var.unwrap().states.init
+            var.unwrap().ots.init
         }
     }
 
@@ -439,9 +513,108 @@ impl BodyVisitor<'_> {
         true
     }
 
-    pub fn check_inbounded(&self, _arg: usize) -> bool {
-        true
+    pub fn check_inbound(&self, arg: usize, length_arg: usize, contract_ty: Ty<'tcx>) -> bool {
+        // 1. Check the var's cis.
+        let mem_arg = self.chains.get_point_to_id(arg);
+        let mem_var = self.chains.get_var_node(mem_arg).unwrap();
+        for cis in &mem_var.cis.contracts {
+            if let PropertyContract::InBound(cis_ty, len) = cis {
+                // display_hashmap(&self.chains.variables, 1);
+                return self.check_le_op(&contract_ty, length_arg, cis_ty, len);
+            }
+        }
+        false
     }
+
+    /// return the result of less equal comparison （left_len * left_ty <= right_len * right_ty）
+    fn check_le_op(
+        &self,
+        left_ty: &Ty<'tcx>,
+        left_arg: usize,
+        right_ty: &Ty<'tcx>,
+        right_len: &CisRangeItem,
+    ) -> bool {
+        // If they have same types, then compare the length
+        // rap_warn!("{:?}, {left_arg}, {:?}, {:?}", left_ty, right_ty, right_len);
+        // If they have the same type, compare their patial order
+        if left_ty == right_ty {
+            return self
+                .compare_patial_order_of_two_args(left_arg, right_len.get_var_base().unwrap());
+        }
+        // Otherwise, take size of types into consideration
+        let left_layout = self.visit_ty_and_get_layout(*left_ty);
+        let right_layout = self.visit_ty_and_get_layout(*right_ty);
+        let get_size_range = |layout: &PlaceTy<'tcx>| -> Option<(u128, u128)> {
+            match layout {
+                PlaceTy::Ty(_, size) => Some((*size as u128, *size as u128)),
+                PlaceTy::GenericTy(_, _, layouts) if !layouts.is_empty() => {
+                    let sizes: Vec<u128> = layouts.iter().map(|(_, s)| *s as u128).collect();
+                    let min = *sizes.iter().min().unwrap();
+                    let max = *sizes.iter().max().unwrap();
+                    Some((min, max))
+                }
+                _ => None,
+            }
+        };
+        let (left_min_size, left_max_size) = match get_size_range(&left_layout) {
+            Some(range) => range,
+            None => return false, // Can not detemine size
+        };
+        let (right_min_size, right_max_size) = match get_size_range(&right_layout) {
+            Some(range) => range,
+            None => return false, // Can not detemine size
+        };
+        // TODO:
+
+        false
+    }
+
+    /// compare two args, return true if left <= right
+    fn compare_patial_order_of_two_args(&self, left: usize, right: usize) -> bool {
+        // Find the same value node set
+        let mut dataflow_analyzer = DataFlowAnalyzer::new(self.tcx, false);
+        dataflow_analyzer.build_graph(self.def_id);
+        let left_local = rustc_middle::mir::Local::from(left);
+        let right_local = rustc_middle::mir::Local::from(right);
+        let left_local_set = dataflow_analyzer.collect_equivalent_locals(self.def_id, left_local);
+        let right_local_set = dataflow_analyzer.collect_equivalent_locals(self.def_id, right_local);
+        // If left == right
+        if right_local_set.contains(&rustc_middle::mir::Local::from(left)) {
+            return true;
+        }
+        // rap_warn!(
+        //     "left_local: {:?}, left set: {:?}, right_local:{:?}, right set: {:?}",
+        //     left_local,
+        //     left_local_set,
+        //     right_local,
+        //     right_local_set
+        // );
+        for left_local_item in left_local_set {
+            let left_var = self.chains.get_var_node(left_local_item.as_usize());
+            if left_var.is_none() {
+                continue;
+            }
+            for cis in &left_var.unwrap().cis.contracts {
+                if let PropertyContract::ValidNum(cis_range) = cis {
+                    let cis_len = &cis_range.range;
+                    match cis_range.bin_op {
+                        BinOp::Le | BinOp::Lt | BinOp::Eq => {
+                            return cis_len.get_var_base().is_some()
+                                && right_local_set.contains(&rustc_middle::mir::Local::from(
+                                    cis_len.get_var_base().unwrap(),
+                                ));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    // fn compare_cis_range(&self, cis_range: CisRange, right_len: &CisRangeItem) -> bool {
+    //     false
+    // }
 
     pub fn check_valid_string(&self, _arg: usize) -> bool {
         true
@@ -465,13 +638,22 @@ impl BodyVisitor<'_> {
     }
 
     pub fn check_deref(&self, arg: usize) -> bool {
-        self.check_allocated(arg) && self.check_inbounded(arg)
+        self.check_allocated(arg)
+        // && self.check_inbounded(arg)
     }
 
     pub fn check_ref_to_ptr(&self, arg: usize) -> bool {
         self.check_deref(arg)
             && self.check_init(arg)
-            && self.check_align(arg)
+            // && self.check_align(arg)
             && self.check_alias(arg)
+    }
+
+    pub fn show_error_info(&self, arg: usize) {
+        rap_warn!(
+            "In func {:?}, visitor checker error! Can't get {arg} in chain!",
+            get_cleaned_def_path_name(self.tcx, self.def_id)
+        );
+        display_hashmap(&self.chains.variables, 1);
     }
 }

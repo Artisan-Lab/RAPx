@@ -1,0 +1,46 @@
+{
+    "core::slice::raw::from_raw_parts": [
+        "data",
+        "len"
+    ],
+    "core::slice::raw::from_raw_parts_mut": [
+        "data",
+        "len"
+    ],
+    "core::ptr::non_null::read": [
+        "self"
+    ],
+    "core::ptr::non_null::read_volatile": [
+        "self"
+    ],
+    "core::ptr::non_null::read_unaligned": [
+        "self"
+    ],
+    "core::ptr::const_ptr::read": [
+        "self"
+    ],
+    "core::ptr::const_ptr::read_volatile": [
+        "self"
+    ],
+    "core::ptr::const_ptr::read_unaligned": [
+        "self"
+    ],
+    "core::ptr::mut_ptr::read": [
+        "self"
+    ],
+    "core::ptr::mut_ptr::read_volatile": [
+        "self"
+    ],
+    "core::ptr::mut_ptr::read_unaligned": [
+        "self"
+    ],
+    "core::ptr::read": [
+        "src"
+    ],
+    "core::ptr::read_volatile": [
+        "src"
+    ],
+    "core::ptr::read_unaligned": [
+        "src"
+    ]
+}

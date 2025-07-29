@@ -1,3 +1,4 @@
+#[allow(unused)]
 pub mod contracts;
 #[allow(unused)]
 pub mod dominated_graph;
@@ -6,6 +7,7 @@ pub mod inter_record;
 pub mod matcher;
 #[allow(unused)]
 pub mod visitor;
+#[allow(unused)]
 pub mod visitor_check;
 use dominated_graph::InterResultNode;
 use inter_record::InterAnalysisRecord;
@@ -208,10 +210,18 @@ impl<'tcx> SenryxCheck<'tcx> {
             );
             for failed_contract in &check_result.failed_contracts {
                 cond_print!(
-                    !check_result.failed_contracts.is_empty(),
+                    true,
                     "      Argument {}'s failed Sps: {:?}",
                     failed_contract.0,
                     failed_contract.1
+                );
+            }
+            for passed_contract in &check_result.passed_contracts {
+                cond_print!(
+                    false,
+                    "      Argument {}'s passed Sps: {:?}",
+                    passed_contract.0,
+                    passed_contract.1
                 );
             }
         }

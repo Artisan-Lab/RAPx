@@ -6,6 +6,7 @@ use crate::{
     rap_error,
 };
 use rustc_hir::def_id::DefId;
+use rustc_middle::mir::BinOp;
 use rustc_middle::ty::Ty;
 use rustc_middle::ty::TyCtxt;
 use safety_parser::{
@@ -14,10 +15,43 @@ use safety_parser::{
 };
 
 #[derive(Clone, Debug)]
-pub enum MemLen {
+pub enum CisRangeItem {
     Var(usize, Vec<usize>),
     Value(usize),
     Unknown,
+}
+
+impl CisRangeItem {
+    pub fn get_var_base(&self) -> Option<usize> {
+        match self {
+            Self::Var(base, _) => Some(*base),
+            _ => None,
+        }
+    }
+
+    pub fn new_var(base: usize) -> Self {
+        Self::Var(base, Vec::new())
+    }
+
+    pub fn new_value(value: usize) -> Self {
+        Self::Value(value)
+    }
+
+    pub fn new_unknown() -> Self {
+        Self::Unknown
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CisRange {
+    pub bin_op: BinOp,
+    pub range: CisRangeItem,
+}
+
+impl CisRange {
+    pub fn new(bin_op: BinOp, range: CisRangeItem) -> Self {
+        Self { bin_op, range }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -28,15 +62,15 @@ pub enum PropertyContract<'tcx> {
     NoPadding,
     NonNull,
     // Allocated( ty, length)
-    Allocated(Ty<'tcx>, MemLen),
+    Allocated(Ty<'tcx>, CisRangeItem),
     // InBound( ty, length)
-    InBound(Ty<'tcx>, MemLen),
+    InBound(Ty<'tcx>, CisRangeItem),
     NonOverlap,
-    ValidNum,
+    ValidNum(CisRange),
     ValidString,
     ValidCStr,
     // Init( ty, length)
-    Init(Ty<'tcx>, MemLen),
+    Init(Ty<'tcx>, CisRangeItem),
     Unwrap,
     Typed(Ty<'tcx>),
     Owning,
@@ -47,7 +81,7 @@ pub enum PropertyContract<'tcx> {
     Opened,
     Trait,
     Unreachable,
-    ValidPtr(Ty<'tcx>, MemLen),
+    ValidPtr(Ty<'tcx>, CisRangeItem),
     Deref,
     Ptr2Ref,
     Layout,
@@ -64,123 +98,45 @@ impl<'tcx> PropertyContract<'tcx> {
     ) -> Self {
         match name {
             PropertyName::Align => {
-                if exprs.len() <= 1 {
-                    rap_error!("Wrong args length for Align Tag!");
-                }
-                let ty_ident_full = access_ident_recursive(&exprs[1]);
-                if ty_ident_full.is_none() {
-                    rap_error!("Incorrect expression for the type of Align Tag!");
-                }
-                let ty_ident = ty_ident_full.unwrap().0;
-                let ty = match_ty_with_ident(tcx, def_id, ty_ident);
-                if ty.is_none() {
-                    rap_error!("Cannot get type in Align Tag!");
-                }
-                Self::Align(ty.unwrap())
+                Self::check_arg_length(exprs.len(), 2, "Align");
+                let ty = Self::parse_type(tcx, def_id, &exprs[1], "Align");
+                Self::Align(ty)
             }
             PropertyName::Size => Self::Size(kind),
             PropertyName::NoPadding => Self::NoPadding,
             PropertyName::NonNull => Self::NonNull,
             PropertyName::Allocated => {
-                if exprs.len() <= 2 {
-                    rap_error!("Wrong args length for Allocated Tag!");
-                }
-                let ty_ident_full = access_ident_recursive(&exprs[1]);
-                if ty_ident_full.is_none() {
-                    rap_error!("Incorrect expression for the type of Allocated Tag!");
-                }
-                let ty_ident = ty_ident_full.unwrap().0;
-                let ty = match_ty_with_ident(tcx, def_id, ty_ident);
-                if ty.is_none() {
-                    rap_error!("Cannot get type in Allocated Tag!");
-                }
-                let length = {
-                    if let Some(var_len) =
-                        parse_expr_into_local_and_ty(tcx, def_id, exprs[2].clone())
-                    {
-                        MemLen::Var(var_len.0, var_len.1)
-                    } else if parse_expr_into_number(&exprs[2]).is_some() {
-                        MemLen::Value(1)
-                    } else {
-                        rap_error!("Length error in Allocated Tag!");
-                        MemLen::Unknown
-                    }
-                };
-                Self::Allocated(ty.unwrap(), length)
+                Self::check_arg_length(exprs.len(), 3, "Allocated");
+                let ty = Self::parse_type(tcx, def_id, &exprs[1], "Allocated");
+                let length = Self::parse_length(tcx, def_id, &exprs[2], "Allocated");
+                Self::Allocated(ty, length)
             }
             PropertyName::InBound => {
-                if exprs.len() <= 2 {
-                    rap_error!("Wrong args length for InBound Tag!");
-                }
-                let ty_ident_full = access_ident_recursive(&exprs[1]);
-                if ty_ident_full.is_none() {
-                    rap_error!("Incorrect expression for the type of InBound Tag!");
-                }
-                let ty_ident = ty_ident_full.unwrap().0;
-                let ty = match_ty_with_ident(tcx, def_id, ty_ident);
-                if ty.is_none() {
-                    rap_error!("Cannot get type in InBound Tag!");
-                }
-                let length = {
-                    if let Some(var_len) =
-                        parse_expr_into_local_and_ty(tcx, def_id, exprs[2].clone())
-                    {
-                        MemLen::Var(var_len.0, var_len.1)
-                    } else if parse_expr_into_number(&exprs[2]).is_some() {
-                        MemLen::Value(1)
-                    } else {
-                        rap_error!("Length error in InBound Tag!");
-                        MemLen::Unknown
-                    }
-                };
-                Self::InBound(ty.unwrap(), length)
+                Self::check_arg_length(exprs.len(), 3, "InBound");
+                let ty = Self::parse_type(tcx, def_id, &exprs[1], "InBound");
+                let length = Self::parse_length(tcx, def_id, &exprs[2], "InBound");
+                Self::InBound(ty, length)
             }
             PropertyName::NonOverlap => Self::NonOverlap,
-            PropertyName::ValidNum => Self::ValidNum,
+            PropertyName::ValidNum => {
+                Self::check_arg_length(exprs.len(), 1, "ValidNum");
+                let bin_op = BinOp::Ne;
+                let length = Self::parse_length(tcx, def_id, &exprs[0], "ValidNum");
+                return Self::ValidNum(CisRange::new(bin_op, length));
+            }
             PropertyName::ValidString => Self::ValidString,
             PropertyName::ValidCStr => Self::ValidCStr,
             PropertyName::Init => {
-                if exprs.len() <= 2 {
-                    rap_error!("Wrong args length for Init Tag!");
-                }
-                let ty_ident_full = access_ident_recursive(&exprs[1]);
-                if ty_ident_full.is_none() {
-                    rap_error!("Incorrect expression for the type of Init Tag!");
-                }
-                let ty_ident = ty_ident_full.unwrap().0;
-                let ty = match_ty_with_ident(tcx, def_id, ty_ident);
-                if ty.is_none() {
-                    rap_error!("Cannot get type in Init Tag!");
-                }
-                let length = {
-                    if let Some(var_len) =
-                        parse_expr_into_local_and_ty(tcx, def_id, exprs[2].clone())
-                    {
-                        MemLen::Var(var_len.0, var_len.1)
-                    } else if parse_expr_into_number(&exprs[2]).is_some() {
-                        MemLen::Value(1)
-                    } else {
-                        rap_error!("Length error in Init Tag!");
-                        MemLen::Unknown
-                    }
-                };
-                Self::Init(ty.unwrap(), length)
+                Self::check_arg_length(exprs.len(), 3, "Init");
+                let ty = Self::parse_type(tcx, def_id, &exprs[1], "Init");
+                let length = Self::parse_length(tcx, def_id, &exprs[2], "Init");
+                Self::Init(ty, length)
             }
             PropertyName::Unwrap => Self::Unwrap,
             PropertyName::Typed => {
-                if exprs.len() <= 1 {
-                    rap_error!("Wrong args length for Typed Tag!");
-                }
-                let ty_ident_full = access_ident_recursive(&exprs[1]);
-                if ty_ident_full.is_none() {
-                    rap_error!("Incorrect expression for the type of Typed Tag!");
-                }
-                let ty_ident = ty_ident_full.unwrap().0;
-                let ty = match_ty_with_ident(tcx, def_id, ty_ident);
-                if ty.is_none() {
-                    rap_error!("Cannot get type in Typed Tag!");
-                }
-                Self::Typed(ty.unwrap())
+                Self::check_arg_length(exprs.len(), 2, "Typed");
+                let ty = Self::parse_type(tcx, def_id, &exprs[1], "Typed");
+                Self::Typed(ty)
             }
             PropertyName::Owning => Self::Owning,
             PropertyName::Alias => Self::Alias,
@@ -191,36 +147,57 @@ impl<'tcx> PropertyContract<'tcx> {
             PropertyName::Trait => Self::Trait,
             PropertyName::Unreachable => Self::Unreachable,
             PropertyName::ValidPtr => {
-                if exprs.len() <= 2 {
-                    rap_error!("Wrong args length for ValidPtr Tag!");
-                }
-                let ty_ident_full = access_ident_recursive(&exprs[1]);
-                if ty_ident_full.is_none() {
-                    rap_error!("Incorrect expression for the type of ValidPtr Tag!");
-                }
-                let ty_ident = ty_ident_full.unwrap().0;
-                let ty = match_ty_with_ident(tcx, def_id, ty_ident);
-                if ty.is_none() {
-                    rap_error!("Cannot get type in ValidPtr Tag!");
-                }
-                let length = {
-                    if let Some(var_len) =
-                        parse_expr_into_local_and_ty(tcx, def_id, exprs[2].clone())
-                    {
-                        MemLen::Var(var_len.0, var_len.1)
-                    } else if parse_expr_into_number(&exprs[2]).is_some() {
-                        MemLen::Value(1)
-                    } else {
-                        rap_error!("Length error in ValidPtr Tag!");
-                        MemLen::Unknown
-                    }
-                };
-                Self::ValidPtr(ty.unwrap(), length)
+                Self::check_arg_length(exprs.len(), 3, "ValidPtr");
+                let ty = Self::parse_type(tcx, def_id, &exprs[1], "ValidPtr");
+                let length = Self::parse_length(tcx, def_id, &exprs[2], "ValidPtr");
+                Self::ValidPtr(ty, length)
             }
             PropertyName::Deref => Self::Deref,
             PropertyName::Ptr2Ref => Self::Ptr2Ref,
             PropertyName::Layout => Self::Layout,
             PropertyName::Unknown => Self::Unknown,
+        }
+    }
+
+    pub fn new_patial_order(p: usize, op: BinOp) -> Self {
+        Self::ValidNum(CisRange::new(op, CisRangeItem::Var(p, Vec::new())))
+    }
+
+    pub fn new_obj_boundary(ty: Ty<'tcx>, len: CisRangeItem) -> Self {
+        Self::InBound(ty, len)
+    }
+
+    // -------- length checker ----------
+    fn check_arg_length(expr_len: usize, required_len: usize, sp: &str) -> bool {
+        if expr_len != required_len {
+            panic!("Wrong args length for {:?} Tag!", sp);
+        }
+        true
+    }
+
+    // -------- type parser ----------
+    fn parse_type(tcx: TyCtxt<'tcx>, def_id: DefId, expr: &Expr, sp: &str) -> Ty<'tcx> {
+        let ty_ident_full = access_ident_recursive(expr);
+        if ty_ident_full.is_none() {
+            rap_error!("Incorrect expression for the type of {:?} Tag!", sp);
+        }
+        let ty_ident = ty_ident_full.unwrap().0;
+        let ty = match_ty_with_ident(tcx, def_id, ty_ident);
+        if ty.is_none() {
+            rap_error!("Cannot get type in {:?} Tag!", sp);
+        }
+        return ty.unwrap();
+    }
+
+    // -------- cis range parser ----------
+    fn parse_length(tcx: TyCtxt<'tcx>, def_id: DefId, expr: &Expr, sp: &str) -> CisRangeItem {
+        if let Some(var_len) = parse_expr_into_local_and_ty(tcx, def_id, expr) {
+            CisRangeItem::Var(var_len.0, var_len.1.iter().map(|(x, _)| *x).collect())
+        } else if parse_expr_into_number(expr).is_some() {
+            CisRangeItem::Value(parse_expr_into_number(expr).unwrap())
+        } else {
+            rap_error!("Range length error in {:?} Tag!", sp);
+            CisRangeItem::Unknown
         }
     }
 }

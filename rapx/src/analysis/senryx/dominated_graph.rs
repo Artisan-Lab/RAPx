@@ -2,13 +2,14 @@ use crate::{
     analysis::{
         senryx::contracts::{
             contract,
-            property::{ContractualInvariantState, PropertyContract},
+            property::{CisRangeItem, ContractualInvariantState, PropertyContract},
         },
-        utils::fn_info::{display_hashmap, get_pointee, is_ptr, is_ref},
+        utils::fn_info::{display_hashmap, get_pointee, is_ptr, is_ref, is_slice, reverse_op},
     },
-    rap_warn,
+    rap_debug, rap_warn,
 };
 use rustc_hir::def_id::DefId;
+use rustc_middle::mir::BinOp;
 use rustc_middle::mir::Local;
 use rustc_middle::ty::TyKind;
 use rustc_middle::ty::{Ty, TyCtxt};
@@ -97,7 +98,7 @@ impl<'tcx> InterResultNode<'tcx> {
             point_to: point_node,
             fields,
             ty: var_node.ty.clone(),
-            states: var_node.states.clone(),
+            states: var_node.ots.clone(),
             const_value: var_node.const_value,
         }
     }
@@ -140,7 +141,7 @@ pub struct VariableNode<'tcx> {
     pub field: HashMap<usize, usize>,
     pub ty: Option<Ty<'tcx>>,
     pub is_dropped: bool,
-    pub states: States,
+    pub ots: States,
     pub const_value: usize,
     pub cis: ContractualInvariantState<'tcx>,
 }
@@ -151,7 +152,7 @@ impl<'tcx> VariableNode<'tcx> {
         points_to: Option<usize>,
         pointed_by: HashSet<usize>,
         ty: Option<Ty<'tcx>>,
-        states: States,
+        ots: States,
     ) -> Self {
         VariableNode {
             id,
@@ -161,7 +162,7 @@ impl<'tcx> VariableNode<'tcx> {
             field: HashMap::new(),
             ty,
             is_dropped: false,
-            states,
+            ots,
             const_value: 0,
             cis: ContractualInvariantState::new_default(),
         }
@@ -176,13 +177,13 @@ impl<'tcx> VariableNode<'tcx> {
             field: HashMap::new(),
             ty,
             is_dropped: false,
-            states: States::new(),
+            ots: States::new(),
             const_value: 0,
             cis: ContractualInvariantState::new_default(),
         }
     }
 
-    pub fn new_with_states(id: usize, ty: Option<Ty<'tcx>>, states: States) -> Self {
+    pub fn new_with_states(id: usize, ty: Option<Ty<'tcx>>, ots: States) -> Self {
         VariableNode {
             id,
             alias_set: HashSet::from([id]),
@@ -191,7 +192,7 @@ impl<'tcx> VariableNode<'tcx> {
             field: HashMap::new(),
             ty,
             is_dropped: false,
-            states,
+            ots,
             const_value: 0,
             cis: ContractualInvariantState::new_default(),
         }
@@ -210,7 +211,6 @@ impl<'tcx> DominatedGraph<'tcx> {
     // This constructor will init all the local arguments' node states.
     // If input argument is ptr or ref, it will point to a corresponding obj node.
     pub fn new(tcx: TyCtxt<'tcx>, def_id: DefId) -> Self {
-        crate::analysis::utils::fn_info::generate_contract_from_annotation(tcx, def_id);
         let body = tcx.optimized_mir(def_id);
         let locals = body.local_decls.clone();
         let fn_sig = tcx.fn_sig(def_id).skip_binder();
@@ -221,7 +221,7 @@ impl<'tcx> DominatedGraph<'tcx> {
             let local_ty = local.ty;
             let mut node = VariableNode::new_default(idx, Some(local_ty));
             if local_ty.to_string().contains("MaybeUninit") {
-                node.states.init = false;
+                node.ots.init = false;
             }
             var_map.insert(idx, node);
         }
@@ -247,7 +247,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         let new_id = self.generate_node_id();
         let node = self.get_var_node_mut(local).unwrap();
         // node.ty = inter_result.ty;
-        node.states = inter_result.states;
+        node.ots = inter_result.states;
         node.const_value = inter_result.const_value;
         if inter_result.point_to.is_some() {
             let new_node = inter_result.point_to.unwrap();
@@ -268,6 +268,7 @@ impl<'tcx> DominatedGraph<'tcx> {
     }
 
     pub fn init_arg(&mut self) {
+        // init arg nodes' point to nodes.
         let body = self.tcx.optimized_mir(self.def_id);
         let locals = body.local_decls.clone();
         let fn_sig = self.tcx.fn_sig(self.def_id).skip_binder();
@@ -276,8 +277,34 @@ impl<'tcx> DominatedGraph<'tcx> {
             let local_ty = locals[Local::from(idx)].ty;
             self.generate_ptr_with_obj_node(local_ty, idx);
         }
+        // init args' cis
+        let cis_results = crate::analysis::utils::fn_info::generate_contract_from_annotation(
+            self.tcx,
+            self.def_id,
+        );
+        for (base, fields, contract) in cis_results {
+            if fields.len() == 0 {
+                self.insert_cis_for_arg(base, contract);
+            } else {
+                let mut cur_base = base;
+                let mut field_node = base;
+                for field in fields {
+                    field_node = self.insert_field_node(cur_base, field.0, Some(field.1));
+                    // check if field's type is ptr or ref: yes -> create shadow var
+                    self.generate_ptr_with_obj_node(field.1, field_node);
+                    cur_base = field_node;
+                }
+                self.insert_cis_for_arg(field_node, contract);
+            }
+        }
     }
 
+    fn insert_cis_for_arg(&mut self, local: usize, contract: PropertyContract<'tcx>) {
+        let node = self.get_var_node_mut(local).unwrap();
+        node.cis.add_contract(contract);
+    }
+
+    /// When generate obj node, this function will add InBound Sp automatically.
     pub fn generate_ptr_with_obj_node(&mut self, local_ty: Ty<'tcx>, idx: usize) -> usize {
         let new_id = self.generate_node_id();
         if is_ptr(local_ty) {
@@ -291,6 +318,7 @@ impl<'tcx> DominatedGraph<'tcx> {
                 None,
                 States::new_unknown(),
             );
+            self.add_bound_for_obj(new_id, local_ty);
         } else if is_ref(local_ty) {
             // modify ptr node pointed
             self.get_var_node_mut(idx).unwrap().points_to = Some(new_id);
@@ -302,8 +330,21 @@ impl<'tcx> DominatedGraph<'tcx> {
                 None,
                 States::new(),
             );
+            self.add_bound_for_obj(new_id, local_ty);
         }
         new_id
+    }
+
+    fn add_bound_for_obj(&mut self, new_id: usize, local_ty: Ty<'tcx>) {
+        let new_node = self.get_var_node_mut(new_id).unwrap();
+        let new_node_ty = get_pointee(local_ty);
+        let contract = if is_slice(new_node_ty).is_some() {
+            let inner_ty = is_slice(new_node_ty).unwrap();
+            PropertyContract::new_obj_boundary(inner_ty, CisRangeItem::new_unknown())
+        } else {
+            PropertyContract::new_obj_boundary(new_node_ty, CisRangeItem::new_value(1))
+        };
+        new_node.cis.add_contract(contract);
     }
 
     // if current node is ptr or ref, then return the new node pointed by it.
@@ -398,10 +439,19 @@ impl<'tcx> DominatedGraph<'tcx> {
     }
 
     pub fn find_var_id_with_fields_seq(&mut self, local: usize, fields: Vec<usize>) -> usize {
-        let mut cur = self.get_point_to_id(local);
-        for field in fields {
-            cur = self.get_point_to_id(cur);
-            let cur_node = self.get_var_node(cur).unwrap();
+        let mut cur = local;
+        for field in fields.clone() {
+            let mut cur_node = self.get_var_node(cur).unwrap();
+            if let TyKind::Ref(_, ty, _) = cur_node.ty.unwrap().kind() {
+                let point_to = self.get_point_to_id(cur);
+                cur_node = self.get_var_node(point_to).unwrap();
+            }
+            // If there exist a field node, then get it as cur node
+            if cur_node.field.get(&field).is_some() {
+                cur = *cur_node.field.get(&field).unwrap();
+                continue;
+            }
+            // Otherwise, insert a new field node.
             match cur_node.ty.unwrap().kind() {
                 TyKind::Adt(adt_def, substs) => {
                     if adt_def.is_struct() {
@@ -418,6 +468,8 @@ impl<'tcx> DominatedGraph<'tcx> {
                 }
                 // TODO: maybe unsafe here for setting ty as None!
                 _ => {
+                    rap_warn!("ty {:?}, field: {:?}", cur_node.ty.unwrap(), field);
+                    rap_warn!("set field type as None! --- src: Dominated Graph / find_var_id_with_fields_seq");
                     cur = self.get_field_node_id(cur, field, None);
                 }
             }
@@ -484,7 +536,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         let lv_node = self.get_var_node_mut(lv).unwrap();
         lv_node.alias_set.remove(&lv);
         let lv_ty = lv_node.ty;
-        let lv_states = lv_node.states.clone();
+        let lv_states = lv_node.ots.clone();
         let rv_node = self.get_var_node_mut(rv).unwrap();
         rv_node.alias_set.insert(lv);
         // rv_node.states.merge_states(&lv_states);
@@ -498,22 +550,27 @@ impl<'tcx> DominatedGraph<'tcx> {
         let rv_node = self.get_var_node_mut(rv).unwrap().clone();
         let lv_node = self.get_var_node_mut(lv).unwrap();
         let lv_ty = lv_node.ty.unwrap();
-        lv_node.states = rv_node.states;
+        lv_node.ots = rv_node.ots;
+        lv_node.cis = rv_node.cis;
         lv_node.is_dropped = rv_node.is_dropped;
-        if is_ptr(rv_node.ty.unwrap()) && is_ptr(lv_ty) {
-            // println!("++++{lv}--{rv}");
-            self.merge(lv, rv);
+        let lv_id = lv_node.id;
+        // if is_ptr(rv_node.ty.unwrap()) && is_ptr(lv_ty) {
+        //     // println!("++++{lv}--{rv}");
+        //     self.merge(lv, rv);
+        // }
+        if rv_node.points_to.is_some() {
+            self.point(lv_id, rv_node.points_to.unwrap());
         }
     }
 
-    pub fn break_node_connection(&mut self, lv: usize, rv: usize) {
+    fn break_node_connection(&mut self, lv: usize, rv: usize) {
         let rv_node = self.get_var_node_mut(rv).unwrap();
         rv_node.pointed_by.remove(&lv);
         let lv_node = self.get_var_node_mut(lv).unwrap();
         lv_node.points_to = None;
     }
 
-    pub fn insert_node(
+    fn insert_node(
         &mut self,
         dv: usize,
         ty: Option<Ty<'tcx>>,
@@ -527,7 +584,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         );
     }
 
-    pub fn delete_node(&mut self, idx: usize) {
+    fn delete_node(&mut self, idx: usize) {
         let node = self.get_var_node(idx).unwrap().clone();
         for pre_idx in &node.pointed_by.clone() {
             let pre_node = self.get_var_node_mut(*pre_idx).unwrap();
@@ -554,7 +611,18 @@ impl<'tcx> DominatedGraph<'tcx> {
     pub fn update_value(&mut self, arg: usize, value: usize) {
         let node = self.get_var_node_mut(arg).unwrap();
         node.const_value = value;
-        node.states.init = true;
+        node.ots.init = true;
+    }
+
+    pub fn insert_patial_op(&mut self, p1: usize, p2: usize, op: &BinOp) {
+        let p1_node = self.get_var_node_mut(p1).unwrap();
+        p1_node
+            .cis
+            .add_contract(PropertyContract::new_patial_order(p2, *op));
+        let p2_node = self.get_var_node_mut(p2).unwrap();
+        p2_node
+            .cis
+            .add_contract(PropertyContract::new_patial_order(p1, reverse_op(*op)));
     }
 
     pub fn print_graph(&self) {
