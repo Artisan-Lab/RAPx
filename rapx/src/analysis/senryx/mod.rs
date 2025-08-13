@@ -183,7 +183,7 @@ impl<'tcx> SenryxCheck<'tcx> {
                 match func {
                     Operand::Constant(c) => {
                         if let ty::FnDef(id, ..) = c.ty().kind() {
-                            if get_sp(self.tcx, *id).is_empty() {
+                            if !get_sp(self.tcx, *id).is_empty() {
                                 results.extend(get_sp(self.tcx, *id));
                             } else {
                                 results.extend(self.get_annotation(*id));
