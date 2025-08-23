@@ -1,7 +1,7 @@
 extern crate indexmap;
 extern crate rustc_public;
 
-use crate::rap_info;
+// use crate::rap_info;
 use indexmap::IndexMap;
 use rustc_hir::def_id::DefId;
 use rustc_middle::ty::TyCtxt;
@@ -52,7 +52,7 @@ fn init_inner(tcx: TyCtxt) -> Intrinsics {
         "Intrinsic functions is incompletely retrieved.\n\
          INTRINSICS = {INTRINSICS:#?}\nmap ={map:#?}"
     );
-    rap_info!("Intrinsic = {map:#?}");
+    // rap_info!("Intrinsic = {map:#?}");
     Intrinsics { map }
 }
 

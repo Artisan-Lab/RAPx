@@ -90,6 +90,21 @@ impl<'tcx> SenryxCheck<'tcx> {
         }
     }
 
+    pub fn start_analyze_std_func(&mut self, func: Vec<String>) {
+        let def_id_sets = self.tcx.mir_keys(());
+        for local_def_id in def_id_sets {
+            let def_id = local_def_id.to_def_id();
+            let func_name = get_cleaned_def_path_name(self.tcx, def_id);
+            if func.contains(&func_name) {
+                let check_results = self.body_visit_and_check(def_id, &FxHashMap::default());
+                if !check_results.is_empty() {
+                    Self::show_check_results(self.tcx, def_id, check_results);
+                }
+                println!("Found target function: {}", func_name);
+            }
+        }
+    }
+
     pub fn filter_by_check_level(
         tcx: TyCtxt<'tcx>,
         check_level: &CheckLevel,

@@ -61,7 +61,7 @@ pub static RAP_DEFAULT_ARGS: &[&str] = &["-Zalways-encode-mir", "-Zmir-opt-level
 
 /// This is the data structure to handle rapx options as a rustc callback.
 
-#[derive(Debug, Copy, Clone, Hash)]
+#[derive(Debug, Clone, Hash)]
 pub struct RapCallback {
     alias: bool,
     api_dependency: bool,
@@ -78,6 +78,8 @@ pub struct RapCallback {
     show_mir: bool,
     unsafety_isolation: usize,
     verify: bool,
+    verify_std: bool,
+    verify_std_func: Vec<String>,
 }
 
 #[allow(clippy::derivable_impls)]
@@ -99,6 +101,8 @@ impl Default for RapCallback {
             show_mir: false,
             unsafety_isolation: 0,
             verify: false,
+            verify_std: false,
+            verify_std_func: Vec::new(),
         }
     }
 }
@@ -128,7 +132,7 @@ impl Callbacks for RapCallback {
     }
     fn after_analysis<'tcx>(&mut self, _compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
         rap_trace!("Execute after_analysis() of compiler callbacks");
-        start_analyzer(tcx, *self);
+        start_analyzer(tcx, self);
         rap_trace!("analysis done");
         Compilation::Continue
     }
@@ -171,7 +175,7 @@ impl RapCallback {
     }
 
     /// Test if API-dependency graph generation is enabled.
-    pub fn is_api_dependency_enabled(self) -> bool {
+    pub fn is_api_dependency_enabled(&self) -> bool {
         self.api_dependency
     }
 
@@ -191,7 +195,7 @@ impl RapCallback {
     }
 
     /// Test if owned-heap analysis is enabled.
-    pub fn is_ownedheap_enabled(self) -> bool {
+    pub fn is_ownedheap_enabled(&self) -> bool {
         self.ownedheap
     }
 
@@ -201,7 +205,7 @@ impl RapCallback {
     }
 
     /// Test if dataflow analysis is enabled.
-    pub fn is_dataflow_enabled(self) -> usize {
+    pub fn is_dataflow_enabled(&self) -> usize {
         self.dataflow
     }
 
@@ -211,7 +215,7 @@ impl RapCallback {
     }
 
     /// Test if range analysis is enabled.
-    pub fn is_range_analysis_enabled(self) -> bool {
+    pub fn is_range_analysis_enabled(&self) -> bool {
         self.range > 0
     }
 
@@ -221,7 +225,7 @@ impl RapCallback {
     }
 
     /// Check if test is enabled.
-    pub fn is_test_enabled(self) -> bool {
+    pub fn is_test_enabled(&self) -> bool {
         self.test
     }
 
@@ -231,7 +235,7 @@ impl RapCallback {
     }
 
     /// Test if ssa transformation is enabled.
-    pub fn is_ssa_transform_enabled(self) -> bool {
+    pub fn is_ssa_transform_enabled(&self) -> bool {
         self.ssa
     }
 
@@ -241,7 +245,7 @@ impl RapCallback {
     }
 
     /// Test if optimization analysis is enabled.
-    pub fn is_opt_enabled(self) -> usize {
+    pub fn is_opt_enabled(&self) -> usize {
         self.opt
     }
 
@@ -316,6 +320,15 @@ impl RapCallback {
         self.verify
     }
 
+    pub fn enable_verify_std(&mut self, func: Vec<String>) {
+        self.verify_std = true;
+        self.verify_std_func = func;
+    }
+
+    pub fn is_verify_std_enabled(&self) -> bool {
+        self.verify_std
+    }
+
     pub fn enable_infer(&mut self) {
         self.infer = true;
     }
@@ -326,7 +339,7 @@ impl RapCallback {
 }
 
 /// Start the analysis with the features enabled.
-pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
+pub fn start_analyzer(tcx: TyCtxt, callback: &RapCallback) {
     def_id::init(tcx);
     if callback.is_alias_enabled() {
         let mut analyzer = AliasAnalyzer::new(tcx);
@@ -448,6 +461,11 @@ pub fn start_analyzer(tcx: TyCtxt, callback: RapCallback) {
     if callback.is_verify_enabled() {
         let check_level = CheckLevel::Medium;
         SenryxCheck::new(tcx, 2).start(check_level, true);
+    }
+
+    if callback.is_verify_std_enabled() {
+        let func: Vec<String> = callback.verify_std_func.clone();
+        SenryxCheck::new(tcx, 2).start_analyze_std_func(func);
     }
 
     if callback.is_infer_enabled() {
