@@ -534,6 +534,21 @@ pub fn generate_contract_from_annotation_without_field_types(
         .collect()
 }
 
+/// Filter the function which contains "rapx::proof"
+pub fn is_verify_target_func(tcx: TyCtxt, def_id: DefId) -> bool {
+    const REGISTER_TOOL: &str = "rapx";
+    for attr in tcx.get_all_attrs(def_id).into_iter() {
+        if let Attribute::Unparsed(tool_attr) = attr {
+            if tool_attr.path.segments[0].as_str() == REGISTER_TOOL
+                && tool_attr.path.segments[1].as_str() == "proof"
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Get the annotation in tag-std style.
 /// Then generate the contractual invariant states (CIS) for the args.
 /// This function will recognize the args name and record states to MIR variable (represent by usize).
@@ -545,7 +560,9 @@ pub fn generate_contract_from_annotation(
     const REGISTER_TOOL: &str = "rapx";
     let tool_attrs = tcx.get_all_attrs(def_id).into_iter().filter(|attr| {
         if let Attribute::Unparsed(tool_attr) = attr {
-            if tool_attr.path.segments[0].as_str() == REGISTER_TOOL {
+            if tool_attr.path.segments[0].as_str() == REGISTER_TOOL
+                && tool_attr.path.segments[1].as_str() != "proof"
+            {
                 return true;
             }
         }

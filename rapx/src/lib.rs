@@ -64,7 +64,7 @@ pub static RAP_DEFAULT_ARGS: &[&str] = &["-Zalways-encode-mir", "-Zmir-opt-level
 
 /// This is the data structure to handle rapx options as a rustc callback.
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct RapCallback {
     alias: bool,
     api_dependency: bool,
@@ -82,7 +82,6 @@ pub struct RapCallback {
     unsafety_isolation: usize,
     verify: bool,
     verify_std: bool,
-    verify_std_func: Vec<String>,
 }
 
 #[allow(clippy::derivable_impls)]
@@ -105,7 +104,6 @@ impl Default for RapCallback {
             unsafety_isolation: 0,
             verify: false,
             verify_std: false,
-            verify_std_func: Vec::new(),
         }
     }
 }
@@ -326,9 +324,8 @@ impl RapCallback {
         self.verify
     }
 
-    pub fn enable_verify_std(&mut self, func: Vec<String>) {
+    pub fn enable_verify_std(&mut self) {
         self.verify_std = true;
-        self.verify_std_func = func;
     }
 
     pub fn is_verify_std_enabled(&self) -> bool {
@@ -470,8 +467,7 @@ pub fn start_analyzer(tcx: TyCtxt, callback: &RapCallback) {
     }
 
     if callback.is_verify_std_enabled() {
-        let func: Vec<String> = callback.verify_std_func.clone();
-        SenryxCheck::new(tcx, 2).start_analyze_std_func(func);
+        SenryxCheck::new(tcx, 2).start_analyze_std_func();
     }
 
     if callback.is_infer_enabled() {

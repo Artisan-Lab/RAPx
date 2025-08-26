@@ -90,17 +90,24 @@ impl<'tcx> SenryxCheck<'tcx> {
         }
     }
 
-    pub fn start_analyze_std_func(&mut self, func: Vec<String>) {
-        let def_id_sets = self.tcx.mir_keys(());
-        for local_def_id in def_id_sets {
-            let def_id = local_def_id.to_def_id();
-            let func_name = get_cleaned_def_path_name(self.tcx, def_id);
-            if func.contains(&func_name) {
-                let check_results = self.body_visit_and_check(def_id, &FxHashMap::default());
-                if !check_results.is_empty() {
-                    Self::show_check_results(self.tcx, def_id, check_results);
-                }
-                println!("Found target function: {}", func_name);
+    pub fn start_analyze_std_func(&mut self) {
+        // let def_id_sets = self.tcx.mir_keys(());
+        let v_fn_def: Vec<_> = rustc_public::find_crates("core")
+            .iter()
+            .flat_map(|krate| krate.fn_defs())
+            .collect();
+        for fn_def in &v_fn_def {
+            let def_id = crate::def_id::to_internal(fn_def, self.tcx);
+            if is_verify_target_func(self.tcx, def_id) {
+                rap_info!(
+                    "Begin verification process for: {:?}",
+                    get_cleaned_def_path_name(self.tcx, def_id)
+                );
+                // TODO: add verify logic
+                // let check_results = self.body_visit_and_check(def_id, &FxHashMap::default());
+                // if !check_results.is_empty() {
+                //     Self::show_check_results(self.tcx, def_id, check_results);
+                // }
             }
         }
     }

@@ -24,96 +24,34 @@ fn main() {
     // Parse the arguments from env.
     let mut args = vec![];
     let mut compiler = RapCallback::default();
-    let raw_args: Vec<String> = env::args().collect();
-    let mut i = 0;
-    while i < raw_args.len() {
-        let arg = &raw_args[i];
+    for arg in env::args() {
         match arg.as_str() {
-            "-alias" | "-alias0" | "-alias1" | "-alias2" => {
-                compiler.enable_alias(arg.to_string());
-            }
-            "-adg" => {
-                compiler.enable_api_dependency(); // api dependency graph
-            }
-            "-callgraph" => {
-                compiler.enable_callgraph();
-            }
-            "-dataflow" => {
-                compiler.enable_dataflow(1);
-            }
-            "-dataflow=debug" => {
-                compiler.enable_dataflow(2);
-            }
-            "-ownedheap" => {
-                compiler.enable_ownedheap();
-            }
-            "-range" => {
-                compiler.enable_range_analysis(1);
-            }
-            "-range=print_mir" => {
-                compiler.enable_range_analysis(2);
-            }
-            "-pathcond" => {
-                compiler.enable_range_analysis(3);
-            }
-            "-test" => {
-                compiler.enable_test();
-            }
-            "-F" | "-F0" | "-F1" | "-F2" | "-uaf" => {
-                compiler.enable_safedrop(arg.to_string());
-            }
-            "-I" | "-infer" => {
-                compiler.enable_infer();
-            }
-            "-M" | "-mleak" => {
-                compiler.enable_rcanary();
-            }
-            "-V" | "-verify" => {
-                compiler.enable_verify();
-            }
-            "-O" | "-opt" => {
-                compiler.enable_opt(1);
-            }
-            "-opt=all" => {
-                compiler.enable_opt(2);
-            }
-            "-opt=report" => {
-                compiler.enable_opt(0);
-            }
-            "-ssa" => {
-                compiler.enable_ssa_transform();
-            }
-            "-audit" => {
-                compiler.enable_unsafety_isolation(1);
-            }
-            "-doc" => {
-                compiler.enable_unsafety_isolation(2);
-            }
-            "-upg" => {
-                compiler.enable_unsafety_isolation(3);
-            }
-            "-ucons" => {
-                compiler.enable_unsafety_isolation(4);
-            }
-            "-mir" => {
-                compiler.enable_show_mir();
-            }
-            "-verify-std" => {
-                let mut func_to_be_verified = vec![];
-                // Collect function names until next option or end
-                i += 1; // Move to the next argument
-                while i < raw_args.len() && !raw_args[i].starts_with('-') {
-                    func_to_be_verified.push(raw_args[i].clone());
-                    i += 1;
-                }
-                compiler.enable_verify_std(func_to_be_verified);
-                continue; // Skip the increment at the end
-            }
-            _ => {
-                args.push(arg.clone());
-            }
+            "-alias" | "-alias0" | "-alias1" | "-alias2" => compiler.enable_alias(arg),
+            "-adg" => compiler.enable_api_dependency(), // api dependency graph
+            "-callgraph" => compiler.enable_callgraph(),
+            "-dataflow" => compiler.enable_dataflow(1),
+            "-dataflow=debug" => compiler.enable_dataflow(2),
+            "-ownedheap" => compiler.enable_ownedheap(),
+            "-range" => compiler.enable_range_analysis(1),
+            "-range=print_mir" => compiler.enable_range_analysis(2),
+            "-pathcond" => compiler.enable_range_analysis(3),
+            "-test" => compiler.enable_test(),
+            "-F" | "-F0" | "-F1" | "-F2" | "-uaf" => compiler.enable_safedrop(arg),
+            "-I" | "-infer" => compiler.enable_infer(),
+            "-M" | "-mleak" => compiler.enable_rcanary(),
+            "-V" | "-verify" => compiler.enable_verify(),
+            "-O" | "-opt" => compiler.enable_opt(1),
+            "-opt=all" => compiler.enable_opt(2),
+            "-opt=report" => compiler.enable_opt(0),
+            "-ssa" => compiler.enable_ssa_transform(),
+            "-audit" => compiler.enable_unsafety_isolation(1),
+            "-doc" => compiler.enable_unsafety_isolation(2),
+            "-upg" => compiler.enable_unsafety_isolation(3),
+            "-ucons" => compiler.enable_unsafety_isolation(4),
+            "-verify-std" => compiler.enable_verify_std(),
+            "-mir" => compiler.enable_show_mir(),
+            _ => args.push(arg),
         }
-        i += 1;
     }
     _ = init_log().inspect_err(|err| eprintln!("Failed to init log: {err}"));
     rap_info!("Start analysis with RAPx.");
