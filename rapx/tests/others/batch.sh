@@ -1,6 +1,10 @@
 #!/bin/bash
 #该脚本在目录下为每个Cargo项目执行相同的命令直到报错
 
+# #![deny(missing_docs)] must be successfully compiled.
+# cc https://github.com/Artisan-Lab/RAPx/issues/184
+pushd support/deny_missing_docs && cargo rapx -- && popd
+
 # All arguments passed to this script are forwarded to cargo rapx
 # Example: batch.sh -F -M
 
@@ -66,15 +70,6 @@ function test() { #第一个参数：目录名 第二个参数：rapx的参数
 }
 
 parse $@
-# if [ "$F" -eq 1 ]; then
-#   test "support" "-F $rest"
-# fi
-# if [ "$M" -eq 1 ]; then
-#   test "support" "-M $rest"
-# fi
 if [ "$O" -eq 1 ]; then
   test "support/opt" "-O $rest"
-fi
-if [ $(($F + $M + $O)) -eq 0 ]; then
-  test "support" $rest
 fi
