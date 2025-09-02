@@ -35,10 +35,10 @@ rustup default nightly-2025-08-20
 Check out supported options with `-help`:
 
 ```shell
-cargo rapx -help
+$ cargo rapx -help
 
 Usage:
-    cargo rapx [rapx options] -- [cargo check options]
+    cargo rapx [rapx options or rustc options] -- [cargo check options]
 
 RAPx Options:
 
@@ -58,6 +58,39 @@ Analysis:
     -ownedheap      analyze if the type holds a piece of memory on heap
     -pathcond       extract path constraints
     -range          perform range analysis
+
+General command: 
+    -help           show help information
+    -version        show the version of RAPx
+
+NOTE: multiple detections can be processed in single run by 
+appending the options to the arguments. Like `cargo rapx -F -M`
+will perform two kinds of detection in a row.
+
+e.g.
+1. detect use-after-free and memory leak for a riscv target:
+   cargo rapx -F -M -- --target riscv64gc-unknown-none-elf
+2. detect use-after-free and memory leak for tests:
+   cargo rapx -F -M -- --tests
+3. detect use-after-free and memory leak for all members:
+   cargo rapx -F -M -- --workspace
+
+Environment Variables (Values are case insensitive):
+    RAP_LOG          verbosity of logging: trace, debug, info, warn
+                     trace: print all the detailed RAP execution traces.
+                     debug: display intermidiate analysis results.
+                     warn: show bugs detected only.
+
+    RAP_CLEAN        run cargo clean before check: true, false
+                     * true is the default value except that false is set
+
+    RAP_RECURSIVE    scope of packages to check: none, shallow, deep
+                     * none or the variable not set: check for current folder
+                     * shallow: check for current workpace members
+                     * deep: check for all workspaces from current folder
+                      
+                     NOTE: for shallow or deep, rapx will enter each member
+                     folder to do the check.
 ```
 
 If RAPx gets stuck after executing `cargo clean`, try manually downloading metadata dependencies by running `cargo metadata`. 

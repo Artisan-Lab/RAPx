@@ -1,6 +1,6 @@
 pub const RAPX_HELP: &str = r#"
 Usage:
-    cargo rapx [rapx options] -- [cargo check options]
+    cargo rapx [rapx options or rustc options] -- [cargo check options]
 
 RAPx Options:
 
@@ -22,8 +22,8 @@ Analysis:
     -range          perform range analysis
 
 General command: 
-    -help:     show help information
-    -version:  show the version of RAPx
+    -help           show help information
+    -version        show the version of RAPx
 
 NOTE: multiple detections can be processed in single run by 
 appending the options to the arguments. Like `cargo rapx -F -M`
@@ -56,7 +56,7 @@ Environment Variables (Values are case insensitive):
 "#;
 
 pub const RAPX_VERSION: &str = r#"
-rapx version 0.21
-released at 2025-05-16
+rapx version 0.5.3
+released at 2025-08-17
 developped by artisan-lab @ Fudan university 
 "#;
