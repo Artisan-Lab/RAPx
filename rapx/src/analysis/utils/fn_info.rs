@@ -537,14 +537,11 @@ pub fn generate_contract_from_annotation_without_field_types(
 
 /// Filter the function which contains "rapx::proof"
 pub fn is_verify_target_func(tcx: TyCtxt, def_id: DefId) -> bool {
-    const REGISTER_TOOL: &str = "rapx";
     for attr in tcx.get_all_attrs(def_id).into_iter() {
-        if let Attribute::Unparsed(tool_attr) = attr {
-            if tool_attr.path.segments[0].as_str() == REGISTER_TOOL
-                && tool_attr.path.segments[1].as_str() == "proof"
-            {
-                return true;
-            }
+        let attr_str = rustc_hir_pretty::attribute_to_string(&tcx, attr);
+        // Find proof placeholder
+        if attr_str.contains("#[rapx::inner()]") {
+            return true;
         }
     }
     false
