@@ -560,9 +560,7 @@ pub fn generate_contract_from_annotation(
     const REGISTER_TOOL: &str = "rapx";
     let tool_attrs = tcx.get_all_attrs(def_id).into_iter().filter(|attr| {
         if let Attribute::Unparsed(tool_attr) = attr {
-            if tool_attr.path.segments[0].as_str() == REGISTER_TOOL
-                && tool_attr.path.segments[1].as_str() != "proof"
-            {
+            if tool_attr.path.segments[0].as_str() == REGISTER_TOOL {
                 return true;
             }
         }
@@ -571,6 +569,11 @@ pub fn generate_contract_from_annotation(
     let mut results = Vec::new();
     for attr in tool_attrs {
         let attr_str = rustc_hir_pretty::attribute_to_string(&tcx, attr);
+        // Find proof placeholder, skip it
+        if attr_str.contains("#[rapx::proof()]") {
+            continue;
+        }
+        rap_warn!("{:?}", attr_str);
         let safety_attr =
             safety_parser::property_attr::parse_inner_attr_from_str(attr_str.as_str()).unwrap();
         let attr_name = safety_attr.name;

@@ -10,7 +10,7 @@ use rustc_middle::mir::BinOp;
 use rustc_middle::ty::Ty;
 use rustc_middle::ty::TyCtxt;
 use safety_parser::{
-    property_attr::property::{Kind, PropertyName},
+    safety::{Kind, PropertyName},
     syn::Expr,
 };
 

@@ -91,8 +91,7 @@ impl<'tcx> SenryxCheck<'tcx> {
     }
 
     pub fn start_analyze_std_func(&mut self) {
-        // let def_id_sets = self.tcx.mir_keys(());
-        let v_fn_def: Vec<_> = rustc_public::find_crates("core")
+        let v_fn_def: Vec<_> = rustc_public::find_crates("alloc")
             .iter()
             .flat_map(|krate| krate.fn_defs())
             .collect();
@@ -103,11 +102,10 @@ impl<'tcx> SenryxCheck<'tcx> {
                     "Begin verification process for: {:?}",
                     get_cleaned_def_path_name(self.tcx, def_id)
                 );
-                // TODO: add verify logic
-                // let check_results = self.body_visit_and_check(def_id, &FxHashMap::default());
-                // if !check_results.is_empty() {
-                //     Self::show_check_results(self.tcx, def_id, check_results);
-                // }
+                let check_results = self.body_visit_and_check(def_id, &FxHashMap::default());
+                if !check_results.is_empty() {
+                    Self::show_check_results(self.tcx, def_id, check_results);
+                }
             }
         }
     }
@@ -153,7 +151,7 @@ impl<'tcx> SenryxCheck<'tcx> {
                     BodyVisitor::new(self.tcx, func_con.0, self.global_recorder.clone(), 0);
                 let cons_fields_result = cons_body_visitor.path_forward_check(fn_map);
                 // cache and merge fields' states
-                println!("2 {:?}", cons_fields_result.clone());
+                // println!("2 {:?}", cons_fields_result.clone());
                 base_inter_result.merge(cons_fields_result);
             }
             // update method body's states by constructors' states

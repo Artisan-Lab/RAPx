@@ -9,8 +9,8 @@ use crate::{
         senryx::contracts::property::{CisRangeItem, PropertyContract},
         utils::{
             fn_info::{
-                display_hashmap, get_all_std_unsafe_callees_block_id, get_callees,
-                get_cleaned_def_path_name, is_ptr, is_ref,
+                display_hashmap, get_all_std_unsafe_callees, get_all_std_unsafe_callees_block_id,
+                get_callees, get_cleaned_def_path_name, is_ptr, is_ref,
             },
             show_mir::display_mir,
         },
@@ -158,7 +158,6 @@ impl<'tcx> BodyVisitor<'tcx> {
         if self.visit_time >= 1000 {
             return inter_return_value;
         }
-
         // get path and body
         let paths = self.get_all_paths();
         // self.paths = paths.clone();
