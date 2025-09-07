@@ -1,3 +1,4 @@
+use crate::analysis::senryx::contracts::property;
 #[allow(unused)]
 use crate::analysis::senryx::contracts::property::PropertyContract;
 use crate::analysis::senryx::matcher::parse_unsafe_api;
@@ -573,18 +574,21 @@ pub fn generate_contract_from_annotation(
         if attr_str.contains("#[rapx::proof()]") {
             continue;
         }
-        rap_warn!("{:?}", attr_str);
-        let safety_attr =
-            safety_parser::property_attr::parse_inner_attr_from_str(attr_str.as_str()).unwrap();
-        let attr_name = safety_attr.name;
-        let attr_kind = safety_attr.kind;
-        let contract = PropertyContract::new(tcx, def_id, attr_kind, attr_name, &safety_attr.expr);
-        let (local, fields) = parse_cis_local(tcx, def_id, safety_attr.expr);
-        results.push((local, fields, contract));
+        rap_debug!("{:?}", attr_str);
+        let safety_attr = safety_parser::safety::parse_attr_and_get_properties(attr_str.as_str());
+        for par in safety_attr.iter() {
+            for property in par.tags.iter() {
+                let tag_name = property.tag.name();
+                let exprs = property.args.clone().into_vec();
+                let contract = PropertyContract::new(tcx, def_id, tag_name, &exprs);
+                let (local, fields) = parse_cis_local(tcx, def_id, exprs);
+                results.push((local, fields, contract));
+            }
+        }
     }
-    // if results.len() > 0 {
-    //     rap_warn!("results:\n{:?}", results);
-    // }
+    if results.len() > 0 {
+        rap_warn!("results:\n{:?}", results);
+    }
     results
 }
 
