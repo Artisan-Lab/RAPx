@@ -162,9 +162,9 @@ impl<'tcx> BodyVisitor<'tcx> {
         let paths = self.get_all_paths();
         // self.paths = paths.clone();
         let body = self.tcx.optimized_mir(self.def_id);
-        if self.visit_time == 0 {
-            display_mir(self.def_id, body);
-        }
+        // if self.visit_time == 0 {
+        //     display_mir(self.def_id, body);
+        // }
         // initialize local vars' types
         let locals = body.local_decls.clone();
         for (idx, local) in locals.iter().enumerate() {
@@ -818,7 +818,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                     let size = layout.size.bytes() as usize;
                     return PlaceTy::Ty(align, size);
                 } else {
-                    rap_warn!("Find type {:?} that can't get layout!", ty);
+                    // rap_warn!("Find type {:?} that can't get layout!", ty);
                     PlaceTy::Unknown
                 }
             }
