@@ -540,7 +540,7 @@ pub fn is_verify_target_func(tcx: TyCtxt, def_id: DefId) -> bool {
     for attr in tcx.get_all_attrs(def_id).into_iter() {
         let attr_str = rustc_hir_pretty::attribute_to_string(&tcx, attr);
         // Find proof placeholder
-        if attr_str.contains("#[rapx::inner()]") {
+        if attr_str.contains("#[rapx::proof(proof)]") {
             return true;
         }
     }
@@ -568,7 +568,7 @@ pub fn generate_contract_from_annotation(
     for attr in tool_attrs {
         let attr_str = rustc_hir_pretty::attribute_to_string(&tcx, attr);
         // Find proof placeholder, skip it
-        if attr_str.contains("#[rapx::proof()]") {
+        if attr_str.contains("#[rapx::proof(proof)]") {
             continue;
         }
         rap_debug!("{:?}", attr_str);
@@ -583,9 +583,9 @@ pub fn generate_contract_from_annotation(
             }
         }
     }
-    if results.len() > 0 {
-        rap_warn!("results:\n{:?}", results);
-    }
+    // if results.len() > 0 {
+    //     rap_warn!("results:\n{:?}", results);
+    // }
     results
 }
 

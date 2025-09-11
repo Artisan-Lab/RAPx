@@ -162,7 +162,9 @@ impl<'tcx> BodyVisitor<'tcx> {
         let paths = self.get_all_paths();
         // self.paths = paths.clone();
         let body = self.tcx.optimized_mir(self.def_id);
-
+        if self.visit_time == 0 {
+            display_mir(self.def_id, body);
+        }
         // initialize local vars' types
         let locals = body.local_decls.clone();
         for (idx, local) in locals.iter().enumerate() {
