@@ -226,7 +226,7 @@ pub enum EdgeOp {
     Mut,
     //Place
     Deref,
-    Field(String),
+    Field(usize),
     Downcast(String),
     Index,
     ConstIndex,
