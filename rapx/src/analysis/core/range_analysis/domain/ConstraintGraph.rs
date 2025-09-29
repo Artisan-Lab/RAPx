@@ -393,6 +393,16 @@ where
             }
         }
     }
+    fn print_symbexpr(&self) {
+        for (&key, value) in &self.vars {
+            rap_info!(
+                "Var: {:?}. [ {:?} , {:?} ]",
+                key,
+                value.interval.get_lower_expr(),
+                value.interval.get_upper_expr()
+            );
+        }
+    }
     // pub fn create_random_place(&mut self) -> Place<'tcx> {
     //     let mut rng = rand::rng();
     //     let random_local = Local::from_usize(rng.random_range(10000..100000));
@@ -438,7 +448,11 @@ where
         let local_decls = &self.body.local_decls;
 
         let node = VarNode::new(v);
-        let node_ref: &mut VarNode<'tcx, T> = self.vars.entry(v).or_insert(node);
+        let node_ref: &mut VarNode<'tcx, T> = self
+            .vars
+            .entry(v)
+            // .and_modify(|old| *old = node.clone())
+            .or_insert(node);
         self.usemap.entry(v).or_insert(HashSet::new());
 
         let ty = local_decls[v.local].ty;
@@ -507,7 +521,6 @@ where
                 self.oprs.push(v_op);
                 self.defmap.insert(v, self.oprs.len() - 1);
             }
-
         }
 
         node_ref
@@ -523,7 +536,7 @@ where
         let node_ref: &mut VarNode<'tcx, T> = self
             .vars
             .entry(v)
-            .and_modify(|old| *old = node.clone())
+            // .and_modify(|old| *old = node.clone())
             .or_insert(node);
         self.usemap.entry(v).or_insert(HashSet::new());
 
@@ -612,6 +625,7 @@ where
         self.print_vars();
         self.print_defmap();
         self.print_usemap();
+        self.print_symbexpr();
         // rap_trace!("end\n");
     }
 
@@ -1019,10 +1033,10 @@ where
                             }
                             _ => {
                                 rap_trace!(
-            "AggregateKind::Adt with def_id {:?} in statement {:?} is not handled specially.\n",
-            def_id,
-            inst
-        );
+                                    "AggregateKind::Adt with def_id {:?} in statement {:?} is not handled specially.\n",
+                                    def_id,
+                                    inst
+                                );
                             }
                         },
                     },
@@ -2182,7 +2196,6 @@ where
 
         all_path_results
     }
-
 }
 #[derive(Debug)]
 pub struct Nuutila<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {

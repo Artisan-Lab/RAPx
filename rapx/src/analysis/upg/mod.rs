@@ -8,8 +8,8 @@ pub mod std_upg;
 pub mod upg_unit;
 
 use crate::{
-    utils::source::get_fn_name_byid,
     analysis::utils::{draw_dot::render_dot_graphs, fn_info::*},
+    utils::source::get_fn_name_byid,
 };
 use fn_collector::FnCollector;
 use hir_visitor::ContainsUnsafe;

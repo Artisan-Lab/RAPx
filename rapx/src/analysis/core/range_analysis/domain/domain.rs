@@ -9,7 +9,7 @@ use rust_intervals::NothingBetween;
 use crate::analysis::core::range_analysis::domain::ConstraintGraph::ConstraintGraph;
 use crate::analysis::core::range_analysis::{Range, RangeType};
 use crate::{rap_debug, rap_trace};
-use num_traits::{ops, Bounded, CheckedAdd, CheckedSub, One, ToPrimitive, Zero};
+use num_traits::{Bounded, CheckedAdd, CheckedSub, One, ToPrimitive, Zero, ops};
 use rustc_abi::Size;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
@@ -167,11 +167,6 @@ impl<'tcx> SymbExpr<'tcx> {
         }
     }
 
-    // ==========================================
-    // 2. 求值器：计算 Range<T>
-    // ==========================================
-
-    /// 根据当前变量状态表 (vars) 递归计算表达式的区间
     pub fn eval<T: IntervalArithmetic + ConstConvert + Debug>(
         &self,
         vars: &VarNodes<'tcx, T>,
@@ -179,32 +174,26 @@ impl<'tcx> SymbExpr<'tcx> {
         match self {
             SymbExpr::Unknown => Range::new(T::min_value(), T::max_value(), RangeType::Regular),
 
-            // 处理常量：利用用户定义的 ConstConvert trait 将 Const<'tcx> 转为 T
             SymbExpr::Constant(c) => {
                 if let Some(val) = T::from_const(c) {
                     Range::new(val, val, RangeType::Regular)
                 } else {
-                    // 转换失败（例如不支持的常量类型），返回全集
                     Range::new(T::min_value(), T::max_value(), RangeType::Regular)
                 }
             }
 
-            // 处理变量：查表
             SymbExpr::Place(place) => {
                 if let Some(node) = vars.get(place) {
                     node.get_range().clone()
                 } else {
-                    // 变量未定义，返回全集 (Top)
                     Range::new(T::min_value(), T::max_value(), RangeType::Regular)
                 }
             }
 
-            // 递归二元运算
             SymbExpr::Binary(op, lhs, rhs) => {
                 let l_range = lhs.eval(vars);
                 let r_range = rhs.eval(vars);
 
-                // 假设 Range<T> 实现了基础算术运算
                 match op {
                     BinOp::Add | BinOp::AddUnchecked | BinOp::AddWithOverflow => {
                         l_range.add(&r_range)
@@ -215,47 +204,26 @@ impl<'tcx> SymbExpr<'tcx> {
                     BinOp::Mul | BinOp::MulUnchecked | BinOp::MulWithOverflow => {
                         l_range.mul(&r_range)
                     }
-                    // 除法、位运算等如果在 Range 中未实现，返回全集
-                    // 如果实现了 Div，可以在这里添加 BinOp::Div ...
+
                     _ => Range::new(T::min_value(), T::max_value(), RangeType::Regular),
                 }
             }
 
-            // 递归一元运算
             SymbExpr::Unary(op, inner) => {
                 let _inner_range = inner.eval(vars);
                 match op {
-                    UnOp::Neg => {
-                        // TODO: 确保 Range<T> 实现了 Neg 或有相应逻辑
-                        // 如果 Range 库支持 neg()：
-                        // inner_range.neg()
-                        // 暂时返回全集以保证编译通过
-                        Range::new(T::min_value(), T::max_value(), RangeType::Regular)
-                    }
+                    UnOp::Neg => Range::new(T::min_value(), T::max_value(), RangeType::Regular),
                     UnOp::Not | UnOp::PtrMetadata => {
                         Range::new(T::min_value(), T::max_value(), RangeType::Regular)
                     }
                 }
             }
 
-            // 处理类型转换
             SymbExpr::Cast(kind, inner, _target_ty) => {
                 let inner_range = inner.eval(vars);
                 match kind {
-                    // 整数间的转换 (e.g. i32 -> i64, u64 -> u32)
-                    CastKind::IntToInt => {
-                        // 这是一个启发式处理：
-                        // 在不知道 T 具体大小的情况下，我们假设 "值" 尽可能保留。
-                        // 如果是从小类型转大类型 (Ext)，Range 不变。
-                        // 如果是大类型转小类型 (Trunc)，理论上 Range 可能会剧烈变化（截断）。
-                        // 为了安全起见，如果不做精确的位宽处理，直接返回 inner_range 可能不安全(对于截断)，
-                        // 但在很多静态分析中，为了路径敏感性，我们希望尽量传递约束。
+                    CastKind::IntToInt => inner_range,
 
-                        // 策略：直接传递 Range。具体的溢出截断由 Range<T> 内部的 add/sub 处理，
-                        // 或者 T::from_const 处理。
-                        inner_range
-                    }
-                    // 指针转整数等其他 Cast，通常意味着失去了数值的连续性
                     _ => Range::new(T::min_value(), T::max_value(), RangeType::Regular),
                 }
             }
@@ -288,11 +256,13 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> fmt::Display for Interv
         }
     }
 }
-pub trait IntervalTypeTrait<T: IntervalArithmetic + ConstConvert + Debug> {
+pub trait IntervalTypeTrait<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     fn get_range(&self) -> &Range<T>;
     fn set_range(&mut self, new_range: Range<T>);
+    fn get_lower_expr(&self) -> &SymbExpr<'tcx>;
+    fn get_upper_expr(&self) -> &SymbExpr<'tcx>;
 }
-impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<T>
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<'tcx, T>
     for IntervalType<'tcx, T>
 {
     fn get_range(&self) -> &Range<T> {
@@ -306,6 +276,19 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<T>
         match self {
             IntervalType::Basic(b) => b.set_range(new_range),
             IntervalType::Symb(s) => s.set_range(new_range),
+        }
+    }
+    fn get_lower_expr(&self) -> &SymbExpr<'tcx> {
+        match self {
+            IntervalType::Basic(b) => b.get_lower_expr(),
+            IntervalType::Symb(s) => s.get_lower_expr(),
+        }
+    }
+
+    fn get_upper_expr(&self) -> &SymbExpr<'tcx> {
+        match self {
+            IntervalType::Basic(b) => b.get_upper_expr(),
+            IntervalType::Symb(s) => s.get_upper_expr(),
         }
     }
 }
@@ -340,7 +323,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> BasicInterval<'tcx, T> 
     }
 }
 
-impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<T>
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<'tcx, T>
     for BasicInterval<'tcx, T>
 {
     // fn get_value_id(&self) -> IntervalId {
@@ -356,6 +339,13 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<T>
         if self.range.get_lower() > self.range.get_upper() {
             self.range.set_empty();
         }
+    }
+    fn get_lower_expr(&self) -> &SymbExpr<'tcx> {
+        &self.lower
+    }
+
+    fn get_upper_expr(&self) -> &SymbExpr<'tcx> {
+        &self.upper
     }
 }
 
@@ -382,10 +372,8 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> SymbInterval<'tcx, T> {
 
     pub fn refine(&mut self, vars: &VarNodes<'tcx, T>) {
         if let SymbExpr::Unknown = self.lower {
-            // Do nothing
         } else {
             let low_range = self.lower.eval(vars);
-            // 如果计算出的符号下界比当前的下界更大（更紧），则更新
             if low_range.get_lower() > self.range.get_lower() {
                 let new_range = Range::new(
                     low_range.get_lower(),
@@ -400,7 +388,6 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> SymbInterval<'tcx, T> {
             // Do nothing
         } else {
             let high_range = self.upper.eval(vars);
-            // 如果计算出的符号上界比当前的上界更小（更紧），则更新
             if high_range.get_upper() < self.range.get_upper() {
                 let new_range = Range::new(
                     self.range.get_lower(),
@@ -463,7 +450,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> SymbInterval<'tcx, T> {
     }
 }
 
-impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<T>
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<'tcx, T>
     for SymbInterval<'tcx, T>
 {
     // fn get_value_id(&self) -> IntervalId {
@@ -476,6 +463,13 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<T>
 
     fn set_range(&mut self, new_range: Range<T>) {
         self.range = new_range;
+    }
+    fn get_lower_expr(&self) -> &SymbExpr<'tcx> {
+        &self.lower
+    }
+
+    fn get_upper_expr(&self) -> &SymbExpr<'tcx> {
+        &self.upper
     }
 }
 
@@ -501,16 +495,56 @@ pub enum BasicOpKind<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
 impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> fmt::Display for BasicOpKind<'tcx, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BasicOpKind::Unary(op) => write!(f, "UnaryOp: intersect {} sink:{:?} source:{:?} inst:{:?} ",op.intersect,op.sink,op.source,op.inst),
-            BasicOpKind::Binary(op) => write!(f, "BinaryOp: intersect {} sink:{:?} source1:{:?} source2:{:?} inst:{:?} const_value:{} ",op.intersect,op.sink,op.source1,op.source2,op.inst,op.const_value.clone().unwrap()),
-            BasicOpKind::Essa(op) => write!(f, "EssaOp: intersect {} sink:{:?} source:{:?} inst:{:?} unresolved:{:?} ",op.intersect,op.sink,op.source,op.inst,op.unresolved),
-            BasicOpKind::ControlDep(op) => write!(f, "ControlDep: intersect {} sink:{:?} source:{:?} inst:{:?}  ",op.intersect,op.sink,op.source,op.inst),
-            BasicOpKind::Phi(op) => write!(f, "PhiOp: intersect {} sink:{:?} source:{:?} inst:{:?}  ",op.intersect,op.sink,op.sources,op.inst),
-            BasicOpKind::Use(op) => write!(f, "UseOp: intersect {} sink:{:?} source:{:?} inst:{:?} ",op.intersect,op.sink,op.source,op.inst ),
-            BasicOpKind::Call(op) => write!(f, "CallOp: intersect {} sink:{:?} args:{:?} inst:{:?}", op.intersect, op.sink, op.args, op.inst),
-            BasicOpKind::Ref(op) => write!(f, "RefOp: intersect {} sink:{:?} source:{:?} inst:{:?} borrowkind:{:?}", op.intersect, op.sink, op.source, op.inst, op.borrowkind),
-            BasicOpKind::Aggregate(op) => write!(f, "AggregateOp: intersect {} sink:{:?} operands:{:?} inst:{:?}", op.intersect, op.sink, op.operands, op.inst),
-
+            BasicOpKind::Unary(op) => write!(
+                f,
+                "UnaryOp: intersect {} sink:{:?} source:{:?} inst:{:?} ",
+                op.intersect, op.sink, op.source, op.inst
+            ),
+            BasicOpKind::Binary(op) => write!(
+                f,
+                "BinaryOp: intersect {} sink:{:?} source1:{:?} source2:{:?} inst:{:?} const_value:{} ",
+                op.intersect,
+                op.sink,
+                op.source1,
+                op.source2,
+                op.inst,
+                op.const_value.clone().unwrap()
+            ),
+            BasicOpKind::Essa(op) => write!(
+                f,
+                "EssaOp: intersect {} sink:{:?} source:{:?} inst:{:?} unresolved:{:?} ",
+                op.intersect, op.sink, op.source, op.inst, op.unresolved
+            ),
+            BasicOpKind::ControlDep(op) => write!(
+                f,
+                "ControlDep: intersect {} sink:{:?} source:{:?} inst:{:?}  ",
+                op.intersect, op.sink, op.source, op.inst
+            ),
+            BasicOpKind::Phi(op) => write!(
+                f,
+                "PhiOp: intersect {} sink:{:?} source:{:?} inst:{:?}  ",
+                op.intersect, op.sink, op.sources, op.inst
+            ),
+            BasicOpKind::Use(op) => write!(
+                f,
+                "UseOp: intersect {} sink:{:?} source:{:?} inst:{:?} ",
+                op.intersect, op.sink, op.source, op.inst
+            ),
+            BasicOpKind::Call(op) => write!(
+                f,
+                "CallOp: intersect {} sink:{:?} args:{:?} inst:{:?}",
+                op.intersect, op.sink, op.args, op.inst
+            ),
+            BasicOpKind::Ref(op) => write!(
+                f,
+                "RefOp: intersect {} sink:{:?} source:{:?} inst:{:?} borrowkind:{:?}",
+                op.intersect, op.sink, op.source, op.inst, op.borrowkind
+            ),
+            BasicOpKind::Aggregate(op) => write!(
+                f,
+                "AggregateOp: intersect {} sink:{:?} operands:{:?} inst:{:?}",
+                op.intersect, op.sink, op.operands, op.inst
+            ),
         }
     }
 }
