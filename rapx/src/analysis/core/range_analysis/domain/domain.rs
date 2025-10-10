@@ -100,7 +100,6 @@ pub trait IntervalArithmetic:
 impl IntervalArithmetic for i32 {}
 impl IntervalArithmetic for usize {}
 impl IntervalArithmetic for i64 {}
-
 use rustc_middle::ty::Ty;
 
 #[derive(Debug, Clone)]
@@ -227,6 +226,7 @@ impl<'tcx> SymbExpr<'tcx> {
                     _ => Range::new(T::min_value(), T::max_value(), RangeType::Regular),
                 }
             }
+
         }
     }
 }
@@ -293,7 +293,8 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<'tcx,
     }
 }
 #[derive(Debug, Clone)]
-pub struct BasicInterval<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
+
+pub struct BasicInterval<'tcx,T: IntervalArithmetic + ConstConvert + Debug> {
     range: Range<T>,
     lower: SymbExpr<'tcx>,
     upper: SymbExpr<'tcx>,
