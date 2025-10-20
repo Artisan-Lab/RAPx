@@ -65,7 +65,13 @@ use std::{env, sync::Arc};
 
 // Insert rustc arguments at the beginning of the argument list that RAP wants to be
 // set per default, for maximal validation power.
-pub static RAP_DEFAULT_ARGS: &[&str] = &["-Zalways-encode-mir", "-Zmir-opt-level=0"];
+pub static RAP_DEFAULT_ARGS: &[&str] = &[
+    "-Zalways-encode-mir",
+    "-Zmir-opt-level=0",
+    "-Zinline-mir-threshold=0",
+    "-Zinline-mir-hint-threshold=0",
+    "-Zcross-crate-inline-threshold=0",
+];
 
 /// This is the data structure to handle rapx options as a rustc callback.
 
@@ -516,7 +522,8 @@ pub fn start_analyzer(tcx: TyCtxt, callback: &RapCallback) {
     }
 
     if callback.is_verify_std_enabled() {
-        SenryxCheck::new(tcx, 2).start_analyze_std_func();
+        // SenryxCheck::new(tcx, 2).start_analyze_std_func();
+        SenryxCheck::new(tcx, 2).generate_uig_by_def_id();
     }
 
     if callback.is_infer_enabled() {

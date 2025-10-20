@@ -17,6 +17,7 @@ use rustc_middle::{
     mir::{BasicBlock, Operand, TerminatorKind},
     ty::{self, TyCtxt},
 };
+use rustc_span::Symbol;
 use std::collections::{HashMap, HashSet};
 use visitor::{BodyVisitor, CheckResult};
 
@@ -24,6 +25,7 @@ use crate::{
     analysis::{
         core::alias_analysis::{default::AliasAnalyzer, AAResult, AliasAnalysis},
         unsafety_isolation::{
+            draw_dot::render_dot_graphs,
             hir_visitor::{ContainsUnsafe, RelatedFnCollector},
             UnsafetyIsolationCheck,
         },
@@ -69,20 +71,15 @@ impl<'tcx> SenryxCheck<'tcx> {
                 let (function_unsafe, block_unsafe) =
                     ContainsUnsafe::contains_unsafe(tcx, *body_id);
                 let def_id = tcx.hir_body_owner_def_id(*body_id).to_def_id();
+                let std_unsafe_callee = get_all_std_unsafe_callees(self.tcx, def_id);
                 if !Self::filter_by_check_level(tcx, &check_level, def_id) {
                     continue;
                 }
-                if block_unsafe
-                    && is_verify
-                    && !get_all_std_unsafe_callees(self.tcx, def_id).is_empty()
-                {
+                if block_unsafe && is_verify && !std_unsafe_callee.is_empty() {
                     self.check_soundness(def_id, fn_map);
                 }
-                if function_unsafe
-                    && !is_verify
-                    && !get_all_std_unsafe_callees(self.tcx, def_id).is_empty()
-                {
-                    self.annotate_safety(def_id);
+                if function_unsafe && !is_verify && !std_unsafe_callee.is_empty() {
+                    // self.annotate_safety(def_id);
                     // let mutable_methods = get_all_mutable_methods(self.tcx, def_id);
                     // println!("mutable_methods: {:?}", mutable_methods);
                 }
@@ -90,25 +87,110 @@ impl<'tcx> SenryxCheck<'tcx> {
         }
     }
 
-    pub fn start_analyze_std_func(&mut self) {
-        // let def_id_sets = self.tcx.mir_keys(());
-        let v_fn_def: Vec<_> = rustc_public::find_crates("core")
-            .iter()
-            .flat_map(|krate| krate.fn_defs())
-            .collect();
-        for fn_def in &v_fn_def {
-            let def_id = crate::def_id::to_internal(fn_def, self.tcx);
-            if is_verify_target_func(self.tcx, def_id) {
-                rap_info!(
-                    "Begin verification process for: {:?}",
-                    get_cleaned_def_path_name(self.tcx, def_id)
+    // pub fn start_analyze_std_func(&mut self) {
+    //     let v_fn_def: Vec<_> = rustc_public::find_crates("alloc")
+    //         .iter()
+    //         .flat_map(|krate| krate.fn_defs())
+    //         .collect();
+    //     for fn_def in &v_fn_def {
+    //         let def_id = crate::def_id::to_internal(fn_def, self.tcx);
+    //         if is_verify_target_func(self.tcx, def_id) {
+    //             rap_info!(
+    //                 "Begin verification process for: {:?}",
+    //                 get_cleaned_def_path_name(self.tcx, def_id)
+    //             );
+    //             let check_results = self.body_visit_and_check(def_id, &FxHashMap::default());
+    //             if !check_results.is_empty() {
+    //                 Self::show_check_results(self.tcx, def_id, check_results);
+    //             }
+    //         }
+    //     }
+    // }
+
+    pub fn generate_uig_by_def_id(&mut self) {
+        let all_std_fn_def = get_all_std_fns_by_rustc_public(self.tcx);
+        let symbol = Symbol::intern("Vec");
+        let vec_def_id = self.tcx.get_diagnostic_item(symbol).unwrap();
+        println!("vec_def_id {:?}", vec_def_id);
+        let mut uig_entrance = UnsafetyIsolationCheck::new(self.tcx);
+        for &def_id in &all_std_fn_def {
+            let adt_def = get_adt_def_id_by_adt_method(self.tcx, def_id);
+            if adt_def.is_some() && adt_def.unwrap() == vec_def_id {
+                println!("def_id {:?}", def_id);
+                uig_entrance.insert_uig(
+                    def_id,
+                    get_callees(self.tcx, def_id),
+                    get_cons(self.tcx, def_id),
                 );
-                // TODO: add verify logic
-                // let check_results = self.body_visit_and_check(def_id, &FxHashMap::default());
-                // if !check_results.is_empty() {
-                //     Self::show_check_results(self.tcx, def_id, check_results);
-                // }
             }
+        }
+        let mut dot_strs = Vec::new();
+        for uig in &uig_entrance.uigs {
+            let dot_str = uig.generate_dot_str();
+            dot_strs.push(dot_str);
+        }
+        for uig in &uig_entrance.single {
+            let dot_str = uig.generate_dot_str();
+            dot_strs.push(dot_str);
+        }
+        render_dot_graphs(dot_strs);
+    }
+
+    pub fn start_analyze_std_func(&mut self) {
+        let all_std_fn_def = get_all_std_fns_by_rustc_public(self.tcx);
+        let mut last_nodes = HashSet::new();
+        for &def_id in &all_std_fn_def {
+            if !check_visibility(self.tcx, def_id) {
+                continue;
+            }
+            // if get_cleaned_def_path_name(self.tcx, def_id) == "std::ptr::swap_nonoverlapping" {
+            //     let body = self.tcx.instance_mir(ty::InstanceKind::Item(def_id));
+            //     display_mir(def_id, body);
+            // }
+            let chains = get_all_std_unsafe_chains(self.tcx, def_id);
+            let valid_chains: Vec<Vec<String>> = chains
+                .into_iter()
+                .filter(|chain| {
+                    if chain.len() > 1 {
+                        return true;
+                    }
+                    if chain.len() == 1 {
+                        let is_unsafe = check_safety(self.tcx, def_id);
+                        return is_unsafe;
+                    }
+                    false
+                })
+                .collect();
+
+            let mut last = true;
+            for chain in &valid_chains {
+                if let Some(last_node) = chain.last() {
+                    if !last_node.contains("intrinsic") && !last_node.contains("aarch64") {
+                        last_nodes.insert(last_node.clone());
+                        last = false;
+                    }
+                }
+            }
+            if last {
+                continue;
+            }
+            // print_unsafe_chains(&valid_chains);
+        }
+        Self::print_last_nodes(&last_nodes);
+    }
+
+    pub fn print_last_nodes(last_nodes: &HashSet<String>) {
+        if last_nodes.is_empty() {
+            println!("No unsafe call chain last nodes found.");
+            return;
+        }
+
+        println!(
+            "Found {} unique unsafe call chain last nodes:",
+            last_nodes.len()
+        );
+        for (i, node) in last_nodes.iter().enumerate() {
+            println!("{}. {}", i + 1, node);
         }
     }
 
@@ -145,6 +227,11 @@ impl<'tcx> SenryxCheck<'tcx> {
         fn_map: &FxHashMap<DefId, AAResult>,
     ) -> Vec<CheckResult> {
         let mut body_visitor = BodyVisitor::new(self.tcx, def_id, self.global_recorder.clone(), 0);
+        let target_name = get_cleaned_def_path_name(self.tcx, def_id);
+        if !target_name.contains("into_raw_parts_with_alloc") {
+            return body_visitor.check_results;
+        }
+        rap_info!("Begin verification process for: {:?}", target_name);
         if get_type(self.tcx, def_id) == 1 {
             let func_cons = get_cons(self.tcx, def_id);
             let mut base_inter_result = InterResultNode::new_default(get_adt_ty(self.tcx, def_id));
@@ -153,13 +240,21 @@ impl<'tcx> SenryxCheck<'tcx> {
                     BodyVisitor::new(self.tcx, func_con.0, self.global_recorder.clone(), 0);
                 let cons_fields_result = cons_body_visitor.path_forward_check(fn_map);
                 // cache and merge fields' states
-                println!("2 {:?}", cons_fields_result.clone());
+                let cons_name = get_cleaned_def_path_name(self.tcx, func_con.0);
+                println!(
+                    "cons {cons_name} state results {:?}",
+                    cons_fields_result.clone()
+                );
                 base_inter_result.merge(cons_fields_result);
             }
             // update method body's states by constructors' states
             body_visitor.update_fields_states(base_inter_result);
             // get mutable methods and TODO: update target method's states
-            let _mutable_methods = get_all_mutable_methods(self.tcx, def_id);
+            let mutable_methods = get_all_mutable_methods(self.tcx, def_id);
+            for mm in mutable_methods {
+                println!("mut method {:?}", get_cleaned_def_path_name(self.tcx, mm.0));
+                // has_tainted_fields(self.tcx, mm.0, 1);
+            }
             // analyze body's states
             body_visitor.path_forward_check(fn_map);
         } else {

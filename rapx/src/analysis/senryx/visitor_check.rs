@@ -413,6 +413,12 @@ impl<'tcx> BodyVisitor<'tcx> {
             PropertyContract::NonNull => {
                 self.check_non_null(arg);
             }
+            PropertyContract::Typed(ty) => {
+                self.check_typed(arg);
+            }
+            PropertyContract::ValidPtr(ty, contract_len) => {
+                self.check_valid_ptr(arg);
+            }
             _ => {}
         }
         true

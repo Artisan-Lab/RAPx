@@ -12,12 +12,15 @@ use std::fmt::{self, Write};
 pub enum UigNode {
     Safe(DefId, String),
     Unsafe(DefId, String),
+    MergedCallerCons(String),
+    MutMethods(String),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum UigEdge {
     CallerToCallee,
     ConsToMethod,
+    MutToCaller,
 }
 
 impl fmt::Display for UigNode {
@@ -25,6 +28,8 @@ impl fmt::Display for UigNode {
         match self {
             UigNode::Safe(_, _) => write!(f, "Safe"),
             UigNode::Unsafe(_, _) => write!(f, "Unsafe"),
+            UigNode::MergedCallerCons(_) => write!(f, "MergedCallerCons"),
+            UigNode::MutMethods(_) => write!(f, "MutMethods"),
         }
     }
 }
@@ -34,6 +39,7 @@ impl fmt::Display for UigEdge {
         match self {
             UigEdge::CallerToCallee => write!(f, "CallerToCallee"),
             UigEdge::ConsToMethod => write!(f, "ConsToMethod"),
+            UigEdge::MutToCaller => write!(f, "MutToCaller"),
         }
     }
 }
@@ -46,6 +52,7 @@ pub struct UigUnit {
     pub caller: NodeType,
     pub caller_cons: Vec<NodeType>,
     pub callee_cons_pair: HashSet<(NodeType, Vec<NodeType>)>,
+    pub mut_methods: Vec<DefId>,
 }
 
 impl UigUnit {
@@ -54,6 +61,7 @@ impl UigUnit {
             caller,
             caller_cons,
             callee_cons_pair: HashSet::default(),
+            mut_methods: Vec::new(),
         }
     }
 
@@ -61,11 +69,13 @@ impl UigUnit {
         caller: NodeType,
         caller_cons: Vec<NodeType>,
         callee_cons_pair: HashSet<(NodeType, Vec<NodeType>)>,
+        mut_methods: Vec<DefId>,
     ) -> Self {
         Self {
             caller,
             caller_cons,
             callee_cons_pair,
+            mut_methods,
         }
     }
 
@@ -158,6 +168,7 @@ impl UigUnit {
             match edge_ref.weight() {
                 UigEdge::CallerToCallee => "color=black, style=solid",
                 UigEdge::ConsToMethod => "color=black, style=dotted",
+                UigEdge::MutToCaller => "color=blue, style=dashed",
             }
             .to_owned()
         };
@@ -176,14 +187,45 @@ impl UigUnit {
                     let node_attr = format!("label={:?}, shape={:?}, color=red", label, shape);
                     node_attr
                 }
+                UigNode::MergedCallerCons(label) => {
+                    format!(
+                        "label=\"{}\", shape=box, style=filled, fillcolor=lightgrey",
+                        label
+                    )
+                }
+                UigNode::MutMethods(label) => {
+                    format!(
+                        "label=\"{}\", shape=octagon, style=filled, fillcolor=lightyellow",
+                        label
+                    )
+                }
             }
         };
 
         let caller_node = graph.add_node(Self::get_node_ty(self.caller));
-        for caller_cons in &self.caller_cons {
-            let caller_cons_node = graph.add_node(Self::get_node_ty(*caller_cons));
-            graph.add_edge(caller_cons_node, caller_node, UigEdge::ConsToMethod);
+        if !self.caller_cons.is_empty() {
+            let cons_labels: Vec<String> = self
+                .caller_cons
+                .iter()
+                .map(|(def_id, _, _)| format!("{:?}", def_id))
+                .collect();
+            let merged_label = format!("Caller Constructors\n{}", cons_labels.join("\n"));
+            let merged_cons_node = graph.add_node(UigNode::MergedCallerCons(merged_label));
+            graph.add_edge(merged_cons_node, caller_node, UigEdge::ConsToMethod);
         }
+
+        if !self.mut_methods.is_empty() {
+            let mut_method_labels: Vec<String> = self
+                .mut_methods
+                .iter()
+                .map(|def_id| format!("{:?}", def_id))
+                .collect();
+            let merged_label = format!("Mutable Methods\n{}", mut_method_labels.join("\n"));
+
+            let mut_methods_node = graph.add_node(UigNode::MutMethods(merged_label));
+            graph.add_edge(mut_methods_node, caller_node, UigEdge::MutToCaller);
+        }
+
         for (callee, cons) in &self.callee_cons_pair {
             let callee_node = graph.add_node(Self::get_node_ty(*callee));
             for callee_cons in cons {

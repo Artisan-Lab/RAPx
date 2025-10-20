@@ -9,8 +9,8 @@ use crate::{
         senryx::contracts::property::{CisRangeItem, PropertyContract},
         utils::{
             fn_info::{
-                display_hashmap, get_all_std_unsafe_callees_block_id, get_callees,
-                get_cleaned_def_path_name, is_ptr, is_ref,
+                display_hashmap, get_all_std_unsafe_callees, get_all_std_unsafe_callees_block_id,
+                get_callees, get_cleaned_def_path_name, is_ptr, is_ref,
             },
             show_mir::display_mir,
         },
@@ -158,12 +158,11 @@ impl<'tcx> BodyVisitor<'tcx> {
         if self.visit_time >= 1000 {
             return inter_return_value;
         }
-
         // get path and body
         let paths = self.get_all_paths();
         // self.paths = paths.clone();
         let body = self.tcx.optimized_mir(self.def_id);
-
+        let target_name = get_cleaned_def_path_name(self.tcx, self.def_id);
         // initialize local vars' types
         let locals = body.local_decls.clone();
         for (idx, local) in locals.iter().enumerate() {
@@ -206,6 +205,10 @@ impl<'tcx> BodyVisitor<'tcx> {
             let curr_path_inter_return_value =
                 InterResultNode::construct_from_var_node(self.chains.clone(), 0);
             inter_return_value.merge(curr_path_inter_return_value);
+        }
+        if self.visit_time == 0 && target_name.contains("into_raw_parts_with_alloc") {
+            display_mir(self.def_id, body);
+            display_hashmap(&self.chains.variables, 1);
         }
 
         inter_return_value
@@ -817,7 +820,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                     let size = layout.size.bytes() as usize;
                     return PlaceTy::Ty(align, size);
                 } else {
-                    rap_warn!("Find type {:?} that can't get layout!", ty);
+                    // rap_warn!("Find type {:?} that can't get layout!", ty);
                     PlaceTy::Unknown
                 }
             }
