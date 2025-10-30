@@ -87,25 +87,25 @@ impl<'tcx> SenryxCheck<'tcx> {
         }
     }
 
-    // pub fn start_analyze_std_func(&mut self) {
-    //     let v_fn_def: Vec<_> = rustc_public::find_crates("alloc")
-    //         .iter()
-    //         .flat_map(|krate| krate.fn_defs())
-    //         .collect();
-    //     for fn_def in &v_fn_def {
-    //         let def_id = crate::def_id::to_internal(fn_def, self.tcx);
-    //         if is_verify_target_func(self.tcx, def_id) {
-    //             rap_info!(
-    //                 "Begin verification process for: {:?}",
-    //                 get_cleaned_def_path_name(self.tcx, def_id)
-    //             );
-    //             let check_results = self.body_visit_and_check(def_id, &FxHashMap::default());
-    //             if !check_results.is_empty() {
-    //                 Self::show_check_results(self.tcx, def_id, check_results);
-    //             }
-    //         }
-    //     }
-    // }
+    pub fn start_analyze_std_func(&mut self) {
+        let v_fn_def: Vec<_> = rustc_public::find_crates("alloc")
+            .iter()
+            .flat_map(|krate| krate.fn_defs())
+            .collect();
+        for fn_def in &v_fn_def {
+            let def_id = crate::def_id::to_internal(fn_def, self.tcx);
+            if is_verify_target_func(self.tcx, def_id) {
+                rap_info!(
+                    "Begin verification process for: {:?}",
+                    get_cleaned_def_path_name(self.tcx, def_id)
+                );
+                let check_results = self.body_visit_and_check(def_id, &FxHashMap::default());
+                if !check_results.is_empty() {
+                    Self::show_check_results(self.tcx, def_id, check_results);
+                }
+            }
+        }
+    }
 
     pub fn generate_uig_by_def_id(&mut self) {
         let all_std_fn_def = get_all_std_fns_by_rustc_public(self.tcx);
@@ -136,17 +136,13 @@ impl<'tcx> SenryxCheck<'tcx> {
         render_dot_graphs(dot_strs);
     }
 
-    pub fn start_analyze_std_func(&mut self) {
+    pub fn start_analyze_std_func_chains(&mut self) {
         let all_std_fn_def = get_all_std_fns_by_rustc_public(self.tcx);
         let mut last_nodes = HashSet::new();
         for &def_id in &all_std_fn_def {
             if !check_visibility(self.tcx, def_id) {
                 continue;
             }
-            // if get_cleaned_def_path_name(self.tcx, def_id) == "std::ptr::swap_nonoverlapping" {
-            //     let body = self.tcx.instance_mir(ty::InstanceKind::Item(def_id));
-            //     display_mir(def_id, body);
-            // }
             let chains = get_all_std_unsafe_chains(self.tcx, def_id);
             let valid_chains: Vec<Vec<String>> = chains
                 .into_iter()

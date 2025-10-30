@@ -290,6 +290,23 @@ pub fn get_callees(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<DefId> {
     callees
 }
 
+pub fn get_all_callees(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<DefId> {
+    let mut callees = HashSet::new();
+    if tcx.is_mir_available(def_id) {
+        let body = tcx.optimized_mir(def_id);
+        for bb in body.basic_blocks.iter() {
+            if let TerminatorKind::Call { func, .. } = &bb.terminator().kind {
+                if let Operand::Constant(func_constant) = func {
+                    if let ty::FnDef(ref callee_def_id, _) = func_constant.const_.ty().kind() {
+                        callees.insert(*callee_def_id);
+                    }
+                }
+            }
+        }
+    }
+    callees
+}
+
 // return all the impls def id of corresponding struct
 pub fn get_impl_items_of_struct(
     tcx: TyCtxt<'_>,

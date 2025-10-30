@@ -522,8 +522,8 @@ pub fn start_analyzer(tcx: TyCtxt, callback: &RapCallback) {
     }
 
     if callback.is_verify_std_enabled() {
-        // SenryxCheck::new(tcx, 2).start_analyze_std_func();
-        SenryxCheck::new(tcx, 2).generate_uig_by_def_id();
+        SenryxCheck::new(tcx, 2).start_analyze_std_func();
+        // SenryxCheck::new(tcx, 2).generate_uig_by_def_id();
     }
 
     if callback.is_infer_enabled() {
