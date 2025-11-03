@@ -6,6 +6,6 @@ cd ..
 
 set -e
 
-cargo install --offline --path rapx
+cargo install  --path rapx
 
 cargo rapx -help
