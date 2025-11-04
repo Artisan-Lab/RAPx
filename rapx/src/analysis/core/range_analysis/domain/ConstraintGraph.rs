@@ -406,7 +406,6 @@ where
         &self.vars
     }
     pub fn get_field_place(&self, adt_place: Place<'tcx>, field_index: FieldIdx) -> Place<'tcx> {
-        // 1. 获取字段类型
         let adt_ty = adt_place.ty(&self.body.local_decls, self.tcx).ty;
         let field_ty = match adt_ty.kind() {
             ty::TyKind::Adt(adt_def, substs) => {
@@ -425,11 +424,9 @@ where
             }
         };
 
-        // 2. 准备新的 projection 元素
         let mut new_projection = adt_place.projection.to_vec();
         new_projection.push(ProjectionElem::Field(field_index, field_ty));
 
-        // 3. 在 tcx 中分配 projection 并创建新的 Place
         let new_place = Place {
             local: adt_place.local,
             projection: self.tcx.mk_place_elems(&new_projection),
@@ -2381,6 +2378,7 @@ where
                                             symb_interval.get_operation().clone(),
                                         ));
                                     }
+                                    IntervalType::SymbolicExpr { expr, cached_range } => {}
                                 }
                             }
                         }

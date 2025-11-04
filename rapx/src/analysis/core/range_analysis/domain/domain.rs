@@ -100,10 +100,22 @@ pub trait IntervalArithmetic:
 impl IntervalArithmetic for i32 {}
 impl IntervalArithmetic for usize {}
 impl IntervalArithmetic for i64 {}
+
+#[derive(Debug, Clone)]
+pub enum SymbExpr<'tcx> {
+    Operand(Operand<'tcx>),
+    Binary(BinOp, Box<SymbExpr<'tcx>>, Box<SymbExpr<'tcx>>),
+    Unary(UnOp, Box<SymbExpr<'tcx>>),
+}
 #[derive(Debug, Clone)]
 pub enum IntervalType<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     Basic(BasicInterval<T>),
     Symb(SymbInterval<'tcx, T>), // Using 'static for simplicity, adjust lifetime as needed
+    SymbolicExpr {
+        expr: SymbExpr<'tcx>,
+
+        cached_range: Range<T>,
+    },
 }
 impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> fmt::Display for IntervalType<'tcx, T>
 where
@@ -113,6 +125,13 @@ where
         match self {
             IntervalType::Basic(b) => write!(f, "BasicInterval: {:?}", b.get_range()),
             IntervalType::Symb(s) => write!(f, "SymbInterval: {:?}", s.get_range()),
+            IntervalType::SymbolicExpr { expr, cached_range } => {
+                write!(
+                    f,
+                    "SymbolicExpr: {:?} with cached range {:?}",
+                    expr, cached_range
+                )
+            }
         }
     }
 }
@@ -128,6 +147,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<T>
         match self {
             IntervalType::Basic(b) => b.get_range(),
             IntervalType::Symb(s) => s.get_range(),
+            IntervalType::SymbolicExpr { cached_range, .. } => cached_range,
         }
     }
 
@@ -135,6 +155,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<T>
         match self {
             IntervalType::Basic(b) => b.set_range(new_range),
             IntervalType::Symb(s) => s.set_range(new_range),
+            IntervalType::SymbolicExpr { cached_range, .. } => *cached_range = new_range,
         }
     }
 }
@@ -1107,7 +1128,7 @@ pub struct VarNode<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     // The program variable which is represented.
     pub v: &'tcx Place<'tcx>,
     // A Range associated to the variable.
-    pub interval: Range<T>,
+    pub interval: IntervalType<'tcx, T>,
     // Used by the crop meet operator.
     pub abstract_state: char,
 }
@@ -1115,48 +1136,85 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> VarNode<'tcx, T> {
     pub fn new(v: &'tcx Place<'tcx>) -> Self {
         Self {
             v,
-            interval: Range::default(T::min_value()),
+            interval: IntervalType::Basic(BasicInterval::new(Range::default(T::min_value()))),
             abstract_state: '?',
         }
     }
 
-    /// Initializes the value of the node.
-    pub fn init(&mut self, outside: bool) {
-        let value = self.get_value();
-    }
-
-    /// Returns the range of the variable represented by this node.
     pub fn get_range(&self) -> &Range<T> {
-        &self.interval
+        self.interval.get_range()
     }
 
-    /// Returns the variable represented by this node.
-    pub fn get_value(&self) -> &'tcx Place<'tcx> {
-        self.v
-    }
-
-    /// Changes the status of the variable represented by this node.
     pub fn set_range(&mut self, new_interval: Range<T>) {
+        self.interval = IntervalType::Basic(BasicInterval::new(new_interval));
+    }
+
+    pub fn set_interval(&mut self, new_interval: IntervalType<'tcx, T>) {
         self.interval = new_interval;
     }
 
-    /// Pretty print.
-    pub fn print(&self, os: &mut dyn std::io::Write) {
-        // Implementation of pretty printing using the `os` writer.
+    pub fn get_interval(&self) -> &IntervalType<'tcx, T> {
+        &self.interval
     }
+
     pub fn set_default(&mut self) {
-        self.interval.set_default();
+        let mut range = Range::default(T::min_value());
+        range.set_default(); // 设置为 [min, max]
+        self.interval = IntervalType::Basic(BasicInterval::new(range));
     }
-
-    pub fn get_abstract_state(&self) -> char {
-        self.abstract_state
+    pub fn get_value(&self) -> &'tcx Place<'tcx> {
+        self.v
     }
-
-    /// The possible states are '0', '+', '-', and '?'.
-    pub fn store_abstract_state(&mut self) {
-        // Implementation of storing the abstract state.
+    pub fn init(&mut self, outside: bool) {
+        let value = self.get_value();
     }
 }
+// impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> VarNode<'tcx, T> {
+//     pub fn new(v: &'tcx Place<'tcx>) -> Self {
+//         Self {
+//             v,
+//             interval: Range::default(T::min_value()),
+//             abstract_state: '?',
+//         }
+//     }
+
+//     /// Initializes the value of the node.
+//     pub fn init(&mut self, outside: bool) {
+//         let value = self.get_value();
+//     }
+
+//     /// Returns the range of the variable represented by this node.
+//     pub fn get_range(&self) -> &Range<T> {
+//         &self.interval
+//     }
+
+//     /// Returns the variable represented by this node.
+//     pub fn get_value(&self) -> &'tcx Place<'tcx> {
+//         self.v
+//     }
+
+//     /// Changes the status of the variable represented by this node.
+//     pub fn set_range(&mut self, new_interval: Range<T>) {
+//         self.interval = new_interval;
+//     }
+
+//     /// Pretty print.
+//     pub fn print(&self, os: &mut dyn std::io::Write) {
+//         // Implementation of pretty printing using the `os` writer.
+//     }
+//     pub fn set_default(&mut self) {
+//         self.interval.set_default();
+//     }
+
+//     pub fn get_abstract_state(&self) -> char {
+//         self.abstract_state
+//     }
+
+//     /// The possible states are '0', '+', '-', and '?'.
+//     pub fn store_abstract_state(&mut self) {
+//         // Implementation of storing the abstract state.
+//     }
+// }
 #[derive(Debug, Clone)]
 pub struct ValueBranchMap<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     v: &'tcx Place<'tcx>,         // The value associated with the branch
