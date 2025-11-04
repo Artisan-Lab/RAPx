@@ -269,6 +269,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<'tcx,
         match self {
             IntervalType::Basic(b) => b.get_range(),
             IntervalType::Symb(s) => s.get_range(),
+            IntervalType::SymbolicExpr { cached_range, .. } => cached_range,
         }
     }
 

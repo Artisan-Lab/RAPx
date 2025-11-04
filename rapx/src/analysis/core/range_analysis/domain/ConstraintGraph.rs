@@ -2184,6 +2184,7 @@ where
                                             symb_interval.get_operation().clone(),
                                         ));
                                     }
+                                    IntervalType::SymbolicExpr { expr, cached_range } => {}
                                 }
                             }
                         }
