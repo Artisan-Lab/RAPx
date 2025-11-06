@@ -122,9 +122,13 @@ impl<'tcx> ContainsUnsafe<'tcx> {
 
     fn body_unsafety(&self, body: &'tcx Body<'tcx>) -> bool {
         let did = body.value.hir_id.owner.to_def_id();
-        let sig = self.tcx.fn_sig(did);
-        if let rustc_hir::Safety::Unsafe = sig.skip_binder().safety() {
-            return true;
+        if self.tcx.def_kind(did) == rustc_hir::def::DefKind::Fn
+            || self.tcx.def_kind(did) == rustc_hir::def::DefKind::AssocFn
+        {
+            let sig = self.tcx.fn_sig(did);
+            if let rustc_hir::Safety::Unsafe = sig.skip_binder().safety() {
+                return true;
+            }
         }
         false
     }
