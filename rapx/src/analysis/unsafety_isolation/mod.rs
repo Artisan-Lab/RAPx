@@ -4,6 +4,7 @@ pub mod hir_visitor;
 pub mod isolation_graph;
 pub mod std_unsafety_isolation;
 
+use crate::analysis::unsafety_isolation::draw_dot::render_dot_graphs;
 // use crate::analysis::unsafety_isolation::draw_dot::render_dot_graphs;
 use crate::analysis::unsafety_isolation::generate_dot::UigUnit;
 use crate::analysis::unsafety_isolation::hir_visitor::{ContainsUnsafe, RelatedFnCollector};
@@ -19,10 +20,8 @@ use std::collections::VecDeque;
 
 #[derive(PartialEq)]
 pub enum UigInstruction {
-    Doc,
-    Upg,
-    Ucons,
-    StdSp,
+    Audit,
+    StdAudit,
 }
 
 pub struct UnsafetyIsolationCheck<'tcx> {
@@ -45,46 +44,41 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
     }
 
     pub fn start(&mut self, ins: UigInstruction) {
-        if ins == UigInstruction::StdSp {
-            self.handle_std_unsafe();
+        if ins == UigInstruction::StdAudit {
+            self.audit_std_unsafe();
             return;
-        } else if ins == UigInstruction::Upg {
-            return; //TODO:
         }
         let related_items = RelatedFnCollector::collect(self.tcx);
-        let mut ufunc = 0;
         for vec in related_items.values() {
-            for (body_id, span) in vec {
+            for (body_id, _span) in vec {
                 let (function_unsafe, _block_unsafe) =
                     ContainsUnsafe::contains_unsafe(self.tcx, *body_id);
                 let def_id = self.tcx.hir_body_owner_def_id(*body_id).to_def_id();
                 if function_unsafe {
-                    ufunc = ufunc + 1;
-                    if ins == UigInstruction::Doc {
-                        self.check_doc(def_id);
-                    }
-                    if ins == UigInstruction::Ucons {
-                        if get_type(self.tcx, def_id) == 0 {
-                            println!(
-                                "Find unsafe constructor: {:?}, location:{:?}.",
-                                def_id, span
-                            );
-                        }
-                    }
+                    self.insert_uig(
+                        def_id,
+                        get_callees(self.tcx, def_id),
+                        get_cons(self.tcx, def_id),
+                    );
                 }
             }
         }
+        self.render_dot();
     }
 
-    pub fn check_doc(&self, def_id: DefId) {
-        if !self.check_if_unsafety_doc_exists(def_id) {
-            let visibility = self.tcx.visibility(def_id);
-            println!(
-                "Lack of unsafety doc: {:?}, visibility:{:?}.",
-                self.tcx.def_span(def_id),
-                visibility
-            );
+    pub fn render_dot(&mut self) {
+        let mut dot_strs = Vec::new();
+        for uig in &self.uigs {
+            let dot_str = uig.generate_dot_str();
+            let caller_name = get_cleaned_def_path_name(self.tcx, uig.caller.0);
+            dot_strs.push((caller_name, dot_str));
         }
+        for uig in &self.single {
+            let dot_str = uig.generate_dot_str();
+            let caller_name = get_cleaned_def_path_name(self.tcx, uig.caller.0);
+            dot_strs.push((caller_name, dot_str));
+        }
+        render_dot_graphs(dot_strs);
     }
 
     pub fn filter_and_extend_unsafe(&mut self) {
@@ -129,18 +123,6 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                 }
             }
         }
-    }
-
-    fn check_if_unsafety_doc_exists(&self, def_id: DefId) -> bool {
-        if def_id.krate == rustc_hir::def_id::LOCAL_CRATE {
-            let attrs = self.tcx.get_all_attrs(def_id);
-            for attr in attrs {
-                if attr.is_doc_comment() {
-                    return true;
-                }
-            }
-        }
-        false
     }
 
     pub fn check_if_node_exists(&self, body_did: DefId) -> bool {

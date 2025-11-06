@@ -529,10 +529,8 @@ pub fn start_analyzer(tcx: TyCtxt, callback: &RapCallback) {
 
     let x = callback.is_unsafety_isolation_enabled();
     match x {
-        1 => UnsafetyIsolationCheck::new(tcx).start(UigInstruction::StdSp),
-        2 => UnsafetyIsolationCheck::new(tcx).start(UigInstruction::Doc),
-        3 => UnsafetyIsolationCheck::new(tcx).start(UigInstruction::Upg),
-        4 => UnsafetyIsolationCheck::new(tcx).start(UigInstruction::Ucons),
+        1 => UnsafetyIsolationCheck::new(tcx).start(UigInstruction::Audit),
+        2 => UnsafetyIsolationCheck::new(tcx).start(UigInstruction::StdAudit),
         _ => {}
     }
 

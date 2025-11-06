@@ -3,49 +3,36 @@ use super::{
     generate_dot::{NodeType, UigUnit},
 };
 use crate::analysis::utils::fn_info::*;
-use crate::analysis::{
-    unsafety_isolation::draw_dot::render_dot_graphs, utils::show_mir::display_mir,
-};
+use crate::analysis::utils::show_mir::display_mir;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::Local;
 use rustc_middle::ty::Visibility;
 use rustc_middle::{ty, ty::TyCtxt};
+use rustc_span::Symbol;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
 impl<'tcx> UnsafetyIsolationCheck<'tcx> {
-    pub fn handle_std_unsafe(&mut self) {
-        self.get_chains();
-        self.get_all_std_unsafe_def_id_by_treat_std_as_local_crate(self.tcx);
-        // self.get_units_data(self.tcx);
-        let mut dot_strs = Vec::new();
-        for uig in &self.uigs {
-            // let dot_str = uig.generate_dot_str();
-            if get_cleaned_def_path_name(self.tcx, uig.caller.0).contains("core::slice::")
-                && check_visibility(self.tcx, uig.caller.0)
-            {
-                let dot_str = uig.generate_dot_str();
-                dot_strs.push(dot_str);
-                // uig.print_self(self.tcx);
+    pub fn audit_std_unsafe(&mut self) {
+        let all_std_fn_def = get_all_std_fns_by_rustc_public(self.tcx);
+        // Specific task for vec;
+        let symbol = Symbol::intern("Vec");
+        let vec_def_id = self.tcx.get_diagnostic_item(symbol).unwrap();
+        for &def_id in &all_std_fn_def {
+            let adt_def = get_adt_def_id_by_adt_method(self.tcx, def_id);
+            if adt_def.is_some() && adt_def.unwrap() == vec_def_id {
+                self.insert_uig(
+                    def_id,
+                    get_callees(self.tcx, def_id),
+                    get_cons(self.tcx, def_id),
+                );
             }
         }
-        for uig in &self.single {
-            // let dot_str = uig.generate_dot_str();
-            if get_cleaned_def_path_name(self.tcx, uig.caller.0).contains("core::slice::")
-                && check_visibility(self.tcx, uig.caller.0)
-            {
-                let dot_str = uig.generate_dot_str();
-                dot_strs.push(dot_str);
-                // uig.print_self(self.tcx);
-            }
-        }
-        render_dot_graphs(dot_strs);
-        // println!("{:?}", dot_strs);
+        self.render_dot();
     }
 
     pub fn get_chains(&mut self) {
-        println!("1");
         let v_fn_def = self.tcx.mir_keys(());
 
         for local_def_id in v_fn_def {
@@ -84,19 +71,14 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
         let mut total_cnt = 0;
         let mut api_cnt = 0;
         let mut sp_cnt = 0;
-        let v_fn_def: Vec<_> = rustc_public::find_crates("core")
-            .iter()
-            .flat_map(|krate| krate.fn_defs())
-            .collect();
         let mut sp_count_map: HashMap<String, usize> = HashMap::new();
+        let all_std_fn_def = get_all_std_fns_by_rustc_public(self.tcx);
 
-        for fn_def in &v_fn_def {
-            let sig = fn_def.fn_sig();
-            let def_id = crate::def_id::to_internal(fn_def, tcx);
-            if sig.value.safety == rustc_public::mir::Safety::Unsafe && !fn_def.is_intrinsic() {
-                let sp_set = get_sp(tcx, def_id);
+        for def_id in &all_std_fn_def {
+            if check_safety(tcx, *def_id) {
+                let sp_set = get_sp(tcx, *def_id);
                 if !sp_set.is_empty() {
-                    unsafe_fn.insert(def_id);
+                    unsafe_fn.insert(*def_id);
                     let mut flag = false;
                     for sp in &sp_set {
                         if sp.is_empty()
@@ -119,7 +101,7 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                 }
                 // self.check_params(def_id);
             }
-            self.insert_uig(def_id, get_callees(tcx, def_id), get_cons(tcx, def_id));
+            self.insert_uig(*def_id, get_callees(tcx, *def_id), get_cons(tcx, *def_id));
         }
         // self.analyze_struct();
         // self.analyze_uig();
@@ -130,7 +112,7 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
 
         rap_info!(
             "fn_def : {}, count : {:?} and {:?}, sp cnt : {}",
-            v_fn_def.len(),
+            all_std_fn_def.len(),
             total_cnt,
             api_cnt,
             sp_cnt

@@ -245,68 +245,8 @@ impl UigUnit {
         );
 
         write!(dot_str, "{}", dot).unwrap();
-        println!("{}", dot_str);
+        // println!("{}", dot_str);
         dot_str
-    }
-
-    pub fn compare_labels(&self, tcx: TyCtxt<'_>) {
-        let caller_sp = get_sp(tcx, self.caller.0);
-        // for caller_con in &self.caller_cons {
-        //     if caller_con.1 != true {
-        //         // if constructor is safe, it won't have labels.
-        //         continue;
-        //     }
-        //     let caller_con_sp = Self::get_sp(caller_con.0);
-        //     caller_sp.extend(caller_con_sp); // Merge sp of each unsafe constructor
-        // }
-        let caller_label: Vec<_> = caller_sp.clone().into_iter().collect();
-
-        let mut combined_callee_sp = HashSet::new();
-        for (callee, _sp_vec) in &self.callee_cons_pair {
-            let callee_sp = get_sp(tcx, callee.0);
-            combined_callee_sp.extend(callee_sp); // Merge sp of each callee
-        }
-        let combined_labels: Vec<_> = combined_callee_sp.clone().into_iter().collect();
-
-        if caller_sp == combined_callee_sp {
-            // println!("----------same sp------------");
-            // println!(
-            //     "Caller: {:?}.\n--Caller's constructors: {:?}.\n--SP labels: {:?}.",
-            //     Self::get_cleaned_def_path_name(self.caller.0),
-            //     self.caller_cons
-            //         .iter()
-            //         .map(|node_type| Self::get_cleaned_def_path_name(node_type.0))
-            //         .collect::<Vec<_>>(),
-            //     caller_label
-            // );
-            // println!(
-            //     "Callee: {:?}.\n--Combined Callee Labels: {:?}",
-            //     self.callee_cons_pair
-            //         .iter()
-            //         .map(|(node_type, _)| Self::get_cleaned_def_path_name(node_type.0))
-            //         .collect::<Vec<_>>(),
-            //     combined_labels
-            // );
-        } else {
-            println!("----------unmatched sp------------");
-            println!(
-                "Caller: {:?}.\n--Caller's constructors: {:?}.\n--SP labels: {:?}.",
-                get_cleaned_def_path_name(tcx, self.caller.0),
-                self.caller_cons
-                    .iter()
-                    .map(|node_type| get_cleaned_def_path_name(tcx, node_type.0))
-                    .collect::<Vec<_>>(),
-                caller_label
-            );
-            println!(
-                "Callee: {:?}.\n--Combined Callee Labels: {:?}",
-                self.callee_cons_pair
-                    .iter()
-                    .map(|(node_type, _)| get_cleaned_def_path_name(tcx, node_type.0))
-                    .collect::<Vec<_>>(),
-                combined_labels
-            );
-        }
     }
 
     pub fn print_self(&self, tcx: TyCtxt<'_>) {

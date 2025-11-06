@@ -17,7 +17,6 @@ use rustc_middle::{
     mir::{BasicBlock, Operand, TerminatorKind},
     ty::{self, TyCtxt},
 };
-use rustc_span::Symbol;
 use std::collections::{HashMap, HashSet};
 use visitor::{BodyVisitor, CheckResult};
 
@@ -27,7 +26,6 @@ use crate::{
         core::alias_analysis::{AAResult, AliasAnalysis, default::AliasAnalyzer},
         unsafety_isolation::{
             UnsafetyIsolationCheck,
-            draw_dot::render_dot_graphs,
             hir_visitor::{ContainsUnsafe, RelatedFnCollector},
         },
         utils::fn_info::*,
@@ -105,35 +103,6 @@ impl<'tcx> SenryxCheck<'tcx> {
                 }
             }
         }
-    }
-
-    pub fn generate_uig_by_def_id(&mut self) {
-        let all_std_fn_def = get_all_std_fns_by_rustc_public(self.tcx);
-        let symbol = Symbol::intern("Vec");
-        let vec_def_id = self.tcx.get_diagnostic_item(symbol).unwrap();
-        println!("vec_def_id {:?}", vec_def_id);
-        let mut uig_entrance = UnsafetyIsolationCheck::new(self.tcx);
-        for &def_id in &all_std_fn_def {
-            let adt_def = get_adt_def_id_by_adt_method(self.tcx, def_id);
-            if adt_def.is_some() && adt_def.unwrap() == vec_def_id {
-                println!("def_id {:?}", def_id);
-                uig_entrance.insert_uig(
-                    def_id,
-                    get_callees(self.tcx, def_id),
-                    get_cons(self.tcx, def_id),
-                );
-            }
-        }
-        let mut dot_strs = Vec::new();
-        for uig in &uig_entrance.uigs {
-            let dot_str = uig.generate_dot_str();
-            dot_strs.push(dot_str);
-        }
-        for uig in &uig_entrance.single {
-            let dot_str = uig.generate_dot_str();
-            dot_strs.push(dot_str);
-        }
-        render_dot_graphs(dot_strs);
     }
 
     pub fn start_analyze_std_func_chains(&mut self) {
