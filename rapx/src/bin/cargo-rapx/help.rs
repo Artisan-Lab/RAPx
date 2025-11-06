@@ -15,6 +15,7 @@ Analysis:
     -alias          perform alias analysis (meet-over-paths by default)
     -adg            generate API dependency graphs
     -audit          (under development) generate unsafe code audit units
+    -audit-std      (under development) generate unsafe code audit units of the Rust standard library
     -callgraph      generate callgraphs
     -dataflow       generate dataflow graphs
     -ownedheap      analyze if the type holds a piece of memory on heap
