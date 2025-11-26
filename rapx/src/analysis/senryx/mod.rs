@@ -5,6 +5,7 @@ pub mod dominated_graph;
 pub mod generic_check;
 pub mod inter_record;
 pub mod matcher;
+pub mod symbolic_analysis;
 #[allow(unused)]
 pub mod visitor;
 #[allow(unused)]

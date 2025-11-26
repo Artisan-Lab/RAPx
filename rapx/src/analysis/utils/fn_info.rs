@@ -6,6 +6,7 @@ use crate::analysis::senryx::contracts::property::PropertyContract;
 use crate::analysis::senryx::matcher::parse_unsafe_api;
 use crate::analysis::unsafety_isolation::UnsafetyIsolationCheck;
 use crate::analysis::unsafety_isolation::draw_dot::render_dot_graphs;
+use crate::analysis::unsafety_isolation::draw_dot::render_dot_string;
 use crate::analysis::unsafety_isolation::generate_dot::NodeType;
 use crate::rap_debug;
 use crate::rap_warn;
@@ -308,36 +309,20 @@ pub fn get_all_callees(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<DefId> {
 }
 
 // return all the impls def id of corresponding struct
-pub fn get_impl_items_of_struct(
-    tcx: TyCtxt<'_>,
-    struct_def_id: DefId,
-) -> Vec<&rustc_hir::ImplItem<'_>> {
-    let mut impls = Vec::new();
-    for impl_item_id in tcx.hir_crate_items(()).impl_items() {
-        let impl_item = tcx.hir_impl_item(impl_item_id);
-        impls.push(impl_item);
-    }
-    impls
-}
-
-// return all the impls def id of corresponding struct
 pub fn get_impls_for_struct(tcx: TyCtxt<'_>, struct_def_id: DefId) -> Vec<DefId> {
     let mut impls = Vec::new();
-    for impl_item_id in tcx.hir_crate_items(()).impl_items() {
-        let impl_item = tcx.hir_impl_item(impl_item_id);
-        match impl_item.kind {
-            ImplItemKind::Type(ty) => {
-                if let rustc_hir::TyKind::Path(ref qpath) = ty.kind {
-                    if let rustc_hir::QPath::Resolved(_, path) = qpath {
-                        if let rustc_hir::def::Res::Def(_, ref def_id) = path.res {
-                            if *def_id == struct_def_id {
-                                impls.push(impl_item.owner_id.to_def_id());
-                            }
-                        }
+    for item_id in tcx.hir_crate_items(()).free_items() {
+        let item = tcx.hir_item(item_id);
+        if let rustc_hir::ItemKind::Impl(impl_details) = &item.kind {
+            if let rustc_hir::TyKind::Path(rustc_hir::QPath::Resolved(_, path)) =
+                &impl_details.self_ty.kind
+            {
+                if let rustc_hir::def::Res::Def(_, def_id) = path.res {
+                    if def_id == struct_def_id {
+                        impls.push(item_id.owner_id.to_def_id());
                     }
                 }
             }
-            _ => (),
         }
     }
     impls
@@ -412,7 +397,7 @@ pub fn has_mut_self_param(tcx: TyCtxt, def_id: DefId) -> bool {
 // Input the adt def id
 // Return set of (mutable method def_id, fields can be modified)
 pub fn get_all_mutable_methods(tcx: TyCtxt, src_def_id: DefId) -> HashMap<DefId, HashSet<usize>> {
-    let mut results = HashMap::new();
+    let mut std_results = HashMap::new();
     let all_std_fn_def = get_all_std_fns_by_rustc_public(tcx);
     let target_adt_def = get_adt_def_id_by_adt_method(tcx, src_def_id);
     let mut uig_entrance = UnsafetyIsolationCheck::new(tcx);
@@ -421,27 +406,36 @@ pub fn get_all_mutable_methods(tcx: TyCtxt, src_def_id: DefId) -> HashMap<DefId,
         let adt_def = get_adt_def_id_by_adt_method(tcx, def_id);
         if adt_def.is_some() && adt_def == target_adt_def && src_def_id != def_id {
             if has_mut_self_param(tcx, def_id) {
-                results.insert(def_id, HashSet::new());
+                std_results.insert(def_id, HashSet::new());
             }
             is_std = true;
         }
     }
     if is_std {
-        return results;
+        return std_results;
     }
 
+    let mut results = HashMap::new();
     let public_fields = target_adt_def.map_or_else(HashSet::new, |def| get_public_fields(tcx, def));
-    let impl_vec = target_adt_def.map_or_else(Vec::new, |def| get_impl_items_of_struct(tcx, def));
-    for item in impl_vec {
-        if let rustc_hir::ImplItemKind::Fn(fnsig, body) = item.kind {
-            let item_def_id = item.owner_id.to_def_id();
-            if has_mut_self_param(tcx, item_def_id) {
-                // TODO: using dataflow to detect field modificaiton, combined with publi c fields
-                let modified_fields = public_fields.clone();
-                results.insert(item_def_id, modified_fields);
+    let impl_vec = target_adt_def.map_or_else(Vec::new, |def| get_impls_for_struct(tcx, def));
+    for impl_id in impl_vec {
+        if !matches!(tcx.def_kind(impl_id), rustc_hir::def::DefKind::Impl { .. }) {
+            continue;
+        }
+        let associated_items = tcx.associated_items(impl_id);
+        for item in associated_items.in_definition_order() {
+            if let ty::AssocKind::Fn {
+                name: _,
+                has_self: _,
+            } = item.kind
+            {
+                let item_def_id = item.def_id;
+                if has_mut_self_param(tcx, item_def_id) {
+                    let modified_fields = public_fields.clone();
+                    results.insert(item_def_id, modified_fields);
+                }
             }
         }
-        // }
     }
     results
 }
@@ -1221,3 +1215,98 @@ pub fn get_all_std_fns_by_rustc_public(tcx: TyCtxt) -> Vec<DefId> {
 //     }
 //     render_dot_graphs(dot_strs);
 // }
+
+pub fn generate_mir_cfg_dot(tcx: TyCtxt<'_>, def_id: DefId) -> Result<(), std::io::Error> {
+    let mir = tcx.optimized_mir(def_id);
+
+    let mut dot_content = String::new();
+
+    // Setup Header
+    dot_content.push_str(&format!(
+        "digraph mir_cfg_{} {{\n",
+        tcx.def_path_str(def_id)
+            .replace("::", "_")
+            .replace("<", "_")
+            .replace(">", "_")
+    ));
+    dot_content.push_str(&format!(
+        "    label = \"MIR CFG for {}\";\n",
+        tcx.def_path_str(def_id)
+    ));
+    dot_content.push_str("    labelloc = \"t\";\n");
+    dot_content.push_str("    node [shape=box, fontname=\"Courier\", align=\"left\"];\n\n");
+
+    for (bb_index, bb_data) in mir.basic_blocks.iter_enumerated() {
+        let mut lines: Vec<String> = bb_data
+            .statements
+            .iter()
+            .map(|stmt| format!("{:?}", stmt))
+            .collect();
+
+        let mut node_style = String::new();
+
+        if let Some(terminator) = &bb_data.terminator {
+            if let TerminatorKind::Drop { .. } = terminator.kind {
+                node_style = ", style=\"filled\", fillcolor=\"#ffdddd\", color=\"red\"".to_string();
+            }
+
+            lines.push(format!("{:?}", terminator.kind));
+        } else {
+            lines.push("(no terminator)".to_string());
+        }
+
+        let label_content = lines.join("\\l");
+
+        let node_label = format!("BB{}:\\l{}\\l", bb_index.index(), label_content);
+
+        dot_content.push_str(&format!(
+            "    BB{} [label=\"{}\"{}];\n",
+            bb_index.index(),
+            node_label.replace("\"", "\\\""),
+            node_style
+        ));
+
+        if let Some(terminator) = &bb_data.terminator {
+            for target in terminator.successors() {
+                let edge_label = match terminator.kind {
+                    _ => "".to_string(),
+                };
+
+                dot_content.push_str(&format!(
+                    "    BB{} -> BB{} [label=\"{}\"];\n",
+                    bb_index.index(),
+                    target.index(),
+                    edge_label
+                ));
+            }
+        }
+    }
+
+    dot_content.push_str("}\n");
+
+    let name = get_cleaned_def_path_name(tcx, def_id);
+    render_dot_string(name, dot_content);
+
+    println!("render dot for {:?}", def_id);
+    Ok(())
+}
+
+pub fn convert_alias_to_sets(alias_map: Vec<usize>) -> Vec<Vec<usize>> {
+    let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
+
+    for (local_id, &representative) in alias_map.iter().enumerate() {
+        groups
+            .entry(representative)
+            .or_insert_with(Vec::new)
+            .push(local_id);
+    }
+
+    let mut result: Vec<Vec<usize>> = groups.into_values().collect();
+
+    for group in &mut result {
+        group.sort();
+    }
+    result.sort_by_key(|group| group[0]);
+
+    result
+}

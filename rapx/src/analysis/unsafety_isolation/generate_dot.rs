@@ -1,4 +1,3 @@
-use crate::analysis::unsafety_isolation::UnsafetyIsolationCheck;
 use crate::analysis::utils::fn_info::*;
 use petgraph::Graph;
 use petgraph::dot::{Config, Dot};
@@ -149,6 +148,7 @@ impl UigUnit {
         }
     }
 
+    /// (node.0, node.1, node.2) : (def_id, is_unsafe, type_of_func--0:cons,1:method,2:function)
     pub fn get_node_ty(node: NodeType) -> UigNode {
         match (node.1, node.2) {
             (true, 0) => UigNode::Unsafe(node.0, "doublecircle".to_string()),
@@ -277,53 +277,5 @@ impl UigUnit {
                 .collect::<Vec<_>>(),
             combined_labels
         );
-    }
-}
-
-#[derive(PartialEq)]
-pub enum UigOp {
-    DrawPic,
-    TypeCount,
-}
-
-impl UnsafetyIsolationCheck<'_> {
-    pub fn get_node_name_by_def_id(&self, def_id: DefId) -> String {
-        if let Some(node) = self.nodes.iter().find(|n| n.node_id == def_id) {
-            return node.node_name.clone();
-        }
-        String::new()
-    }
-
-    pub fn get_node_type_by_def_id(&self, def_id: DefId) -> usize {
-        if let Some(node) = self.nodes.iter().find(|n| n.node_id == def_id) {
-            return node.node_type;
-        }
-        2
-    }
-
-    pub fn get_node_unsafety_by_def_id(&self, def_id: DefId) -> bool {
-        if let Some(node) = self.nodes.iter().find(|n| n.node_id == def_id) {
-            return node.node_unsafety;
-        }
-        false
-    }
-
-    pub fn get_adjacent_nodes_by_def_id(&self, def_id: DefId) -> Vec<DefId> {
-        let mut nodes = Vec::new();
-        if let Some(node) = self.nodes.iter().find(|n| n.node_id == def_id) {
-            nodes.extend(node.callees.clone());
-            nodes.extend(node.methods.clone());
-            nodes.extend(node.callers.clone());
-            nodes.extend(node.constructors.clone());
-        }
-        nodes
-    }
-
-    pub fn get_constructor_nodes_by_def_id(&self, def_id: DefId) -> Vec<DefId> {
-        let mut nodes = Vec::new();
-        if let Some(node) = self.nodes.iter().find(|n| n.node_id == def_id) {
-            nodes.extend(node.constructors.clone());
-        }
-        nodes
     }
 }

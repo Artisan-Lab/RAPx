@@ -23,3 +23,22 @@ pub fn render_dot_graphs(dot_graphs: Vec<(String, String)>) {
         remove_file(&file_name).expect("Failed to delete .dot file");
     }
 }
+
+pub fn render_dot_string(name: String, dot_graph: String) {
+    let file_name = format!("{}.dot", name);
+    let mut file = File::create(&file_name).expect("Unable to create file");
+    file.write_all(dot_graph.as_bytes())
+        .expect("Unable to write data");
+
+    Command::new("dot")
+        .args([
+            "-Tpng",
+            &file_name,
+            "-o",
+            &format!("RAPx_bugs/{}.png", name),
+        ])
+        .output()
+        .expect("Failed to execute Graphviz dot command");
+
+    remove_file(&file_name).expect("Failed to delete .dot file");
+}

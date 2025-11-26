@@ -1,4 +1,5 @@
 use super::graph::*;
+use crate::analysis::utils::fn_info::{convert_alias_to_sets, generate_mir_cfg_dot};
 use crate::utils::source::*;
 use rustc_data_structures::fx::FxHashSet;
 use rustc_middle::mir::SourceInfo;
@@ -26,6 +27,8 @@ impl<'tcx> SafeDropGraph<'tcx> {
         self.bug_records.df_bugs_output(fn_name, self.span);
         self.bug_records.uaf_bugs_output(fn_name, self.span);
         self.bug_records.dp_bug_output(fn_name, self.span);
+        let _ = generate_mir_cfg_dot(self.tcx, self.def_id);
+        rap_debug!("Alias: {:?}", convert_alias_to_sets(self.alias_set.clone()));
     }
 
     pub fn uaf_check(&mut self, aliaset_idx: usize, span: Span, local: usize, is_func_call: bool) {
@@ -38,6 +41,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
             && !self.bug_records.uaf_bugs.contains(&span)
         {
             self.bug_records.uaf_bugs.insert(span.clone());
+            rap_debug!("UAF bug for {:?}", self.values[aliaset_idx]);
         }
     }
 
@@ -92,6 +96,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
             && self.bug_records.df_bugs.contains_key(&root) == false
         {
             self.bug_records.df_bugs.insert(root, span.clone());
+            rap_debug!("DF bug for {:?}", drop);
         }
         return self.values[drop].is_alive() == false;
     }
@@ -102,16 +107,19 @@ impl<'tcx> SafeDropGraph<'tcx> {
                 for i in 0..self.arg_size {
                     if self.values[i + 1].is_ptr() && self.is_dangling(i + 1) {
                         self.bug_records.dp_bugs_unwind.insert(self.span);
+                        rap_debug!("DP bug for {:?}", self.values[i + 1]);
                     }
                 }
             }
             false => {
                 if self.values[0].may_drop && self.is_dangling(0) {
                     self.bug_records.dp_bugs.insert(self.span);
+                    rap_debug!("DP bug for {:?}", self.values[0]);
                 } else {
                     for i in 0..self.arg_size {
                         if self.values[i + 1].is_ptr() && self.is_dangling(i + 1) {
                             self.bug_records.dp_bugs.insert(self.span);
+                            rap_debug!("DP bug for {:?}", self.values[i + 1]);
                         }
                     }
                 }

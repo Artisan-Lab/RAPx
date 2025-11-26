@@ -7,7 +7,10 @@ use crate::{
             range_analysis::{RangeAnalysis, default::RangeAnalyzer},
         },
         safedrop::graph::SafeDropGraph,
-        senryx::contracts::property::{CisRangeItem, PropertyContract},
+        senryx::{
+            contracts::property::{CisRangeItem, PropertyContract},
+            symbolic_analysis::ValueDomain,
+        },
         utils::{
             fn_info::{
                 display_hashmap, get_all_std_unsafe_callees, get_all_std_unsafe_callees_block_id,
@@ -106,7 +109,7 @@ pub struct BodyVisitor<'tcx> {
     pub global_recorder: HashMap<DefId, InterAnalysisRecord<'tcx>>,
     pub proj_ty: HashMap<usize, Ty<'tcx>>,
     pub chains: DominatedGraph<'tcx>,
-    // pub paths: HashSet<Vec<usize>, (Place<'tcx>, Place<'tcx>, BinOp)>,
+    pub value_domains: HashMap<usize, ValueDomain>,
 }
 
 impl<'tcx> BodyVisitor<'tcx> {
@@ -135,6 +138,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             global_recorder,
             proj_ty: HashMap::new(),
             chains,
+            value_domains: HashMap::new(),
             // paths: HashSet::new(),
         }
     }

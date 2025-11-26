@@ -361,9 +361,6 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
         let def_id_sets = tcx.mir_keys(());
         for local_def_id in def_id_sets {
             let def_id = local_def_id.to_def_id();
-            if Self::filter_mir(def_id) {
-                continue;
-            }
             if tcx.def_kind(def_id) == DefKind::Fn || tcx.def_kind(def_id) == DefKind::AssocFn {
                 self.insert_uig(def_id, get_callees(tcx, def_id), get_cons(tcx, def_id));
             }
@@ -383,7 +380,7 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
         visited: &mut HashSet<DefId>,
         unsafe_fn: &mut HashSet<DefId>,
     ) {
-        if !visited.insert(def_id) || Self::filter_mir(def_id) {
+        if !visited.insert(def_id) {
             return;
         }
         match tcx.def_kind(def_id) {
@@ -420,27 +417,6 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                 // println!("{:?}",tcx.def_kind(def_id));
             }
         }
-    }
-
-    pub fn filter_mir(_def_id: DefId) -> bool {
-        // let def_id_fmt = format!("{:?}", def_id);
-        false
-        // def_id_fmt.contains("core_arch")
-        //     || def_id_fmt.contains("::__")
-        //     || def_id_fmt.contains("backtrace_rs")
-        //     || def_id_fmt.contains("stack_overflow")
-        //     || def_id_fmt.contains("thread_local")
-        //     || def_id_fmt.contains("raw_vec")
-        //     || def_id_fmt.contains("sys_common")
-        //     || def_id_fmt.contains("adapters")
-        //     || def_id_fmt.contains("sys::sync")
-        //     || def_id_fmt.contains("personality")
-        //     || def_id_fmt.contains("collections::btree::borrow")
-        //     || def_id_fmt.contains("num::int_sqrt")
-        //     || def_id_fmt.contains("collections::btree::node")
-        //     || def_id_fmt.contains("collections::btree::navigate")
-        //     || def_id_fmt.contains("core_simd")
-        //     || def_id_fmt.contains("unique")
     }
 
     pub fn insert_uig(
