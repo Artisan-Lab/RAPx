@@ -194,9 +194,6 @@ impl<'tcx> SenryxCheck<'tcx> {
     ) -> Vec<CheckResult> {
         let mut body_visitor = BodyVisitor::new(self.tcx, def_id, self.global_recorder.clone(), 0);
         let target_name = get_cleaned_def_path_name(self.tcx, def_id);
-        if !target_name.contains("into_raw_parts_with_alloc") {
-            return body_visitor.check_results;
-        }
         rap_info!("Begin verification process for: {:?}", target_name);
         if get_type(self.tcx, def_id) == 1 {
             let func_cons = get_cons(self.tcx, def_id);

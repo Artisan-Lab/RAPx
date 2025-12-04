@@ -58,6 +58,7 @@ fn main() {
             "-audit-std" => compiler.enable_unsafety_isolation(2),
             "-verify-std" => compiler.enable_verify_std(),
             "-mir" => compiler.enable_show_mir(),
+            "-dotmir" => compiler.enable_show_mir_dot(),
             // -timeout has been handled in cargo-rapx
             x if x.starts_with("-timeout=") => (),
             _ => args.push(arg),

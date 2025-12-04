@@ -90,6 +90,7 @@ pub struct RapCallback {
     rcanary: bool,
     safedrop: bool,
     show_mir: bool,
+    show_mir_dot: bool,
     unsafety_isolation: usize,
     verify: bool,
     verify_std: bool,
@@ -114,6 +115,7 @@ impl Default for RapCallback {
             rcanary: false,
             safedrop: false,
             show_mir: false,
+            show_mir_dot: false,
             unsafety_isolation: 0,
             verify: false,
             verify_std: false,
@@ -365,6 +367,14 @@ impl RapCallback {
         self.show_mir
     }
 
+    pub fn enable_show_mir_dot(&mut self) {
+        self.show_mir_dot = true;
+    }
+
+    pub fn is_show_mir_dot_enabled(&self) -> bool {
+        self.show_mir_dot
+    }
+
     pub fn enable_unsafety_isolation(&mut self, x: usize) {
         self.unsafety_isolation = x;
     }
@@ -521,6 +531,10 @@ pub fn start_analyzer(tcx: TyCtxt, callback: &RapCallback) {
 
     if callback.is_show_mir_enabled() {
         ShowMir::new(tcx).start();
+    }
+
+    if callback.is_show_mir_dot_enabled() {
+        ShowMir::new(tcx).start_generate_dot();
     }
 
     if callback.is_ssa_transform_enabled() {

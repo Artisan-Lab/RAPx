@@ -26,6 +26,7 @@ pub fn render_dot_graphs(dot_graphs: Vec<(String, String)>) {
 
 pub fn render_dot_string(name: String, dot_graph: String) {
     let file_name = format!("{}.dot", name);
+    rap_debug!("render graph {:?}", file_name);
     let mut file = File::create(&file_name).expect("Unable to create file");
     file.write_all(dot_graph.as_bytes())
         .expect("Unable to write data");
@@ -35,7 +36,7 @@ pub fn render_dot_string(name: String, dot_graph: String) {
             "-Tpng",
             &file_name,
             "-o",
-            &format!("RAPx_bugs/{}.png", name),
+            &format!("MIR_dot_graph/{}.png", name),
         ])
         .output()
         .expect("Failed to execute Graphviz dot command");

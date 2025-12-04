@@ -1138,10 +1138,14 @@ fn try_get_mir(tcx: TyCtxt<'_>, def_id: DefId) -> Option<&rustc_middle::mir::Bod
     }
 }
 
-// 清理def path名称的辅助函数
 pub fn get_cleaned_def_path_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
-    // 这里实现你的路径清理逻辑
     tcx.def_path_str(def_id)
+        .replace("::", "_")
+        .replace("<", "_")
+        .replace(">", "_")
+        .replace(",", "_")
+        .replace(" ", "")
+        .replace("__", "_")
 }
 
 // 打印调用链的函数
@@ -1224,10 +1228,7 @@ pub fn generate_mir_cfg_dot(tcx: TyCtxt<'_>, def_id: DefId) -> Result<(), std::i
     // Setup Header
     dot_content.push_str(&format!(
         "digraph mir_cfg_{} {{\n",
-        tcx.def_path_str(def_id)
-            .replace("::", "_")
-            .replace("<", "_")
-            .replace(">", "_")
+        get_cleaned_def_path_name(tcx, def_id)
     ));
     dot_content.push_str(&format!(
         "    label = \"MIR CFG for {}\";\n",
@@ -1281,13 +1282,10 @@ pub fn generate_mir_cfg_dot(tcx: TyCtxt<'_>, def_id: DefId) -> Result<(), std::i
             }
         }
     }
-
     dot_content.push_str("}\n");
-
     let name = get_cleaned_def_path_name(tcx, def_id);
     render_dot_string(name, dot_content);
-
-    println!("render dot for {:?}", def_id);
+    rap_debug!("render dot for {:?}", def_id);
     Ok(())
 }
 

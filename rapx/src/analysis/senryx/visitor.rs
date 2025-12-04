@@ -457,47 +457,6 @@ impl<'tcx> BodyVisitor<'tcx> {
 
         // merge alias results
         self.handle_ret_alias(dst_place, def_id, fn_map, args);
-
-        // TODO: to be deleted!
-        // get pre analysis state
-        // let mut pre_analysis_state = HashMap::new();
-        // for (idx, arg) in args.iter().enumerate() {
-        //     let arg_place = get_arg_place(&arg.node);
-        //     let ab_state_item = self.get_abstate_by_place_in_path(arg_place.1, path_index);
-        //     pre_analysis_state.insert(idx, ab_state_item);
-        // }
-
-        // // check cache and update new states for args and return value
-        // let mut gr = self.global_recorder.clone();
-        // if let Some(record) = gr.get_mut(def_id) {
-        //     if record.is_pre_state_same(&pre_analysis_state) {
-        //         self.update_post_state(&record.post_analysis_state, args, path_index);
-        //         self.insert_path_abstate(
-        //             path_index,
-        //             dst_place.local.as_usize(),
-        //             record.ret_state.clone(),
-        //         );
-        //         return;
-        //     }
-        // }
-
-        // update post states and cache
-        // let tcx = self.tcx;
-        // let mut inter_body_visitor: BodyVisitor<'_> = BodyVisitor::new(
-        //     tcx,
-        //     *def_id,
-        //     self.global_recorder.clone(),
-        //     self.visit_time + 1,
-        // );
-        // inter_body_visitor.path_forward_check(fn_map);
-        // let post_analysis_state: HashMap<usize, AbstractStateItem<'_>> =
-        //     inter_body_visitor.get_args_post_states().clone();
-        // self.update_post_state(&post_analysis_state, args, path_index);
-        // let ret_state = post_analysis_state.get(&0).unwrap().clone();
-        // self.global_recorder.insert(
-        //     *def_id,
-        //     InterAnalysisRecord::new(pre_analysis_state, post_analysis_state, ret_state),
-        // );
     }
 
     fn set_bound(
