@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 use std::slice;
-struct St1 { ptr: *mut u8, len: usize }
+struct St1 { pub ptr: *mut u8, len: usize }
 struct St2 { pub ptr: *mut u8, pub len: usize }
 impl St1 {
     pub fn from(p: *mut u8, l: usize) -> St1 {

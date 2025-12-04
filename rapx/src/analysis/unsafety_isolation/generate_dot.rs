@@ -151,10 +151,10 @@ impl UigUnit {
     /// (node.0, node.1, node.2) : (def_id, is_unsafe, type_of_func--0:cons,1:method,2:function)
     pub fn get_node_ty(node: NodeType) -> UigNode {
         match (node.1, node.2) {
-            (true, 0) => UigNode::Unsafe(node.0, "doublecircle".to_string()),
+            (true, 0) => UigNode::Unsafe(node.0, "septagon".to_string()),
             (true, 1) => UigNode::Unsafe(node.0, "ellipse".to_string()),
             (true, 2) => UigNode::Unsafe(node.0, "box".to_string()),
-            (false, 0) => UigNode::Safe(node.0, "doublecircle".to_string()),
+            (false, 0) => UigNode::Safe(node.0, "septagon".to_string()),
             (false, 1) => UigNode::Safe(node.0, "ellipse".to_string()),
             (false, 2) => UigNode::Safe(node.0, "box".to_string()),
             _ => UigNode::Safe(node.0, "ellipse".to_string()),
@@ -172,17 +172,12 @@ impl UigUnit {
             }
             .to_owned()
         };
-        let get_node_attr = |_graph: &Graph<UigNode, UigEdge>, node_ref: (NodeIndex, &UigNode)| {
-            match node_ref.1 {
+        let get_node_attr =
+            |_graph: &Graph<UigNode, UigEdge>, node_ref: (NodeIndex, &UigNode)| match node_ref.1 {
                 UigNode::Safe(def_id, shape) => {
                     format!("label=\"{:?}\", color=black, shape={:?}", def_id, shape)
                 }
                 UigNode::Unsafe(def_id, shape) => {
-                    // let sps = self.get_sp(*def_id);
-                    // let mut label = format!("{:?}\n ", def_id);
-                    // for sp_name in sps {
-                    //     label.push_str(&format!(" {}", sp_name));
-                    // }
                     let label = format!("{:?}\n ", def_id);
                     let node_attr = format!("label={:?}, shape={:?}, color=red", label, shape);
                     node_attr
@@ -199,8 +194,7 @@ impl UigUnit {
                         label
                     )
                 }
-            }
-        };
+            };
 
         let caller_node = graph.add_node(Self::get_node_ty(self.caller));
         if !self.caller_cons.is_empty() {

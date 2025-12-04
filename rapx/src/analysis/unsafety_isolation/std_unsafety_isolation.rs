@@ -94,21 +94,13 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                         sp_cnt += sp_set.len();
                     }
                     total_cnt += 1;
-                    // println!("unsafe fn : {:?}", get_cleaned_def_path_name(self.tcx, def_id));
                 }
                 for sp in sp_set {
                     *sp_count_map.entry(sp).or_insert(0) += 1;
                 }
-                // self.check_params(def_id);
             }
             self.insert_uig(*def_id, get_callees(tcx, *def_id), get_cons(tcx, *def_id));
         }
-        // self.analyze_struct();
-        // self.analyze_uig();
-        // self.get_units_data(self.tcx);
-        // for (sp, count) in &sp_count_map {
-        //     println!("SP: {}, Count: {}", sp, count);
-        // }
 
         rap_info!(
             "fn_def : {}, count : {:?} and {:?}, sp cnt : {}",
@@ -117,7 +109,6 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
             api_cnt,
             sp_cnt
         );
-        // println!("unsafe fn len {}", unsafe_fn.len());
         unsafe_fn
     }
 
@@ -167,7 +158,7 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
                 func_nc.push(uig.clone());
             }
         }
-        println!(
+        rap_info!(
             "func: {},{},{}, method: {},{},{}",
             func_nc.len(),
             func_pro1.len(),
@@ -176,19 +167,7 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
             m_pro1.len(),
             m_enc1.len()
         );
-        println!("units: {}", self.uigs.len() + self.single.len());
-        // let mut no_unsafe_con = Vec::new();
-        // for uig in pro1 {
-        //     let mut flag = 0;
-        //     for con in &uig.caller_cons {
-        //         if con.1 == true {
-        //             flag = 1;
-        //         }
-        //     }
-        //     if flag == 0 {
-        //         no_unsafe_con.push(uig.clone());
-        //     }
-        // }
+        rap_info!("units: {}", self.uigs.len() + self.single.len());
     }
 
     pub fn analyze_struct(&self) {
@@ -322,15 +301,12 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
         }
         if ty_flag == 0 {
             *s += 1;
-            // println!("Struct:{:?}", struct_name);
         }
         if ty_flag == 1 {
             *u += 1;
-            // println!("Union:{:?}", struct_name);
         }
         if ty_flag == 2 {
             *e += 1;
-            // println!("Enum:{:?}", struct_name);
         }
 
         println!("Safe Cons: {}", safe_constructors.len());
@@ -445,6 +421,48 @@ impl<'tcx> UnsafetyIsolationCheck<'tcx> {
             self.uigs.push(uig);
         } else {
             self.single.push(uig);
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IsolationGraphNode {
+    pub node_id: DefId,
+    //0:constructor, 1:method, 2:function
+    pub node_type: usize,
+    pub node_name: String,
+    pub node_unsafety: bool,
+    //if this node is a method, then it may have constructors
+    pub constructors: Vec<DefId>,
+    //record all unsafe callees
+    pub callees: Vec<DefId>,
+    //tag if this node has been visited for its unsafe callees
+    pub methods: Vec<DefId>,
+    pub callers: Vec<DefId>,
+    pub visited_tag: bool,
+    //record the source of the func
+    pub is_crate_api: bool,
+}
+
+impl IsolationGraphNode {
+    pub fn new(
+        node_id: DefId,
+        node_type: usize,
+        node_name: String,
+        node_unsafety: bool,
+        is_crate_api: bool,
+    ) -> Self {
+        Self {
+            node_id,
+            node_type,
+            node_name,
+            node_unsafety,
+            constructors: Vec::new(),
+            callees: Vec::new(),
+            methods: Vec::new(),
+            callers: Vec::new(),
+            visited_tag: false,
+            is_crate_api,
         }
     }
 }

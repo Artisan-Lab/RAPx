@@ -1,15 +1,12 @@
-pub mod draw_dot;
 pub mod generate_dot;
 pub mod hir_visitor;
-pub mod isolation_graph;
 pub mod render_module_dot;
 pub mod std_unsafety_isolation;
 
-use crate::analysis::unsafety_isolation::draw_dot::render_dot_graphs;
-// use crate::analysis::unsafety_isolation::draw_dot::render_dot_graphs;
 use crate::analysis::unsafety_isolation::generate_dot::UigUnit;
 use crate::analysis::unsafety_isolation::hir_visitor::{ContainsUnsafe, RelatedFnCollector};
-use crate::analysis::unsafety_isolation::isolation_graph::*;
+use crate::analysis::unsafety_isolation::std_unsafety_isolation::IsolationGraphNode;
+use crate::analysis::utils::draw_dot::render_dot_graphs;
 use crate::analysis::utils::fn_info::*;
 use rustc_hir::def_id::DefId;
 use rustc_middle::{

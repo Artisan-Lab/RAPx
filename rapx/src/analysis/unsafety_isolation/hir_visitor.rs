@@ -40,13 +40,9 @@ impl<'tcx> Visitor<'tcx> for RelatedFnCollector<'tcx> {
                 let key = Some(self_ty.hir_id);
                 let entry = self.hash_map.entry(key).or_default();
                 entry.extend(impl_items.iter().filter_map(|impl_item_id| {
-                    //if let AssocItemKind::Fn(_) = impl_item_ref.kind {
                     self.tcx
                         .hir_maybe_body_owned_by(impl_item_id.owner_id.def_id)
                         .map(|body| (body.id(), self.tcx.hir_impl_item(*impl_item_id).span))
-                    //} else {
-                    //    None
-                    //}
                 }));
             }
             ItemKind::Trait(
@@ -135,16 +131,9 @@ impl<'tcx> ContainsUnsafe<'tcx> {
 }
 
 impl<'tcx> Visitor<'tcx> for ContainsUnsafe<'tcx> {
-    // type NestedFilter = nested_filter::OnlyBodies;
-
-    //fn nested_visit_map(&mut self) -> Self::Map {
-    //    self.tcx.hir()
-    //}
-
     fn visit_block(&mut self, block: &'tcx Block<'tcx>) {
         use rustc_hir::BlockCheckMode;
         if let BlockCheckMode::UnsafeBlock(_unsafe_source) = block.rules {
-            // println!("{:?}",block.clone());
             self.block_unsafe = true;
         }
         intravisit::walk_block(self, block);
