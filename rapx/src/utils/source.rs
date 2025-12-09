@@ -1,15 +1,15 @@
-use rustc_hir::Node::*;
+use rustc_hir::{self, Node::*};
 use rustc_middle::ty::TyCtxt;
 use rustc_span::{
     FileName, FileNameDisplayPreference,
     def_id::{CrateNum, DefId},
     symbol::Symbol,
 };
-
+/*
 extern crate rustc_hir;
 extern crate rustc_middle;
 extern crate rustc_span;
-
+*/
 pub fn get_crate_num<'tcx>(tcx: TyCtxt<'tcx>, name: &str) -> Option<CrateNum> {
     let sym = Symbol::intern(name);
     tcx.crates(())
@@ -87,5 +87,18 @@ fn convert_filename(filename: FileName) -> String {
             .to_string_lossy(FileNameDisplayPreference::Local)
             .into_owned(),
         _ => "<unknown>".to_string(),
+    }
+}
+
+pub fn get_module_name(tcx: TyCtxt, def_id: DefId) -> String {
+    let tcx = tcx;
+    let parent_mod = tcx.parent_module_from_def_id(def_id.expect_local());
+    let mod_def_id = parent_mod.to_def_id();
+
+    let path = tcx.def_path_str(mod_def_id);
+    if path.is_empty() {
+        "root_module".to_string()
+    } else {
+        path
     }
 }

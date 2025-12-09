@@ -1,3 +1,4 @@
+use super::upg_graph::{UPGEdge, UPGNode};
 use crate::analysis::utils::fn_info::*;
 use petgraph::{
     Graph,
@@ -6,47 +7,7 @@ use petgraph::{
 };
 use rustc_hir::{Safety, def_id::DefId};
 use rustc_middle::{mir::Local, ty::TyCtxt};
-use std::{
-    collections::HashSet,
-    fmt::{self, Write},
-    hash::Hash,
-};
-
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum UPGNode {
-    SafeFn(DefId, String),
-    UnsafeFn(DefId, String),
-    MergedCallerCons(String),
-    MutMethods(String),
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-pub enum UPGEdge {
-    CallerToCallee,
-    ConsToMethod,
-    MutToCaller,
-}
-
-impl fmt::Display for UPGNode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            UPGNode::SafeFn(_, _) => write!(f, "Safe"),
-            UPGNode::UnsafeFn(_, _) => write!(f, "Unsafe"),
-            UPGNode::MergedCallerCons(_) => write!(f, "MergedCallerCons"),
-            UPGNode::MutMethods(_) => write!(f, "MutMethods"),
-        }
-    }
-}
-
-impl fmt::Display for UPGEdge {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            UPGEdge::CallerToCallee => write!(f, "CallerToCallee"),
-            UPGEdge::ConsToMethod => write!(f, "ConsToMethod"),
-            UPGEdge::MutToCaller => write!(f, "MutToCaller"),
-        }
-    }
-}
+use std::{collections::HashSet, fmt::Write};
 
 #[derive(Debug, Clone)]
 pub struct UPGUnit {

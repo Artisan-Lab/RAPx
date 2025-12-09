@@ -255,6 +255,12 @@ fn test_heap_proxy() {
 }
 
 #[test]
+fn test_upg_safe_caller() {
+    let output = running_tests_with_arg("upg/safe_caller", "-upg");
+    assert_eq!(output.contains("from_raw_parts"), true);
+}
+
+#[test]
 fn test_upg_raw_ptr() {
     let output = running_tests_with_arg("upg/raw_ptr", "-upg");
     assert_eq!(output.contains("raw_ptr_deref_dummy"), true);

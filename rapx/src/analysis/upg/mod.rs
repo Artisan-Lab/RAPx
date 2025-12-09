@@ -3,19 +3,20 @@
  */
 pub mod fn_collector;
 pub mod hir_visitor;
-pub mod render_module_dot;
 pub mod std_upg;
+pub mod upg_graph;
 pub mod upg_unit;
 
 use crate::{
     analysis::utils::{draw_dot::render_dot_graphs, fn_info::*},
-    utils::source::get_fn_name_byid,
+    utils::source::{get_fn_name_byid, get_module_name},
 };
 use fn_collector::FnCollector;
 use hir_visitor::ContainsUnsafe;
 use rustc_hir::{Safety, def_id::DefId};
 use rustc_middle::{mir::Local, ty::TyCtxt};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use upg_graph::{UPGEdge, UPGraph};
 use upg_unit::UPGUnit;
 
 #[derive(PartialEq)]
@@ -63,7 +64,7 @@ impl<'tcx> UPGAnalysis<'tcx> {
                         }
                     }
                 }
-                self.render_module_dot();
+                self.generate_graph_dots();
             }
         }
     }
@@ -125,5 +126,114 @@ impl<'tcx> UPGAnalysis<'tcx> {
             mut_methods,
         );
         self.upgs.push(upg);
+    }
+
+    /// Main function to aggregate data and render DOT graphs per module.
+    pub fn generate_graph_dots(&self) {
+        let mut modules_data: HashMap<String, UPGraph> = HashMap::new();
+
+        let mut collect_unit = |unit: &UPGUnit| {
+            let caller_id = unit.caller.def_id;
+            let module_name = get_module_name(self.tcx, caller_id);
+            rap_info!("module name: {:?}", module_name);
+
+            let module_data = modules_data.entry(module_name).or_insert_with(UPGraph::new);
+
+            module_data.add_node(self.tcx, unit.caller, None);
+
+            if let Some(adt) = get_adt_via_method(self.tcx, caller_id) {
+                if adt.literal_cons_enabled {
+                    let adt_node_type = FnInfo::new(adt.def_id, Safety::Safe, FnKind::Constructor);
+                    let label = format!("Literal Constructor: {}", self.tcx.item_name(adt.def_id));
+                    module_data.add_node(self.tcx, adt_node_type, Some(label));
+                    if unit.caller.fn_kind == FnKind::Method {
+                        module_data.add_edge(adt.def_id, caller_id, UPGEdge::ConsToMethod);
+                    }
+                } else {
+                    let adt_node_type = FnInfo::new(adt.def_id, Safety::Safe, FnKind::Method);
+                    let label = format!(
+                        "MutMethod Introduced by PubFields: {}",
+                        self.tcx.item_name(adt.def_id)
+                    );
+                    module_data.add_node(self.tcx, adt_node_type, Some(label));
+                    if unit.caller.fn_kind == FnKind::Method {
+                        module_data.add_edge(adt.def_id, caller_id, UPGEdge::MutToCaller);
+                    }
+                }
+            }
+
+            // Edge from associated item (constructor) to the method.
+            for cons in &unit.caller_cons {
+                module_data.add_node(self.tcx, *cons, None);
+                module_data.add_edge(cons.def_id, unit.caller.def_id, UPGEdge::ConsToMethod);
+            }
+
+            // Edge from mutable access to the caller.
+            for mut_method_id in &unit.mut_methods {
+                let node_type = get_type(self.tcx, *mut_method_id);
+                let fn_safety = check_safety(self.tcx, *mut_method_id);
+                let node = FnInfo::new(*mut_method_id, fn_safety, node_type);
+
+                module_data.add_node(self.tcx, node, None);
+                module_data.add_edge(*mut_method_id, unit.caller.def_id, UPGEdge::MutToCaller);
+            }
+
+            // Edge representing a call from caller to callee.
+            for callee in &unit.callees {
+                module_data.add_node(self.tcx, *callee, None);
+                module_data.add_edge(unit.caller.def_id, callee.def_id, UPGEdge::CallerToCallee);
+            }
+
+            rap_debug!("raw ptrs: {:?}", unit.raw_ptrs);
+            if !unit.raw_ptrs.is_empty() {
+                let all_raw_ptrs = unit
+                    .raw_ptrs
+                    .iter()
+                    .map(|p| format!("{:?}", p))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                match get_ptr_deref_dummy_def_id(self.tcx) {
+                    Some(dummy_fn_def_id) => {
+                        let rawptr_deref_fn =
+                            FnInfo::new(dummy_fn_def_id, Safety::Unsafe, FnKind::Intrinsic);
+                        module_data.add_node(
+                            self.tcx,
+                            rawptr_deref_fn,
+                            Some(format!("Raw ptr deref: {}", all_raw_ptrs)),
+                        );
+                        module_data.add_edge(
+                            unit.caller.def_id,
+                            dummy_fn_def_id,
+                            UPGEdge::CallerToCallee,
+                        );
+                    }
+                    None => {
+                        rap_info!("fail to find the dummy ptr deref id.");
+                    }
+                }
+            }
+
+            rap_debug!("static muts: {:?}", unit.static_muts);
+            for def_id in &unit.static_muts {
+                let node = FnInfo::new(*def_id, Safety::Unsafe, FnKind::Intrinsic);
+                module_data.add_node(self.tcx, node, None);
+                module_data.add_edge(unit.caller.def_id, *def_id, UPGEdge::CallerToCallee);
+            }
+        };
+
+        // Aggregate all Units
+        for upg in &self.upgs {
+            collect_unit(upg);
+        }
+
+        // Generate string of dot
+        let mut final_dots = Vec::new();
+        for (mod_name, data) in modules_data {
+            let dot = data.upg_unit_string(&mod_name);
+            final_dots.push((mod_name, dot));
+        }
+        rap_info!("{:?}", final_dots); // Output required for tests; do not change.
+        render_dot_graphs(final_dots);
     }
 }
