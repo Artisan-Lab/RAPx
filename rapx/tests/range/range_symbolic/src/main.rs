@@ -11,6 +11,7 @@ fn foo1(x: i32) -> i32 {
 }
 
 fn main(){
-
+    let y = 2;
+    let x = y;
     foo1(2);
 }

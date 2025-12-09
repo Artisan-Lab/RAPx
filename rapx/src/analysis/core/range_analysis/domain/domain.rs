@@ -15,8 +15,8 @@ use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::coverage::Op;
 use rustc_middle::mir::{
-    BasicBlock, BinOp, BorrowKind, Const, Local, LocalDecl, Operand, Place, Rvalue, Statement,
-    StatementKind, Terminator, UnOp,
+    BasicBlock, BinOp, BorrowKind, CastKind, Const, Local, LocalDecl, Operand, Place, Rvalue,
+    Statement, StatementKind, Terminator, UnOp,
 };
 use rustc_middle::ty::ScalarInt;
 use rustc_span::sym::no_default_passes;
@@ -101,42 +101,194 @@ impl IntervalArithmetic for i32 {}
 impl IntervalArithmetic for usize {}
 impl IntervalArithmetic for i64 {}
 
+use rustc_middle::ty::Ty;
+
 #[derive(Debug, Clone)]
 pub enum SymbExpr<'tcx> {
-    Operand(Operand<'tcx>),
-    Binary(BinOp, Box<SymbExpr<'tcx>>, Box<SymbExpr<'tcx>>),
-    Unary(UnOp, Box<SymbExpr<'tcx>>),
-}
-#[derive(Debug, Clone)]
-pub enum IntervalType<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
-    Basic(BasicInterval<T>),
-    Symb(SymbInterval<'tcx, T>), // Using 'static for simplicity, adjust lifetime as needed
-    SymbolicExpr {
-        expr: SymbExpr<'tcx>,
+    Constant(Const<'tcx>),
 
-        cached_range: Range<T>,
-    },
+    Place(&'tcx Place<'tcx>),
+
+    Binary(BinOp, Box<SymbExpr<'tcx>>, Box<SymbExpr<'tcx>>),
+
+    Unary(UnOp, Box<SymbExpr<'tcx>>),
+
+    Cast(CastKind, Box<SymbExpr<'tcx>>, Ty<'tcx>),
+
+    Unknown,
 }
-impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> fmt::Display for IntervalType<'tcx, T>
-where
-    T: IntervalArithmetic + ConstConvert + Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+
+impl<'tcx> SymbExpr<'tcx> {
+    pub fn from_operand(op: &'tcx Operand<'tcx>) -> Self {
+        match op {
+            Operand::Copy(place) | Operand::Move(place) => SymbExpr::Place(place),
+            Operand::Constant(c) => SymbExpr::Constant(c.const_),
+        }
+    }
+
+    pub fn from_rvalue(rvalue: &'tcx Rvalue<'tcx>) -> Self {
+        match rvalue {
+            Rvalue::Use(op) => Self::from_operand(op),
+            Rvalue::BinaryOp(bin_op, box (lhs, rhs)) => {
+                let left = Self::from_operand(lhs);
+                let right = Self::from_operand(rhs);
+
+                if matches!(left, SymbExpr::Unknown) || matches!(right, SymbExpr::Unknown) {
+                    return SymbExpr::Unknown;
+                }
+
+                SymbExpr::Binary(*bin_op, Box::new(left), Box::new(right))
+            }
+            Rvalue::UnaryOp(un_op, op) => {
+                let expr = Self::from_operand(op);
+                if matches!(expr, SymbExpr::Unknown) {
+                    return SymbExpr::Unknown;
+                }
+                SymbExpr::Unary(*un_op, Box::new(expr))
+            }
+            Rvalue::Cast(kind, op, ty) => {
+                let expr = Self::from_operand(op);
+                if matches!(expr, SymbExpr::Unknown) {
+                    return SymbExpr::Unknown;
+                }
+                SymbExpr::Cast(*kind, Box::new(expr), *ty)
+            }
+            Rvalue::Ref(..)
+            | Rvalue::ThreadLocalRef(..)
+            | Rvalue::Len(..)
+            | Rvalue::Aggregate(..)
+            | Rvalue::Repeat(..)
+            | Rvalue::ShallowInitBox(..)
+            | Rvalue::NullaryOp(..)
+            | Rvalue::Discriminant(..)
+            | Rvalue::CopyForDeref(..) => SymbExpr::Unknown,
+            Rvalue::RawPtr(raw_ptr_kind, place) => todo!(),
+            Rvalue::WrapUnsafeBinder(operand, ty) => todo!(),
+        }
+    }
+
+    // ==========================================
+    // 2. 求值器：计算 Range<T>
+    // ==========================================
+
+    /// 根据当前变量状态表 (vars) 递归计算表达式的区间
+    pub fn eval<T: IntervalArithmetic + ConstConvert + Debug>(
+        &self,
+        vars: &VarNodes<'tcx, T>,
+    ) -> Range<T> {
         match self {
-            IntervalType::Basic(b) => write!(f, "BasicInterval: {:?}", b.get_range()),
-            IntervalType::Symb(s) => write!(f, "SymbInterval: {:?}", s.get_range()),
-            IntervalType::SymbolicExpr { expr, cached_range } => {
-                write!(
-                    f,
-                    "SymbolicExpr: {:?} with cached range {:?}",
-                    expr, cached_range
-                )
+            SymbExpr::Unknown => Range::new(T::min_value(), T::max_value(), RangeType::Regular),
+
+            // 处理常量：利用用户定义的 ConstConvert trait 将 Const<'tcx> 转为 T
+            SymbExpr::Constant(c) => {
+                if let Some(val) = T::from_const(c) {
+                    Range::new(val, val, RangeType::Regular)
+                } else {
+                    // 转换失败（例如不支持的常量类型），返回全集
+                    Range::new(T::min_value(), T::max_value(), RangeType::Regular)
+                }
+            }
+
+            // 处理变量：查表
+            SymbExpr::Place(place) => {
+                if let Some(node) = vars.get(place) {
+                    node.get_range().clone()
+                } else {
+                    // 变量未定义，返回全集 (Top)
+                    Range::new(T::min_value(), T::max_value(), RangeType::Regular)
+                }
+            }
+
+            // 递归二元运算
+            SymbExpr::Binary(op, lhs, rhs) => {
+                let l_range = lhs.eval(vars);
+                let r_range = rhs.eval(vars);
+
+                // 假设 Range<T> 实现了基础算术运算
+                match op {
+                    BinOp::Add | BinOp::AddUnchecked | BinOp::AddWithOverflow => {
+                        l_range.add(&r_range)
+                    }
+                    BinOp::Sub | BinOp::SubUnchecked | BinOp::SubWithOverflow => {
+                        l_range.sub(&r_range)
+                    }
+                    BinOp::Mul | BinOp::MulUnchecked | BinOp::MulWithOverflow => {
+                        l_range.mul(&r_range)
+                    }
+                    // 除法、位运算等如果在 Range 中未实现，返回全集
+                    // 如果实现了 Div，可以在这里添加 BinOp::Div ...
+                    _ => Range::new(T::min_value(), T::max_value(), RangeType::Regular),
+                }
+            }
+
+            // 递归一元运算
+            SymbExpr::Unary(op, inner) => {
+                let _inner_range = inner.eval(vars);
+                match op {
+                    UnOp::Neg => {
+                        // TODO: 确保 Range<T> 实现了 Neg 或有相应逻辑
+                        // 如果 Range 库支持 neg()：
+                        // inner_range.neg()
+                        // 暂时返回全集以保证编译通过
+                        Range::new(T::min_value(), T::max_value(), RangeType::Regular)
+                    }
+                    UnOp::Not | UnOp::PtrMetadata => {
+                        Range::new(T::min_value(), T::max_value(), RangeType::Regular)
+                    }
+                }
+            }
+
+            // 处理类型转换
+            SymbExpr::Cast(kind, inner, _target_ty) => {
+                let inner_range = inner.eval(vars);
+                match kind {
+                    // 整数间的转换 (e.g. i32 -> i64, u64 -> u32)
+                    CastKind::IntToInt => {
+                        // 这是一个启发式处理：
+                        // 在不知道 T 具体大小的情况下，我们假设 "值" 尽可能保留。
+                        // 如果是从小类型转大类型 (Ext)，Range 不变。
+                        // 如果是大类型转小类型 (Trunc)，理论上 Range 可能会剧烈变化（截断）。
+                        // 为了安全起见，如果不做精确的位宽处理，直接返回 inner_range 可能不安全(对于截断)，
+                        // 但在很多静态分析中，为了路径敏感性，我们希望尽量传递约束。
+
+                        // 策略：直接传递 Range。具体的溢出截断由 Range<T> 内部的 add/sub 处理，
+                        // 或者 T::from_const 处理。
+                        inner_range
+                    }
+                    // 指针转整数等其他 Cast，通常意味着失去了数值的连续性
+                    _ => Range::new(T::min_value(), T::max_value(), RangeType::Regular),
+                }
             }
         }
     }
 }
+#[derive(Debug, Clone)]
+pub enum IntervalType<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
+    Basic(BasicInterval<'tcx, T>),
+    Symb(SymbInterval<'tcx, T>),
+}
+
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> fmt::Display for IntervalType<'tcx, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IntervalType::Basic(b) => write!(
+                f,
+                "BasicInterval: {:?} {:?} {:?} ",
+                b.get_range(),
+                b.lower,
+                b.upper
+            ),
+            IntervalType::Symb(b) => write!(
+                f,
+                "SymbInterval: {:?} {:?} {:?} ",
+                b.get_range(),
+                b.lower,
+                b.upper
+            ),
+        }
+    }
+}
 pub trait IntervalTypeTrait<T: IntervalArithmetic + ConstConvert + Debug> {
-    // fn get_value_id(&self) -> IntervalId;
     fn get_range(&self) -> &Range<T>;
     fn set_range(&mut self, new_range: Range<T>);
 }
@@ -147,7 +299,6 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<T>
         match self {
             IntervalType::Basic(b) => b.get_range(),
             IntervalType::Symb(s) => s.get_range(),
-            IntervalType::SymbolicExpr { cached_range, .. } => cached_range,
         }
     }
 
@@ -155,27 +306,43 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<T>
         match self {
             IntervalType::Basic(b) => b.set_range(new_range),
             IntervalType::Symb(s) => s.set_range(new_range),
-            IntervalType::SymbolicExpr { cached_range, .. } => *cached_range = new_range,
         }
     }
 }
 #[derive(Debug, Clone)]
-pub struct BasicInterval<T: IntervalArithmetic + ConstConvert + Debug> {
+pub struct BasicInterval<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     range: Range<T>,
+    lower: SymbExpr<'tcx>,
+    upper: SymbExpr<'tcx>,
 }
 
-impl<T: IntervalArithmetic + ConstConvert + Debug> BasicInterval<T> {
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> BasicInterval<'tcx, T> {
     pub fn new(range: Range<T>) -> Self {
-        Self { range }
+        Self {
+            range,
+            lower: SymbExpr::Unknown,
+            upper: SymbExpr::Unknown,
+        }
+    }
+    pub fn new_symb(range: Range<T>, lower: SymbExpr<'tcx>, upper: SymbExpr<'tcx>) -> Self {
+        Self {
+            range,
+            lower,
+            upper,
+        }
     }
     pub fn default() -> Self {
         Self {
             range: Range::default(T::min_value()),
+            lower: SymbExpr::Unknown,
+            upper: SymbExpr::Unknown,
         }
     }
 }
 
-impl<T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<T> for BasicInterval<T> {
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<T>
+    for BasicInterval<'tcx, T>
+{
     // fn get_value_id(&self) -> IntervalId {
     //     IntervalId::BasicIntervalId
     // }
@@ -198,14 +365,50 @@ pub struct SymbInterval<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     range: Range<T>,
     symbound: &'tcx Place<'tcx>,
     predicate: BinOp,
+    lower: SymbExpr<'tcx>,
+    upper: SymbExpr<'tcx>,
 }
 
 impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> SymbInterval<'tcx, T> {
     pub fn new(range: Range<T>, symbound: &'tcx Place<'tcx>, predicate: BinOp) -> Self {
         Self {
-            range: range,
+            range,
             symbound,
             predicate,
+            lower: SymbExpr::Unknown,
+            upper: SymbExpr::Unknown,
+        }
+    }
+
+    pub fn refine(&mut self, vars: &VarNodes<'tcx, T>) {
+        if let SymbExpr::Unknown = self.lower {
+            // Do nothing
+        } else {
+            let low_range = self.lower.eval(vars);
+            // 如果计算出的符号下界比当前的下界更大（更紧），则更新
+            if low_range.get_lower() > self.range.get_lower() {
+                let new_range = Range::new(
+                    low_range.get_lower(),
+                    self.range.get_upper(),
+                    RangeType::Regular,
+                );
+                self.range = new_range;
+            }
+        }
+
+        if let SymbExpr::Unknown = self.upper {
+            // Do nothing
+        } else {
+            let high_range = self.upper.eval(vars);
+            // 如果计算出的符号上界比当前的上界更小（更紧），则更新
+            if high_range.get_upper() < self.range.get_upper() {
+                let new_range = Range::new(
+                    self.range.get_lower(),
+                    high_range.get_upper(),
+                    RangeType::Regular,
+                );
+                self.range = new_range;
+            }
         }
     }
 
@@ -1140,7 +1343,17 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> VarNode<'tcx, T> {
             abstract_state: '?',
         }
     }
-
+    pub fn new_symb(v: &'tcx Place<'tcx>, symb_expr: SymbExpr<'tcx>) -> Self {
+        Self {
+            v,
+            interval: IntervalType::Basic(BasicInterval::new_symb(
+                Range::default(T::min_value()),
+                symb_expr.clone(),
+                symb_expr.clone(),
+            )),
+            abstract_state: '?',
+        }
+    }
     pub fn get_range(&self) -> &Range<T> {
         self.interval.get_range()
     }
