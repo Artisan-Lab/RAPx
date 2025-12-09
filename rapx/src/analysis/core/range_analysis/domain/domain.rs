@@ -226,7 +226,6 @@ impl<'tcx> SymbExpr<'tcx> {
                     _ => Range::new(T::min_value(), T::max_value(), RangeType::Regular),
                 }
             }
-
         }
     }
 }
@@ -294,7 +293,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> IntervalTypeTrait<'tcx,
 }
 #[derive(Debug, Clone)]
 
-pub struct BasicInterval<'tcx,T: IntervalArithmetic + ConstConvert + Debug> {
+pub struct BasicInterval<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     range: Range<T>,
     lower: SymbExpr<'tcx>,
     upper: SymbExpr<'tcx>,
