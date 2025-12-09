@@ -1,4 +1,3 @@
-use super::{graph::*, *};
 use rustc_data_structures::fx::FxHashSet;
 use rustc_hir::def_id::DefId;
 use rustc_middle::{
@@ -6,13 +5,15 @@ use rustc_middle::{
         Operand::{Constant, Copy, Move},
         TerminatorKind,
     },
-    ty::TypingEnv,
+    ty::{TyKind, TypingEnv},
 };
 
 use std::{
     collections::{HashMap, HashSet},
     env,
 };
+
+use super::{graph::*, *};
 
 impl<'tcx> MopGraph<'tcx> {
     pub fn split_check(
@@ -279,16 +280,35 @@ impl<'tcx> MopGraph<'tcx> {
                     match discr {
                         Copy(p) | Move(p) => {
                             let place = self.projection(false, *p);
-                            if let Some(father) = self.disc_map.get(&self.values[place].local) {
-                                if let Some(constant) = self.constant.get(father) {
-                                    if *constant != usize::MAX {
-                                        single_target = true;
-                                        sw_val = *constant;
+                            let local_decls = &self.tcx.optimized_mir(self.def_id).local_decls;
+                            let place_ty = (*p).ty(local_decls, self.tcx);
+                            rap_debug!("place {:?}", place);
+                            match place_ty.ty.kind() {
+                                TyKind::Bool => {
+                                    if let Some(constant) = self.constant.get(&place) {
+                                        if *constant != usize::MAX {
+                                            single_target = true;
+                                            sw_val = *constant;
+                                        }
                                     }
-                                }
-                                if self.values[place].local == place {
-                                    path_discr_id = *father;
+                                    path_discr_id = place;
                                     sw_targets = Some(targets.clone());
+                                }
+                                _ => {
+                                    if let Some(father) =
+                                        self.disc_map.get(&self.values[place].local)
+                                    {
+                                        if let Some(constant) = self.constant.get(father) {
+                                            if *constant != usize::MAX {
+                                                single_target = true;
+                                                sw_val = *constant;
+                                            }
+                                        }
+                                        if self.values[place].local == place {
+                                            path_discr_id = *father;
+                                            sw_targets = Some(targets.clone());
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -384,10 +404,7 @@ impl<'tcx> MopGraph<'tcx> {
         let term = &self.terms[idx].clone();
 
         match term {
-            TerminatorKind::SwitchInt {
-                ref discr,
-                ref targets,
-            } => match discr {
+            TerminatorKind::SwitchInt { discr, targets } => match discr {
                 Copy(p) | Move(p) => {
                     let place = self.projection(false, *p);
                     if let Some(father) = self.disc_map.get(&self.values[place].local) {

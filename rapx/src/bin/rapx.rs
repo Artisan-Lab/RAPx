@@ -3,10 +3,10 @@
 extern crate rustc_driver;
 extern crate rustc_session;
 
-use rapx::{rap_info, rap_trace, utils::log::init_log, RapCallback, RAP_DEFAULT_ARGS};
+use rapx::{RAP_DEFAULT_ARGS, RapCallback, rap_info, rap_trace, utils::log::init_log};
 use regex::Regex;
-use rustc_session::config::ErrorOutputType;
 use rustc_session::EarlyDiagCtxt;
+use rustc_session::config::ErrorOutputType;
 use std::env;
 
 fn run_complier(args: &mut Vec<String>, callback: &mut RapCallback) {
@@ -54,12 +54,13 @@ fn main() {
             "-opt=report" => compiler.enable_opt(0),
             "-scan" => compiler.enable_scan(),
             "-ssa" => compiler.enable_ssa_transform(),
-            "-audit" => compiler.enable_unsafety_isolation(1),
-            "-doc" => compiler.enable_unsafety_isolation(2),
-            "-upg" => compiler.enable_unsafety_isolation(3),
-            "-ucons" => compiler.enable_unsafety_isolation(4),
+            "-upg" => compiler.enable_upg(1),
+            "-upg-std" => compiler.enable_upg(2),
             "-verify-std" => compiler.enable_verify_std(),
             "-mir" => compiler.enable_show_mir(),
+            "-dotmir" => compiler.enable_show_mir_dot(),
+            // -timeout has been handled in cargo-rapx
+            x if x.starts_with("-timeout=") => (),
             _ => args.push(arg),
         }
     }

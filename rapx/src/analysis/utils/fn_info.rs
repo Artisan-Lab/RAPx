@@ -1,33 +1,75 @@
-#[allow(unused)]
-use crate::analysis::senryx::contracts::property::PropertyContract;
-use crate::analysis::senryx::matcher::parse_unsafe_api;
-use crate::analysis::unsafety_isolation::generate_dot::NodeType;
-use crate::rap_debug;
-use crate::rap_warn;
-use rustc_data_structures::fx::FxHashMap;
-use rustc_hir::def::DefKind;
-use rustc_hir::def_id::DefId;
-use rustc_hir::Attribute;
-use rustc_hir::ImplItemKind;
-use rustc_middle::mir::BinOp;
-use rustc_middle::mir::Local;
-use rustc_middle::mir::{BasicBlock, Terminator};
-use rustc_middle::ty::{AssocKind, Mutability, Ty, TyCtxt, TyKind};
-use rustc_middle::{
-    mir::{Operand, TerminatorKind},
-    ty,
+use super::draw_dot::render_dot_string;
+use crate::analysis::{
+    core::dataflow::{DataFlowAnalysis, default::DataFlowAnalyzer},
+    senryx::{
+        contracts::{property, property::PropertyContract},
+        matcher::parse_unsafe_api,
+    },
 };
-use rustc_span::def_id::LocalDefId;
-use rustc_span::kw;
-use rustc_span::sym;
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::fmt::Debug;
-use std::hash::Hash;
+use crate::{rap_debug, rap_warn};
+use rustc_ast::ItemKind;
+use rustc_data_structures::fx::FxHashMap;
+use rustc_hir::{
+    Attribute, ImplItemKind, Safety,
+    def::DefKind,
+    def_id::{CrateNum, DefId, DefIndex},
+};
+use rustc_middle::{
+    hir::place::PlaceBase,
+    mir::{
+        BasicBlock, BinOp, Body, Local, Operand, Place, PlaceElem, PlaceRef, ProjectionElem,
+        Rvalue, StatementKind, Terminator, TerminatorKind,
+    },
+    ty,
+    ty::{AssocKind, ConstKind, Mutability, Ty, TyCtxt, TyKind},
+};
+use rustc_span::{def_id::LocalDefId, kw, sym};
+use serde::de;
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    hash::Hash,
+};
 use syn::Expr;
 
-pub fn generate_node_ty(tcx: TyCtxt, def_id: DefId) -> NodeType {
-    (def_id, check_safety(tcx, def_id), get_type(tcx, def_id))
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub enum FnKind {
+    Fn,
+    Method,
+    Constructor,
+    Intrinsic,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub struct FnInfo {
+    pub def_id: DefId,
+    pub fn_safety: Safety,
+    pub fn_kind: FnKind,
+}
+
+impl FnInfo {
+    pub fn new(def_id: DefId, fn_safety: Safety, fn_kind: FnKind) -> Self {
+        FnInfo {
+            def_id,
+            fn_safety,
+            fn_kind,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub struct AdtInfo {
+    pub def_id: DefId,
+    pub literal_cons_enabled: bool,
+}
+
+impl AdtInfo {
+    pub fn new(def_id: DefId, literal_cons_enabled: bool) -> Self {
+        AdtInfo {
+            def_id,
+            literal_cons_enabled,
+        }
+    }
 }
 
 pub fn check_visibility(tcx: TyCtxt, func_defid: DefId) -> bool {
@@ -67,7 +109,7 @@ pub fn print_hashset<T: std::fmt::Debug>(set: &HashSet<T>) {
     println!("---------------");
 }
 
-pub fn get_cleaned_def_path_name(tcx: TyCtxt, def_id: DefId) -> String {
+pub fn get_cleaned_def_path_name_ori(tcx: TyCtxt, def_id: DefId) -> String {
     let def_id_str = format!("{:?}", def_id);
     let mut parts: Vec<&str> = def_id_str.split("::").collect();
 
@@ -109,15 +151,13 @@ pub fn get_cleaned_def_path_name(tcx: TyCtxt, def_id: DefId) -> String {
 
 pub fn get_sp_json() -> serde_json::Value {
     let json_data: serde_json::Value =
-        serde_json::from_str(include_str!("../unsafety_isolation/data/std_sps.json"))
-            .expect("Unable to parse JSON");
+        serde_json::from_str(include_str!("data/std_sps.json")).expect("Unable to parse JSON");
     json_data
 }
 
 pub fn get_std_api_signature_json() -> serde_json::Value {
     let json_data: serde_json::Value =
-        serde_json::from_str(include_str!("../unsafety_isolation/data/std_sig.json"))
-            .expect("Unable to parse JSON");
+        serde_json::from_str(include_str!("data/std_sig.json")).expect("Unable to parse JSON");
     json_data
 }
 
@@ -161,43 +201,42 @@ pub fn get_struct_name(tcx: TyCtxt<'_>, def_id: DefId) -> Option<String> {
     None
 }
 
-pub fn check_safety(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
+pub fn check_safety(tcx: TyCtxt<'_>, def_id: DefId) -> Safety {
     let poly_fn_sig = tcx.fn_sig(def_id);
     let fn_sig = poly_fn_sig.skip_binder();
-    fn_sig.safety() == rustc_hir::Safety::Unsafe
+    fn_sig.safety()
 }
 
-//retval: 0-constructor, 1-method, 2-function
-pub fn get_type(tcx: TyCtxt<'_>, def_id: DefId) -> usize {
+pub fn get_type(tcx: TyCtxt<'_>, def_id: DefId) -> FnKind {
     let mut node_type = 2;
     if let Some(assoc_item) = tcx.opt_associated_item(def_id) {
         match assoc_item.kind {
             AssocKind::Fn { has_self, .. } => {
                 if has_self {
-                    node_type = 1;
+                    return FnKind::Method;
                 } else {
                     let fn_sig = tcx.fn_sig(def_id).skip_binder();
                     let output = fn_sig.output().skip_binder();
                     // return type is 'Self'
                     if output.is_param(0) {
-                        node_type = 0;
+                        return FnKind::Constructor;
                     }
                     // return type is struct's name
                     if let Some(impl_id) = assoc_item.impl_container(tcx) {
                         let ty = tcx.type_of(impl_id).skip_binder();
                         if output == ty {
-                            node_type = 0;
+                            return FnKind::Constructor;
                         }
                     }
                     match output.kind() {
                         TyKind::Ref(_, ref_ty, _) => {
                             if ref_ty.is_param(0) {
-                                node_type = 0;
+                                return FnKind::Constructor;
                             }
                             if let Some(impl_id) = assoc_item.impl_container(tcx) {
                                 let ty = tcx.type_of(impl_id).skip_binder();
                                 if *ref_ty == ty {
-                                    node_type = 0;
+                                    return FnKind::Constructor;
                                 }
                             }
                         }
@@ -209,12 +248,12 @@ pub fn get_type(tcx: TyCtxt<'_>, def_id: DefId) -> usize {
                             {
                                 let inner_ty = substs.type_at(0);
                                 if inner_ty.is_param(0) {
-                                    node_type = 0;
+                                    return FnKind::Constructor;
                                 }
                                 if let Some(impl_id) = assoc_item.impl_container(tcx) {
                                     let ty_impl = tcx.type_of(impl_id).skip_binder();
                                     if inner_ty == ty_impl {
-                                        node_type = 0;
+                                        return FnKind::Constructor;
                                     }
                                 }
                             }
@@ -226,7 +265,7 @@ pub fn get_type(tcx: TyCtxt<'_>, def_id: DefId) -> usize {
             _ => todo!(),
         }
     }
-    node_type
+    return FnKind::Fn;
 }
 
 pub fn get_adt_ty(tcx: TyCtxt, def_id: DefId) -> Option<Ty> {
@@ -238,50 +277,181 @@ pub fn get_adt_ty(tcx: TyCtxt, def_id: DefId) -> Option<Ty> {
     None
 }
 
-pub fn get_cons(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<NodeType> {
-    let mut cons = Vec::new();
-    if tcx.def_kind(def_id) == DefKind::Fn || get_type(tcx, def_id) == 0 {
-        return cons;
+// check whether this adt contains a literal constructor
+// result: adt_def_id, is_literal
+pub fn get_adt_via_method(tcx: TyCtxt<'_>, method_def_id: DefId) -> Option<AdtInfo> {
+    let assoc_item = tcx.opt_associated_item(method_def_id)?;
+    let impl_id = assoc_item.impl_container(tcx)?;
+    let ty = tcx.type_of(impl_id).skip_binder();
+    let adt_def = ty.ty_adt_def()?;
+    let adt_def_id = adt_def.did();
+
+    let all_fields: Vec<_> = adt_def.all_fields().collect();
+    let total_count = all_fields.len();
+
+    if total_count == 0 {
+        return Some(AdtInfo::new(adt_def_id, true));
     }
-    if let Some(assoc_item) = tcx.opt_associated_item(def_id) {
-        if let Some(impl_id) = assoc_item.impl_container(tcx) {
-            // get struct ty
-            let ty = tcx.type_of(impl_id).skip_binder();
-            if let Some(adt_def) = ty.ty_adt_def() {
-                let adt_def_id = adt_def.did();
-                let impls = tcx.inherent_impls(adt_def_id);
-                for impl_def_id in impls {
-                    for item in tcx.associated_item_def_ids(impl_def_id) {
-                        if (tcx.def_kind(item) == DefKind::Fn
-                            || tcx.def_kind(item) == DefKind::AssocFn)
-                            && get_type(tcx, *item) == 0
-                        {
-                            cons.push(generate_node_ty(tcx, *item));
+
+    let pub_count = all_fields
+        .iter()
+        .filter(|field| tcx.visibility(field.did).is_public())
+        .count();
+
+    if pub_count == 0 {
+        return None;
+    }
+    Some(AdtInfo::new(adt_def_id, pub_count == total_count))
+}
+
+fn place_has_raw_deref<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>, place: &Place<'tcx>) -> bool {
+    let mut local = place.local;
+    for proj in place.projection.iter() {
+        if let ProjectionElem::Deref = proj.kind() {
+            let ty = body.local_decls[local].ty;
+            if let TyKind::RawPtr(_, _) = ty.kind() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Analyzes the MIR of the given function to collect all local variables
+/// that are involved in dereferencing raw pointers (`*const T` or `*mut T`).
+pub fn get_rawptr_deref(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<Local> {
+    let mut raw_ptrs = HashSet::new();
+    if tcx.is_mir_available(def_id) {
+        let body = tcx.optimized_mir(def_id);
+        for bb in body.basic_blocks.iter() {
+            for stmt in &bb.statements {
+                if let StatementKind::Assign(box (lhs, rhs)) = &stmt.kind {
+                    if place_has_raw_deref(tcx, &body, lhs) {
+                        raw_ptrs.insert(lhs.local);
+                    }
+                    if let Rvalue::Use(op) = rhs {
+                        match op {
+                            Operand::Copy(place) | Operand::Move(place) => {
+                                if place_has_raw_deref(tcx, &body, place) {
+                                    raw_ptrs.insert(place.local);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    if let Rvalue::Ref(_, _, place) = rhs {
+                        if place_has_raw_deref(tcx, &body, place) {
+                            raw_ptrs.insert(place.local);
+                        }
+                    }
+                }
+            }
+            if let Some(terminator) = &bb.terminator {
+                match &terminator.kind {
+                    rustc_middle::mir::TerminatorKind::Call { args, .. } => {
+                        for arg in args {
+                            match arg.node {
+                                Operand::Copy(place) | Operand::Move(place) => {
+                                    if place_has_raw_deref(tcx, &body, &place) {
+                                        raw_ptrs.insert(place.local);
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    raw_ptrs
+}
+
+/* Example mir of static mutable access.
+
+static mut COUNTER: i32 = {
+    let mut _0: i32;
+
+    bb0: {
+        _0 = const 0_i32;
+        return;
+    }
+}
+
+fn main() -> () {
+    let mut _0: ();
+    let mut _1: *mut i32;
+
+    bb0: {
+        StorageLive(_1);
+        _1 = const {alloc1: *mut i32};
+        (*_1) = const 1_i32;
+        StorageDead(_1);
+        return;
+    }
+}
+
+alloc1 (static: COUNTER, size: 4, align: 4) {
+    00 00 00 00                                     │ ....
+}
+
+*/
+
+/// Collects pairs of global static variables and their corresponding local variables
+/// within a function's MIR that are assigned from statics.
+pub fn collect_global_local_pairs(tcx: TyCtxt<'_>, def_id: DefId) -> HashMap<DefId, Vec<Local>> {
+    let mut globals: HashMap<DefId, Vec<Local>> = HashMap::new();
+
+    if !tcx.is_mir_available(def_id) {
+        return globals;
+    }
+
+    let body = tcx.optimized_mir(def_id);
+
+    for bb in body.basic_blocks.iter() {
+        for stmt in &bb.statements {
+            if let StatementKind::Assign(box (lhs, rhs)) = &stmt.kind {
+                if let Rvalue::Use(Operand::Constant(c)) = rhs {
+                    if let Some(static_def_id) = c.check_static_ptr(tcx) {
+                        globals.entry(static_def_id).or_default().push(lhs.local);
+                    }
+                }
+            }
+        }
+    }
+
+    globals
+}
+
+pub fn get_unsafe_callees(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<DefId> {
+    let mut unsafe_callees = HashSet::new();
+    if tcx.is_mir_available(def_id) {
+        let body = tcx.optimized_mir(def_id);
+        for bb in body.basic_blocks.iter() {
+            if let TerminatorKind::Call { func, .. } = &bb.terminator().kind {
+                if let Operand::Constant(func_constant) = func {
+                    if let ty::FnDef(callee_def_id, _) = func_constant.const_.ty().kind() {
+                        if check_safety(tcx, *callee_def_id) == Safety::Unsafe {
+                            unsafe_callees.insert(*callee_def_id);
                         }
                     }
                 }
             }
         }
     }
-    cons
+    unsafe_callees
 }
 
-pub fn get_callees(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<DefId> {
+pub fn get_all_callees(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<DefId> {
     let mut callees = HashSet::new();
     if tcx.is_mir_available(def_id) {
         let body = tcx.optimized_mir(def_id);
         for bb in body.basic_blocks.iter() {
             if let TerminatorKind::Call { func, .. } = &bb.terminator().kind {
                 if let Operand::Constant(func_constant) = func {
-                    if let ty::FnDef(ref callee_def_id, _) = func_constant.const_.ty().kind() {
-                        if check_safety(tcx, *callee_def_id)
-                        // && check_visibility(tcx, *callee_def_id)
-                        {
-                            let sp_set = get_sp(tcx, *callee_def_id);
-                            if sp_set.len() != 0 {
-                                callees.insert(*callee_def_id);
-                            }
-                        }
+                    if let ty::FnDef(callee_def_id, _) = func_constant.const_.ty().kind() {
+                        callees.insert(*callee_def_id);
                     }
                 }
             }
@@ -293,21 +463,18 @@ pub fn get_callees(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<DefId> {
 // return all the impls def id of corresponding struct
 pub fn get_impls_for_struct(tcx: TyCtxt<'_>, struct_def_id: DefId) -> Vec<DefId> {
     let mut impls = Vec::new();
-    for impl_item_id in tcx.hir_crate_items(()).impl_items() {
-        let impl_item = tcx.hir_impl_item(impl_item_id);
-        match impl_item.kind {
-            ImplItemKind::Type(ty) => {
-                if let rustc_hir::TyKind::Path(ref qpath) = ty.kind {
-                    if let rustc_hir::QPath::Resolved(_, path) = qpath {
-                        if let rustc_hir::def::Res::Def(_, ref def_id) = path.res {
-                            if *def_id == struct_def_id {
-                                impls.push(impl_item.owner_id.to_def_id());
-                            }
-                        }
+    for item_id in tcx.hir_crate_items(()).free_items() {
+        let item = tcx.hir_item(item_id);
+        if let rustc_hir::ItemKind::Impl(impl_details) = &item.kind {
+            if let rustc_hir::TyKind::Path(rustc_hir::QPath::Resolved(_, path)) =
+                &impl_details.self_ty.kind
+            {
+                if let rustc_hir::def::Res::Def(_, def_id) = path.res {
+                    if def_id == struct_def_id {
+                        impls.push(item_id.owner_id.to_def_id());
                     }
                 }
             }
-            _ => (),
         }
     }
     impls
@@ -364,7 +531,7 @@ pub fn has_mut_self_param(tcx: TyCtxt, def_id: DefId) -> bool {
     if let Some(assoc_item) = tcx.opt_associated_item(def_id) {
         match assoc_item.kind {
             AssocKind::Fn { has_self, .. } => {
-                if has_self {
+                if has_self && tcx.is_mir_available(def_id) {
                     let body = tcx.optimized_mir(def_id);
                     let fst_arg = body.local_decls[Local::from_usize(1)].clone();
                     let ty = fst_arg.ty;
@@ -377,33 +544,6 @@ pub fn has_mut_self_param(tcx: TyCtxt, def_id: DefId) -> bool {
         }
     }
     false
-}
-
-// Input the adt def id
-// Return set of (mutable method def_id, fields can be modified)
-pub fn get_all_mutable_methods(tcx: TyCtxt, def_id: DefId) -> HashMap<DefId, HashSet<usize>> {
-    let mut results = HashMap::new();
-    let adt_def = get_adt_def_id_by_adt_method(tcx, def_id);
-    let public_fields = adt_def.map_or_else(HashSet::new, |def| get_public_fields(tcx, def));
-    let impl_vec = adt_def.map_or_else(Vec::new, |def| get_impls_for_struct(tcx, def));
-    for impl_id in impl_vec {
-        let associated_items = tcx.associated_items(impl_id);
-        for item in associated_items.in_definition_order() {
-            if let AssocKind::Fn {
-                name: _,
-                has_self: _,
-            } = item.kind
-            {
-                let item_def_id = item.def_id;
-                if has_mut_self_param(tcx, item_def_id) {
-                    // TODO: using dataflow to detect field modificaiton, combined with public fields
-                    let modified_fields = public_fields.clone();
-                    results.insert(item_def_id, modified_fields);
-                }
-            }
-        }
-    }
-    results
 }
 
 // Check each field's visibility, return the public fields vec
@@ -431,6 +571,18 @@ where
             println!("{}{:?}: {:?}", indent, key, value);
         }
     }
+}
+
+pub fn match_std_unsafe_chains_callee(tcx: TyCtxt<'_>, terminator: &Terminator<'_>) -> Vec<String> {
+    let mut results = Vec::new();
+    if let TerminatorKind::Call { func, .. } = &terminator.kind {
+        if let Operand::Constant(func_constant) = func {
+            if let ty::FnDef(callee_def_id, _raw_list) = func_constant.const_.ty().kind() {
+                let func_name = get_cleaned_def_path_name(tcx, *callee_def_id);
+            }
+        }
+    }
+    results
 }
 
 pub fn get_all_std_unsafe_callees(tcx: TyCtxt, def_id: DefId) -> Vec<String> {
@@ -472,7 +624,7 @@ pub fn match_std_unsafe_callee(tcx: TyCtxt<'_>, terminator: &Terminator<'_>) -> 
     let mut results = Vec::new();
     if let TerminatorKind::Call { func, .. } = &terminator.kind {
         if let Operand::Constant(func_constant) = func {
-            if let ty::FnDef(ref callee_def_id, _raw_list) = func_constant.const_.ty().kind() {
+            if let ty::FnDef(callee_def_id, _raw_list) = func_constant.const_.ty().kind() {
                 let func_name = get_cleaned_def_path_name(tcx, *callee_def_id);
                 if parse_unsafe_api(&func_name).is_some() {
                     results.push(func_name);
@@ -536,14 +688,11 @@ pub fn generate_contract_from_annotation_without_field_types(
 
 /// Filter the function which contains "rapx::proof"
 pub fn is_verify_target_func(tcx: TyCtxt, def_id: DefId) -> bool {
-    const REGISTER_TOOL: &str = "rapx";
     for attr in tcx.get_all_attrs(def_id).into_iter() {
-        if let Attribute::Unparsed(tool_attr) = attr {
-            if tool_attr.path.segments[0].as_str() == REGISTER_TOOL
-                && tool_attr.path.segments[1].as_str() == "proof"
-            {
-                return true;
-            }
+        let attr_str = rustc_hir_pretty::attribute_to_string(&tcx, attr);
+        // Find proof placeholder
+        if attr_str.contains("#[rapx::proof(proof)]") {
+            return true;
         }
     }
     false
@@ -560,9 +709,7 @@ pub fn generate_contract_from_annotation(
     const REGISTER_TOOL: &str = "rapx";
     let tool_attrs = tcx.get_all_attrs(def_id).into_iter().filter(|attr| {
         if let Attribute::Unparsed(tool_attr) = attr {
-            if tool_attr.path.segments[0].as_str() == REGISTER_TOOL
-                && tool_attr.path.segments[1].as_str() != "proof"
-            {
+            if tool_attr.path.segments[0].as_str() == REGISTER_TOOL {
                 return true;
             }
         }
@@ -571,13 +718,21 @@ pub fn generate_contract_from_annotation(
     let mut results = Vec::new();
     for attr in tool_attrs {
         let attr_str = rustc_hir_pretty::attribute_to_string(&tcx, attr);
-        let safety_attr =
-            safety_parser::property_attr::parse_inner_attr_from_str(attr_str.as_str()).unwrap();
-        let attr_name = safety_attr.name;
-        let attr_kind = safety_attr.kind;
-        let contract = PropertyContract::new(tcx, def_id, attr_kind, attr_name, &safety_attr.expr);
-        let (local, fields) = parse_cis_local(tcx, def_id, safety_attr.expr);
-        results.push((local, fields, contract));
+        // Find proof placeholder, skip it
+        if attr_str.contains("#[rapx::proof(proof)]") {
+            continue;
+        }
+        rap_debug!("{:?}", attr_str);
+        let safety_attr = safety_parser::safety::parse_attr_and_get_properties(attr_str.as_str());
+        for par in safety_attr.iter() {
+            for property in par.tags.iter() {
+                let tag_name = property.tag.name();
+                let exprs = property.args.clone().into_vec();
+                let contract = PropertyContract::new(tcx, def_id, tag_name, &exprs);
+                let (local, fields) = parse_cis_local(tcx, def_id, exprs);
+                results.push((local, fields, contract));
+            }
+        }
     }
     // if results.len() > 0 {
     //     rap_warn!("results:\n{:?}", results);
@@ -919,26 +1074,6 @@ fn find_generic_in_ty<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>, type_ident: &str) -
     None
 }
 
-// /// Find user-defined types in the parameter list
-// fn find_user_defined_type(tcx: TyCtxt, def_id: DefId, type_ident: String) -> Option<Ty> {
-//     let param_ty = parse_signature(tcx, def_id).1;
-//     param_ty.iter().find_map(|&ty| {
-//         // Peel off references and pointers to get to the underlying type
-//         let peeled_ty = ty.peel_refs();
-//         match peeled_ty.kind() {
-//             TyKind::Adt(adt_def, _raw_list) => {
-//                 // Compare the type name to our identifier
-//                 let name = tcx.item_name(adt_def.did()).to_string();
-//                 if name == type_ident {
-//                     return Some(peeled_ty);
-//                 }
-//             }
-//             _ => {}
-//         }
-//         None
-//     })
-// }
-
 pub fn reflect_generic<'tcx>(
     generic_mapping: &FxHashMap<String, Ty<'tcx>>,
     ty: Ty<'tcx>,
@@ -955,78 +1090,376 @@ pub fn reflect_generic<'tcx>(
     ty
 }
 
-// fn find_first_chain_in_expr(expr: &Expr, param_names: &[String]) -> Option<(String, Vec<String>)> {
-//     if let Some(chain) = access_ident_recursive(expr) {
-//         if param_names.contains(&chain.0) {
-//             return Some(chain);
-//         }
-//     }
+// src_var = 0: for constructor
+// src_var = 1: for methods
+pub fn has_tainted_fields(tcx: TyCtxt, def_id: DefId, src_var: u32) -> bool {
+    let mut dataflow_analyzer = DataFlowAnalyzer::new(tcx, false);
+    dataflow_analyzer.build_graph(def_id);
 
-//     let mut children = Vec::new();
-//     match expr {
-//         Expr::Array(expr) => children.extend(expr.elems.iter()),
-//         Expr::Assign(expr) => {
-//             children.push(&expr.left);
-//             children.push(&expr.right);
-//         }
-//         Expr::Binary(expr) => {
-//             children.push(&expr.left);
-//             children.push(&expr.right);
-//         }
-//         Expr::Call(expr) => {
-//             children.push(&expr.func);
-//             children.extend(expr.args.iter());
-//         }
-//         Expr::Cast(expr) => children.push(&expr.expr),
-//         Expr::Field(expr) => children.push(&expr.base),
-//         Expr::Group(expr) => children.push(&expr.expr),
-//         Expr::Index(expr) => {
-//             children.push(&expr.expr);
-//             children.push(&expr.index);
-//         }
-//         Expr::Let(expr) => children.push(&expr.expr),
-//         // Expr::Lit(expr) => children.push(&expr.lit),
-//         Expr::MethodCall(expr) => {
-//             children.push(&expr.receiver);
-//             children.extend(expr.args.iter());
-//         }
-//         Expr::Paren(expr) => children.push(&expr.expr),
-//         Expr::Range(expr) => {
-//             if let Some(start) = &expr.start {
-//                 children.push(start);
-//             }
-//             if let Some(end) = &expr.end {
-//                 children.push(end);
-//             }
-//             // if let Some(limits) = &expr.limits {
-//             //     let _ = limits;
-//             // }
-//         }
-//         Expr::Reference(expr) => children.push(&expr.expr),
-//         Expr::Repeat(expr) => {
-//             children.push(&expr.expr);
-//             children.push(&expr.len);
-//         }
-//         // Expr::Struct(expr) => {
-//         //     children.push(&expr.path);
-//         //     for field in &expr.fields {
-//         //         children.push(&field.expr);
-//         //     }
-//         //     if let Some(rest) = &expr.rest {
-//         //         children.push(rest);
-//         //     }
-//         // }
-//         Expr::Try(expr) => children.push(&expr.expr),
-//         Expr::Tuple(expr) => children.extend(expr.elems.iter()),
-//         Expr::Unary(expr) => children.push(&expr.expr),
-//         _ => {}
-//     }
+    let body = tcx.optimized_mir(def_id);
+    let params = &body.args_iter().collect::<Vec<_>>();
+    rap_info!("params {:?}", params);
+    let self_local = Local::from(src_var);
 
-//     for child in children {
-//         if let Some(chain) = find_first_chain_in_expr(child, param_names) {
-//             return Some(chain);
-//         }
-//     }
+    let flowing_params: Vec<Local> = params
+        .iter()
+        .filter(|&&param_local| {
+            dataflow_analyzer.has_flow_between(def_id, self_local, param_local)
+                && self_local != param_local
+        })
+        .copied()
+        .collect();
 
-//     None
-// }
+    if !flowing_params.is_empty() {
+        rap_info!(
+            "Taint flow found from self to other parameters: {:?}",
+            flowing_params
+        );
+        true
+    } else {
+        false
+    }
+}
+
+// 修改返回值类型为调用链的向量
+pub fn get_all_std_unsafe_chains(tcx: TyCtxt, def_id: DefId) -> Vec<Vec<String>> {
+    let mut results = Vec::new();
+    let mut visited = HashSet::new(); // 避免循环调用
+    let mut current_chain = Vec::new();
+
+    // 开始DFS遍历
+    dfs_find_unsafe_chains(tcx, def_id, &mut current_chain, &mut results, &mut visited);
+    results
+}
+
+// DFS递归查找unsafe调用链
+fn dfs_find_unsafe_chains(
+    tcx: TyCtxt,
+    def_id: DefId,
+    current_chain: &mut Vec<String>,
+    results: &mut Vec<Vec<String>>,
+    visited: &mut HashSet<DefId>,
+) {
+    // 避免循环调用
+    if visited.contains(&def_id) {
+        return;
+    }
+    visited.insert(def_id);
+
+    let current_func_name = get_cleaned_def_path_name(tcx, def_id);
+    current_chain.push(current_func_name.clone());
+
+    // 获取当前函数的所有unsafe callee
+    let unsafe_callees = find_unsafe_callees_in_function(tcx, def_id);
+
+    if unsafe_callees.is_empty() {
+        // 如果没有更多的unsafe callee，保存当前链
+        results.push(current_chain.clone());
+    } else {
+        // 对每个unsafe callee继续DFS
+        for (callee_def_id, callee_name) in unsafe_callees {
+            dfs_find_unsafe_chains(tcx, callee_def_id, current_chain, results, visited);
+        }
+    }
+
+    // 回溯
+    current_chain.pop();
+    visited.remove(&def_id);
+}
+
+fn find_unsafe_callees_in_function(tcx: TyCtxt, def_id: DefId) -> Vec<(DefId, String)> {
+    let mut callees = Vec::new();
+
+    if let Some(body) = try_get_mir(tcx, def_id) {
+        for bb in body.basic_blocks.iter() {
+            if let Some(terminator) = &bb.terminator {
+                if let Some((callee_def_id, callee_name)) = extract_unsafe_callee(tcx, terminator) {
+                    callees.push((callee_def_id, callee_name));
+                }
+            }
+        }
+    }
+
+    callees
+}
+
+fn extract_unsafe_callee(tcx: TyCtxt<'_>, terminator: &Terminator<'_>) -> Option<(DefId, String)> {
+    if let TerminatorKind::Call { func, .. } = &terminator.kind {
+        if let Operand::Constant(func_constant) = func {
+            if let ty::FnDef(callee_def_id, _) = func_constant.const_.ty().kind() {
+                if check_safety(tcx, *callee_def_id) == Safety::Unsafe {
+                    let func_name = get_cleaned_def_path_name(tcx, *callee_def_id);
+                    return Some((*callee_def_id, func_name));
+                }
+            }
+        }
+    }
+    None
+}
+
+fn try_get_mir(tcx: TyCtxt<'_>, def_id: DefId) -> Option<&rustc_middle::mir::Body<'_>> {
+    if tcx.is_mir_available(def_id) {
+        Some(tcx.optimized_mir(def_id))
+    } else {
+        None
+    }
+}
+
+pub fn get_cleaned_def_path_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
+    tcx.def_path_str(def_id)
+        .replace("::", "_")
+        .replace("<", "_")
+        .replace(">", "_")
+        .replace(",", "_")
+        .replace(" ", "")
+        .replace("__", "_")
+}
+
+pub fn print_unsafe_chains(chains: &[Vec<String>]) {
+    if chains.is_empty() {
+        return;
+    }
+
+    println!("==============================");
+    println!("Found {} unsafe call chain(s):", chains.len());
+    for (i, chain) in chains.iter().enumerate() {
+        println!("Chain {}:", i + 1);
+        for (j, func_name) in chain.iter().enumerate() {
+            let indent = "  ".repeat(j);
+            println!("{}{}-> {}", indent, if j > 0 { " " } else { "" }, func_name);
+        }
+        println!();
+    }
+}
+
+pub fn get_all_std_fns_by_rustc_public(tcx: TyCtxt) -> Vec<DefId> {
+    let mut all_std_fn_def = Vec::new();
+    let mut results = Vec::new();
+    let mut core_fn_def: Vec<_> = rustc_public::find_crates("core")
+        .iter()
+        .flat_map(|krate| krate.fn_defs())
+        .collect();
+    let mut std_fn_def: Vec<_> = rustc_public::find_crates("std")
+        .iter()
+        .flat_map(|krate| krate.fn_defs())
+        .collect();
+    let mut alloc_fn_def: Vec<_> = rustc_public::find_crates("alloc")
+        .iter()
+        .flat_map(|krate| krate.fn_defs())
+        .collect();
+    all_std_fn_def.append(&mut core_fn_def);
+    all_std_fn_def.append(&mut std_fn_def);
+    all_std_fn_def.append(&mut alloc_fn_def);
+
+    for fn_def in &all_std_fn_def {
+        let def_id = crate::def_id::to_internal(fn_def, tcx);
+        results.push(def_id);
+    }
+    results
+}
+
+pub fn generate_mir_cfg_dot(tcx: TyCtxt<'_>, def_id: DefId) -> Result<(), std::io::Error> {
+    let mir = tcx.optimized_mir(def_id);
+
+    let mut dot_content = String::new();
+
+    // Setup Header
+    dot_content.push_str(&format!(
+        "digraph mir_cfg_{} {{\n",
+        get_cleaned_def_path_name(tcx, def_id)
+    ));
+    dot_content.push_str(&format!(
+        "    label = \"MIR CFG for {}\";\n",
+        tcx.def_path_str(def_id)
+    ));
+    dot_content.push_str("    labelloc = \"t\";\n");
+    dot_content.push_str("    node [shape=box, fontname=\"Courier\", align=\"left\"];\n\n");
+
+    for (bb_index, bb_data) in mir.basic_blocks.iter_enumerated() {
+        let mut lines: Vec<String> = bb_data
+            .statements
+            .iter()
+            .map(|stmt| format!("{:?}", stmt))
+            .collect();
+
+        let mut node_style = String::new();
+
+        if let Some(terminator) = &bb_data.terminator {
+            if let TerminatorKind::Drop { .. } = terminator.kind {
+                node_style = ", style=\"filled\", fillcolor=\"#ffdddd\", color=\"red\"".to_string();
+            }
+
+            lines.push(format!("{:?}", terminator.kind));
+        } else {
+            lines.push("(no terminator)".to_string());
+        }
+
+        let label_content = lines.join("\\l");
+
+        let node_label = format!("BB{}:\\l{}\\l", bb_index.index(), label_content);
+
+        dot_content.push_str(&format!(
+            "    BB{} [label=\"{}\"{}];\n",
+            bb_index.index(),
+            node_label.replace("\"", "\\\""),
+            node_style
+        ));
+
+        if let Some(terminator) = &bb_data.terminator {
+            for target in terminator.successors() {
+                let edge_label = match terminator.kind {
+                    _ => "".to_string(),
+                };
+
+                dot_content.push_str(&format!(
+                    "    BB{} -> BB{} [label=\"{}\"];\n",
+                    bb_index.index(),
+                    target.index(),
+                    edge_label
+                ));
+            }
+        }
+    }
+    dot_content.push_str("}\n");
+    let name = get_cleaned_def_path_name(tcx, def_id);
+    render_dot_string(name, dot_content);
+    rap_debug!("render dot for {:?}", def_id);
+    Ok(())
+}
+
+pub fn convert_alias_to_sets(alias_map: Vec<usize>) -> Vec<Vec<usize>> {
+    let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
+
+    for (local_id, &representative) in alias_map.iter().enumerate() {
+        groups
+            .entry(representative)
+            .or_insert_with(Vec::new)
+            .push(local_id);
+    }
+
+    let mut result: Vec<Vec<usize>> = groups.into_values().collect();
+
+    for group in &mut result {
+        group.sort();
+    }
+    result.sort_by_key(|group| group[0]);
+
+    result
+}
+
+// Input the adt def id
+// Return set of (mutable method def_id, fields can be modified)
+pub fn get_all_mutable_methods(tcx: TyCtxt, src_def_id: DefId) -> HashMap<DefId, HashSet<usize>> {
+    let mut std_results = HashMap::new();
+    if get_type(tcx, src_def_id) == FnKind::Constructor {
+        return std_results;
+    }
+    let all_std_fn_def = get_all_std_fns_by_rustc_public(tcx);
+    let target_adt_def = get_adt_def_id_by_adt_method(tcx, src_def_id);
+    let mut is_std = false;
+    for &def_id in &all_std_fn_def {
+        let adt_def = get_adt_def_id_by_adt_method(tcx, def_id);
+        if adt_def.is_some() && adt_def == target_adt_def && src_def_id != def_id {
+            if has_mut_self_param(tcx, def_id) {
+                std_results.insert(def_id, HashSet::new());
+            }
+            is_std = true;
+        }
+    }
+    if is_std {
+        return std_results;
+    }
+    let mut results = HashMap::new();
+    let public_fields = target_adt_def.map_or_else(HashSet::new, |def| get_public_fields(tcx, def));
+    let impl_vec = target_adt_def.map_or_else(Vec::new, |def| get_impls_for_struct(tcx, def));
+    for impl_id in impl_vec {
+        if !matches!(tcx.def_kind(impl_id), rustc_hir::def::DefKind::Impl { .. }) {
+            continue;
+        }
+        let associated_items = tcx.associated_items(impl_id);
+        for item in associated_items.in_definition_order() {
+            if let ty::AssocKind::Fn {
+                name: _,
+                has_self: _,
+            } = item.kind
+            {
+                let item_def_id = item.def_id;
+                if has_mut_self_param(tcx, item_def_id) {
+                    let modified_fields = public_fields.clone();
+                    results.insert(item_def_id, modified_fields);
+                }
+            }
+        }
+    }
+    results
+}
+
+pub fn get_cons(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<DefId> {
+    let mut cons = Vec::new();
+    if tcx.def_kind(def_id) == DefKind::Fn || get_type(tcx, def_id) == FnKind::Constructor {
+        return cons;
+    }
+    if let Some(assoc_item) = tcx.opt_associated_item(def_id) {
+        if let Some(impl_id) = assoc_item.impl_container(tcx) {
+            // get struct ty
+            let ty = tcx.type_of(impl_id).skip_binder();
+            if let Some(adt_def) = ty.ty_adt_def() {
+                let adt_def_id = adt_def.did();
+                let impls = tcx.inherent_impls(adt_def_id);
+                for impl_def_id in impls {
+                    for item in tcx.associated_item_def_ids(impl_def_id) {
+                        if (tcx.def_kind(item) == DefKind::Fn
+                            || tcx.def_kind(item) == DefKind::AssocFn)
+                            && get_type(tcx, *item) == FnKind::Constructor
+                        {
+                            cons.push(*item);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    cons
+}
+
+pub fn append_fn_with_types(tcx: TyCtxt, def_id: DefId) -> FnInfo {
+    FnInfo::new(def_id, check_safety(tcx, def_id), get_type(tcx, def_id))
+}
+pub fn search_constructor(tcx: TyCtxt, def_id: DefId) -> Vec<DefId> {
+    let mut constructors = Vec::new();
+    if let Some(assoc_item) = tcx.opt_associated_item(def_id) {
+        if let Some(impl_id) = assoc_item.impl_container(tcx) {
+            // get struct ty
+            let ty = tcx.type_of(impl_id).skip_binder();
+            if let Some(adt_def) = ty.ty_adt_def() {
+                let adt_def_id = adt_def.did();
+                let impl_vec = get_impls_for_struct(tcx, adt_def_id);
+                for impl_id in impl_vec {
+                    let associated_items = tcx.associated_items(impl_id);
+                    for item in associated_items.in_definition_order() {
+                        if let ty::AssocKind::Fn {
+                            name: _,
+                            has_self: _,
+                        } = item.kind
+                        {
+                            let item_def_id = item.def_id;
+                            if get_type(tcx, item_def_id) == FnKind::Constructor {
+                                constructors.push(item_def_id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    constructors
+}
+
+pub fn get_ptr_deref_dummy_def_id(tcx: TyCtxt<'_>) -> Option<DefId> {
+    tcx.hir_crate_items(()).free_items().find_map(|item_id| {
+        let def_id = item_id.owner_id.to_def_id();
+        let name = tcx.opt_item_name(def_id)?;
+
+        (name.as_str() == "__raw_ptr_deref_dummy").then_some(def_id)
+    })
+}

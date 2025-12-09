@@ -30,16 +30,17 @@ extern crate rustc_type_ir;
 extern crate thin_vec;
 use crate::analysis::scan::ScanAnalysis;
 use analysis::{
+    Analysis,
     core::{
-        alias_analysis::{default::AliasAnalyzer, AAResultMapWrapper, AliasAnalysis},
+        alias_analysis::{AAResultMapWrapper, AliasAnalysis, default::AliasAnalyzer},
         api_dependency::ApiDependencyAnalyzer,
-        callgraph::{default::CallGraphAnalyzer, CallGraphAnalysis, CallGraphDisplay},
+        callgraph::{CallGraphAnalysis, CallGraphDisplay, default::CallGraphAnalyzer},
         dataflow::{
-            default::DataFlowAnalyzer, Arg2RetMapWrapper, DataFlowAnalysis, DataFlowGraphMapWrapper,
+            Arg2RetMapWrapper, DataFlowAnalysis, DataFlowGraphMapWrapper, default::DataFlowAnalyzer,
         },
-        ownedheap_analysis::{default::OwnedHeapAnalyzer, OHAResultMapWrapper, OwnedHeapAnalysis},
+        ownedheap_analysis::{OHAResultMapWrapper, OwnedHeapAnalysis, default::OwnedHeapAnalyzer},
         range_analysis::{
-            default::RangeAnalyzer, PathConstraintMapWrapper, RAResultMapWrapper, RangeAnalysis,
+            PathConstraintMapWrapper, RAResultMapWrapper, RangeAnalysis, default::RangeAnalyzer,
         },
         ssa_transform::SSATrans,
     },
@@ -48,15 +49,14 @@ use analysis::{
     safedrop::SafeDrop,
     senryx::{CheckLevel, SenryxCheck},
     test::Test,
-    unsafety_isolation::{UigInstruction, UnsafetyIsolationCheck},
+    upg::{TargetCrate, UPGAnalysis},
     utils::show_mir::ShowMir,
-    Analysis,
 };
 use rustc_ast::ast;
 use rustc_driver::{Callbacks, Compilation};
 use rustc_interface::{
-    interface::{self, Compiler},
     Config,
+    interface::{self, Compiler},
 };
 use rustc_middle::{ty::TyCtxt, util::Providers};
 use rustc_session::search_paths::PathKind;
@@ -65,7 +65,13 @@ use std::{env, sync::Arc};
 
 // Insert rustc arguments at the beginning of the argument list that RAP wants to be
 // set per default, for maximal validation power.
-pub static RAP_DEFAULT_ARGS: &[&str] = &["-Zalways-encode-mir", "-Zmir-opt-level=0"];
+pub static RAP_DEFAULT_ARGS: &[&str] = &[
+    "-Zalways-encode-mir",
+    "-Zmir-opt-level=0",
+    "-Zinline-mir-threshold=0",
+    "-Zinline-mir-hint-threshold=0",
+    "-Zcross-crate-inline-threshold=0",
+];
 
 /// This is the data structure to handle rapx options as a rustc callback.
 
@@ -84,7 +90,8 @@ pub struct RapCallback {
     rcanary: bool,
     safedrop: bool,
     show_mir: bool,
-    unsafety_isolation: usize,
+    show_mir_dot: bool,
+    upg: usize,
     verify: bool,
     verify_std: bool,
     scan: bool,
@@ -108,7 +115,8 @@ impl Default for RapCallback {
             rcanary: false,
             safedrop: false,
             show_mir: false,
-            unsafety_isolation: 0,
+            show_mir_dot: false,
+            upg: 0,
             verify: false,
             verify_std: false,
             scan: false,
@@ -136,9 +144,10 @@ impl Callbacks for RapCallback {
     fn after_crate_root_parsing(
         &mut self,
         _compiler: &interface::Compiler,
-        _krate: &mut ast::Crate,
+        krate: &mut ast::Crate,
     ) -> Compilation {
-        preprocess::ssa_preprocess::create_ssa_struct(_krate);
+        preprocess::dummy_fns::create_dummy_fns(krate);
+        preprocess::ssa_preprocess::create_ssa_struct(krate);
         Compilation::Continue
     }
     fn after_analysis<'tcx>(&mut self, _compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
@@ -183,18 +192,18 @@ impl RapCallback {
     pub fn enable_alias(&mut self, arg: String) {
         self.alias = true;
         match arg.as_str() {
-            "-alias" => {
+            "-alias" => unsafe {
                 env::set_var("ALIAS", "1");
-            }
-            "-alias0" => {
+            },
+            "-alias0" => unsafe {
                 env::set_var("ALIAS", "0");
-            }
-            "-alias1" => {
+            },
+            "-alias1" => unsafe {
                 env::set_var("ALIAS", "1");
-            }
-            "-alias2" => {
+            },
+            "-alias2" => unsafe {
                 env::set_var("ALIAS", "2");
-            }
+            },
             _ => {}
         }
     }
@@ -301,24 +310,44 @@ impl RapCallback {
         self.safedrop = true;
         match arg.as_str() {
             "-F" => {
-                env::set_var("SAFEDROP", "1");
-                env::set_var("MOP", "1");
+                unsafe {
+                    env::set_var("SAFEDROP", "1");
+                }
+                unsafe {
+                    env::set_var("MOP", "1");
+                }
             }
             "-F0" => {
-                env::set_var("SAFEDROP", "0");
-                env::set_var("MOP", "0");
+                unsafe {
+                    env::set_var("SAFEDROP", "0");
+                }
+                unsafe {
+                    env::set_var("MOP", "0");
+                }
             }
             "-F1" => {
-                env::set_var("SAFEDROP", "1");
-                env::set_var("MOP", "1");
+                unsafe {
+                    env::set_var("SAFEDROP", "1");
+                }
+                unsafe {
+                    env::set_var("MOP", "1");
+                }
             }
             "-F2" => {
-                env::set_var("SAFEDROP", "2");
-                env::set_var("MOP", "2");
+                unsafe {
+                    env::set_var("SAFEDROP", "2");
+                }
+                unsafe {
+                    env::set_var("MOP", "2");
+                }
             }
             "-uaf" => {
-                env::set_var("SAFEDROP", "1");
-                env::set_var("MOP", "1");
+                unsafe {
+                    env::set_var("SAFEDROP", "1");
+                }
+                unsafe {
+                    env::set_var("MOP", "1");
+                }
             }
             _ => {}
         }
@@ -339,12 +368,20 @@ impl RapCallback {
         self.show_mir
     }
 
-    pub fn enable_unsafety_isolation(&mut self, x: usize) {
-        self.unsafety_isolation = x;
+    pub fn enable_show_mir_dot(&mut self) {
+        self.show_mir_dot = true;
     }
 
-    pub fn is_unsafety_isolation_enabled(&self) -> usize {
-        self.unsafety_isolation
+    pub fn is_show_mir_dot_enabled(&self) -> bool {
+        self.show_mir_dot
+    }
+
+    pub fn enable_upg(&mut self, x: usize) {
+        self.upg = x;
+    }
+
+    pub fn is_upg_enabled(&self) -> usize {
+        self.upg
     }
 
     pub fn enable_verify(&mut self) {
@@ -497,16 +534,18 @@ pub fn start_analyzer(tcx: TyCtxt, callback: &RapCallback) {
         ShowMir::new(tcx).start();
     }
 
+    if callback.is_show_mir_dot_enabled() {
+        ShowMir::new(tcx).start_generate_dot();
+    }
+
     if callback.is_ssa_transform_enabled() {
         SSATrans::new(tcx, false).start();
     }
 
-    let x = callback.is_unsafety_isolation_enabled();
+    let x = callback.is_upg_enabled();
     match x {
-        1 => UnsafetyIsolationCheck::new(tcx).start(UigInstruction::StdSp),
-        2 => UnsafetyIsolationCheck::new(tcx).start(UigInstruction::Doc),
-        3 => UnsafetyIsolationCheck::new(tcx).start(UigInstruction::Upg),
-        4 => UnsafetyIsolationCheck::new(tcx).start(UigInstruction::Ucons),
+        1 => UPGAnalysis::new(tcx).start(TargetCrate::Other),
+        2 => UPGAnalysis::new(tcx).start(TargetCrate::Std),
         _ => {}
     }
 
@@ -517,6 +556,7 @@ pub fn start_analyzer(tcx: TyCtxt, callback: &RapCallback) {
 
     if callback.is_verify_std_enabled() {
         SenryxCheck::new(tcx, 2).start_analyze_std_func();
+        // SenryxCheck::new(tcx, 2).generate_uig_by_def_id();
     }
 
     if callback.is_infer_enabled() {

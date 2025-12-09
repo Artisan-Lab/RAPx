@@ -1,17 +1,17 @@
 use super::super::visitor::FnVisitor;
+use super::ApiDependencyGraph;
+use super::Config;
 use super::dep_edge::DepEdge;
-use super::dep_node::{desc_str, DepNode};
+use super::dep_node::{DepNode, desc_str};
 use super::transform::TransformKind;
 use super::ty_wrapper::TyWrapper;
 use super::utils;
-use super::ApiDependencyGraph;
-use super::Config;
 use crate::analysis::utils::def_path::path_str_def_id;
 use crate::rap_debug;
 use crate::rap_trace;
 use crate::utils::fs::rap_create_file;
-use petgraph::visit::EdgeRef;
 use petgraph::Direction;
+use petgraph::visit::EdgeRef;
 use rustc_middle::ty::{self, Ty, TyCtxt};
 use std::collections::HashSet;
 

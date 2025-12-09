@@ -8,7 +8,7 @@ use rustc_middle::{
     },
     ty::{self, InstanceKind::Item, Ty, TyKind, TypeVisitable},
 };
-use rustc_span::{source_map::Spanned, Symbol};
+use rustc_span::{Symbol, source_map::Spanned};
 
 use annotate_snippets::{Level, Renderer, Snippet};
 use std::ops::Add;
@@ -259,7 +259,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
         sidx: usize,
     ) {
         match &stmt.kind {
-            StatementKind::Assign(box (ref place, ref rvalue)) => {
+            StatementKind::Assign(box (place, rvalue)) => {
                 help_debug_goal_stmt(ctx, goal, bidx, sidx);
 
                 let disc: Disc = None;
@@ -449,7 +449,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                     }
                 }
             }
-            Rvalue::RawPtr(_, ref rplace) => {
+            Rvalue::RawPtr(_, rplace) => {
                 let kind = AsgnKind::Reference;
                 let aggre = None;
                 let rvalue_has_projection = has_projection(rplace);
@@ -548,7 +548,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                         for (fidx, op) in operands.iter().enumerate() {
                             let aggre = Some(fidx);
                             match op {
-                                Operand::Copy(ref rplace) => {
+                                Operand::Copy(rplace) => {
                                     let rvalue_has_projection = has_projection(rplace);
                                     match rvalue_has_projection {
                                         true => {
@@ -565,7 +565,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                                         }
                                     }
                                 }
-                                Operand::Move(ref rplace) => {
+                                Operand::Move(rplace) => {
                                     let rvalue_has_projection = has_projection(rplace);
                                     match rvalue_has_projection {
                                         true => {

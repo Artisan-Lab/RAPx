@@ -1,3 +1,4 @@
+#![allow(clippy::bool_assert_comparison)]
 use std::path::Path;
 use std::process::Command;
 
@@ -35,6 +36,12 @@ fn test_df_min() {
 }
 
 #[test]
+fn test_df_unwinding() {
+    let output = running_tests_with_arg("uaf/df_unwinding", "-F");
+    assert_eq!(output.contains("Double free detected"), true);
+}
+
+#[test]
 fn test_dp_lengthy() {
     let output = running_tests_with_arg("uaf/dp_lengthy", "-F");
     assert_eq!(
@@ -47,7 +54,7 @@ fn test_dp_lengthy() {
 fn test_uaf_drop() {
     let output = running_tests_with_arg("uaf/uaf_drop", "-F");
     assert_eq!(
-        output.contains("Use after free detected in function \"main\""),
+        output.contains("Use-after-free detected in function \"main\""),
         true
     );
 }
@@ -56,7 +63,7 @@ fn test_uaf_drop() {
 fn test_uaf_drop2() {
     let output = running_tests_with_arg("uaf/uaf_drop2", "-F");
     assert_eq!(
-        output.contains("Use after free detected in function \"main\""),
+        output.contains("Use-after-free detected in function \"main\""),
         true
     );
 }
@@ -65,7 +72,7 @@ fn test_uaf_drop2() {
 fn test_uaf_drop_in_place() {
     let output = running_tests_with_arg("uaf/uaf_drop_in_place", "-F");
     assert_eq!(
-        output.contains("Use after free detected in function \"main\""),
+        output.contains("Use-after-free detected in function \"main\""),
         true
     );
 }
@@ -74,7 +81,7 @@ fn test_uaf_drop_in_place() {
 fn test_uaf_lifetime() {
     let output = running_tests_with_arg("uaf/uaf_lifetime", "-F");
     assert_eq!(
-        output.contains("Use after free detected in function \"main\""),
+        output.contains("Use-after-free detected in function \"main\""),
         true
     );
 }
@@ -83,7 +90,7 @@ fn test_uaf_lifetime() {
 fn test_uaf_small() {
     let output = running_tests_with_arg("uaf/uaf_small", "-F");
     assert_eq!(
-        output.contains("Use after free detected in function \"main\""),
+        output.contains("Use-after-free detected in function \"main\""),
         true
     );
 }
@@ -92,20 +99,27 @@ fn test_uaf_small() {
 fn test_uaf_swithint() {
     let output = running_tests_with_arg("uaf/uaf_swithint", "-F");
     assert_eq!(
-        output.contains("Use after free detected in function \"evil_test\""),
+        output.contains("Use-after-free detected in function \"evil_test\""),
         true
     );
 }
 
 #[test]
-fn test_uaf_swithint_diffbranch() {
-    let output = running_tests_with_arg("uaf/uaf_swithint_diffbranch", "-F");
-    assert_eq!(
-        output.contains("Use after free detected in function \"evil_test\""),
-        false
-    );
+fn test_false_case1() {
+    let output = running_tests_with_arg("uaf/false_case1", "-F");
+    assert_eq!(output.contains("detected"), false);
 }
 
+#[test]
+fn test_false_case2() {
+    let output = running_tests_with_arg("uaf/false_case2", "-F");
+    assert_eq!(output.contains("detected"), false);
+}
+#[test]
+fn test_false_case3() {
+    let output = running_tests_with_arg("uaf/false_case3", "-F");
+    assert_eq!(output.contains("detected"), false);
+}
 #[test]
 fn test_alias_not_alias_iter() {
     let output = running_tests_with_arg("alias/not_alias_iter", "-alias");
@@ -168,6 +182,12 @@ fn test_leak_orphan() {
         output.contains("Memory Leak detected in function main"),
         true
     );
+}
+
+#[test]
+fn test_leak_orphan_timeout() {
+    let output = running_tests_with_arg("leak/leak_orphan", "-timeout=0");
+    assert!(output.contains("Process killed due to timeout"));
 }
 
 #[test]
@@ -235,21 +255,15 @@ fn test_heap_proxy() {
 }
 
 #[test]
-fn test_test_cons_merge() {
-    let output = running_tests_with_arg("safety_check/test_cons_merge", "-verify");
-    assert_eq!(output.contains("NonNull"), true);
+fn test_upg_raw_ptr() {
+    let output = running_tests_with_arg("upg/raw_ptr", "-upg");
+    assert_eq!(output.contains("raw_ptr_deref_dummy"), true);
 }
 
 #[test]
-fn test_init() {
-    let output = running_tests_with_arg("safety_check/init", "-verify");
-    assert_eq!(output.contains("Init"), true);
-}
-
-#[test]
-fn test_cis() {
-    let output = running_tests_with_arg("safety_check/verify_case1", "-verify");
-    assert_eq!(output.contains("ValidPtr"), true);
+fn test_upg_static_mut() {
+    let output = running_tests_with_arg("upg/static_mut", "-upg");
+    assert_eq!(output.contains("::COUNTER"), true);
 }
 
 #[test]
@@ -296,6 +310,22 @@ fn test_interprocedual_range_analysis() {
         assert!(
             output.contains(expected),
             "Missing expected range: '{}'\nFull output:\n{}",
+            expected,
+            output
+        );
+    }
+}
+
+#[test]
+fn test_callgraph_dynamic_dispatch() {
+    let output = running_tests_with_arg("callgraph/dynamic", "-callgraph");
+
+    let expected_calls = vec!["-> <Dog as Animal>::speak", "-> <Cat as Animal>::speak"];
+
+    for expected in expected_calls {
+        assert!(
+            output.contains(expected),
+            "Missing dynamic call '{}'\nFull output:\n{}",
             expected,
             output
         );

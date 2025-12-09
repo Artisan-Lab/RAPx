@@ -1,20 +1,17 @@
 use crate::{
     analysis::{
+        Analysis,
         core::{
             alias_analysis::AAResult,
             ownedheap_analysis::OHAResultMap,
-            range_analysis::{default::RangeAnalyzer, RangeAnalysis},
+            range_analysis::{RangeAnalysis, default::RangeAnalyzer},
         },
         safedrop::graph::SafeDropGraph,
-        senryx::contracts::property::{CisRangeItem, PropertyContract},
-        utils::{
-            fn_info::{
-                display_hashmap, get_all_std_unsafe_callees_block_id, get_callees,
-                get_cleaned_def_path_name, is_ptr, is_ref,
-            },
-            show_mir::display_mir,
+        senryx::{
+            contracts::property::{CisRangeItem, PropertyContract},
+            symbolic_analysis::ValueDomain,
         },
-        Analysis,
+        utils::{fn_info::*, show_mir::display_mir},
     },
     rap_debug, rap_warn,
 };
@@ -46,7 +43,7 @@ use rustc_middle::{
     },
     ty::{self, GenericArgKind, PseudoCanonicalInput, Ty, TyCtxt, TyKind},
 };
-use rustc_span::{source_map::Spanned, Span};
+use rustc_span::{Span, source_map::Spanned};
 
 //TODO: modify contracts vec to contract-bool pairs (we can also use path index to record path info)
 pub struct CheckResult {
@@ -106,7 +103,7 @@ pub struct BodyVisitor<'tcx> {
     pub global_recorder: HashMap<DefId, InterAnalysisRecord<'tcx>>,
     pub proj_ty: HashMap<usize, Ty<'tcx>>,
     pub chains: DominatedGraph<'tcx>,
-    // pub paths: HashSet<Vec<usize>, (Place<'tcx>, Place<'tcx>, BinOp)>,
+    pub value_domains: HashMap<usize, ValueDomain>,
 }
 
 impl<'tcx> BodyVisitor<'tcx> {
@@ -135,6 +132,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             global_recorder,
             proj_ty: HashMap::new(),
             chains,
+            value_domains: HashMap::new(),
             // paths: HashSet::new(),
         }
     }
@@ -158,12 +156,11 @@ impl<'tcx> BodyVisitor<'tcx> {
         if self.visit_time >= 1000 {
             return inter_return_value;
         }
-
         // get path and body
         let paths = self.get_all_paths();
         // self.paths = paths.clone();
         let body = self.tcx.optimized_mir(self.def_id);
-
+        let target_name = get_cleaned_def_path_name(self.tcx, self.def_id);
         // initialize local vars' types
         let locals = body.local_decls.clone();
         for (idx, local) in locals.iter().enumerate() {
@@ -206,6 +203,10 @@ impl<'tcx> BodyVisitor<'tcx> {
             let curr_path_inter_return_value =
                 InterResultNode::construct_from_var_node(self.chains.clone(), 0);
             inter_return_value.merge(curr_path_inter_return_value);
+        }
+        if self.visit_time == 0 && target_name.contains("into_raw_parts_with_alloc") {
+            display_mir(self.def_id, body);
+            display_hashmap(&self.chains.variables, 1);
         }
 
         inter_return_value
@@ -265,8 +266,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                 fn_span,
             } => {
                 if let Operand::Constant(func_constant) = func {
-                    if let ty::FnDef(ref callee_def_id, raw_list) = func_constant.const_.ty().kind()
-                    {
+                    if let ty::FnDef(callee_def_id, raw_list) = func_constant.const_.ty().kind() {
                         let mut mapping = FxHashMap::default();
                         self.get_generic_mapping(raw_list.as_slice(), callee_def_id, &mut mapping);
                         rap_debug!(
@@ -379,14 +379,14 @@ impl<'tcx> BodyVisitor<'tcx> {
                 }
                 _ => {}
             },
-            Rvalue::BinaryOp(_bin_op, box (ref _op1, ref _op2)) => {}
+            Rvalue::BinaryOp(_bin_op, box (_op1, _op2)) => {}
             Rvalue::ShallowInitBox(op, _ty) => match op {
                 Operand::Move(rplace) | Operand::Copy(rplace) => {
                     let _rpjc_local = self.handle_proj(true, rplace.clone());
                 }
                 _ => {}
             },
-            Rvalue::Aggregate(box ref agg_kind, op_vec) => match agg_kind {
+            Rvalue::Aggregate(box agg_kind, op_vec) => match agg_kind {
                 AggregateKind::Array(_ty) => {}
                 AggregateKind::Adt(_adt_def_id, _, _, _, _) => {
                     for (idx, op) in op_vec.into_iter().enumerate() {
@@ -451,47 +451,6 @@ impl<'tcx> BodyVisitor<'tcx> {
 
         // merge alias results
         self.handle_ret_alias(dst_place, def_id, fn_map, args);
-
-        // TODO: to be deleted!
-        // get pre analysis state
-        // let mut pre_analysis_state = HashMap::new();
-        // for (idx, arg) in args.iter().enumerate() {
-        //     let arg_place = get_arg_place(&arg.node);
-        //     let ab_state_item = self.get_abstate_by_place_in_path(arg_place.1, path_index);
-        //     pre_analysis_state.insert(idx, ab_state_item);
-        // }
-
-        // // check cache and update new states for args and return value
-        // let mut gr = self.global_recorder.clone();
-        // if let Some(record) = gr.get_mut(def_id) {
-        //     if record.is_pre_state_same(&pre_analysis_state) {
-        //         self.update_post_state(&record.post_analysis_state, args, path_index);
-        //         self.insert_path_abstate(
-        //             path_index,
-        //             dst_place.local.as_usize(),
-        //             record.ret_state.clone(),
-        //         );
-        //         return;
-        //     }
-        // }
-
-        // update post states and cache
-        // let tcx = self.tcx;
-        // let mut inter_body_visitor: BodyVisitor<'_> = BodyVisitor::new(
-        //     tcx,
-        //     *def_id,
-        //     self.global_recorder.clone(),
-        //     self.visit_time + 1,
-        // );
-        // inter_body_visitor.path_forward_check(fn_map);
-        // let post_analysis_state: HashMap<usize, AbstractStateItem<'_>> =
-        //     inter_body_visitor.get_args_post_states().clone();
-        // self.update_post_state(&post_analysis_state, args, path_index);
-        // let ret_state = post_analysis_state.get(&0).unwrap().clone();
-        // self.global_recorder.insert(
-        //     *def_id,
-        //     InterAnalysisRecord::new(pre_analysis_state, post_analysis_state, ret_state),
-        // );
     }
 
     fn set_bound(
@@ -817,7 +776,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                     let size = layout.size.bytes() as usize;
                     return PlaceTy::Ty(align, size);
                 } else {
-                    rap_warn!("Find type {:?} that can't get layout!", ty);
+                    // rap_warn!("Find type {:?} that can't get layout!", ty);
                     PlaceTy::Unknown
                 }
             }

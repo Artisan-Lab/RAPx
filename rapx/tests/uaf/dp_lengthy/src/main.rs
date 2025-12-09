@@ -1,3 +1,6 @@
+#![allow(unused)]
+#![allow(irrefutable_let_patterns)]
+
 use std::{
     alloc::{alloc_zeroed, dealloc, Layout},
     num::NonZeroUsize,

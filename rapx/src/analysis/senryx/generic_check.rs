@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use if_chain::if_chain;
-use rustc_hir::{hir_id::OwnerId, ImplPolarity, ItemId, ItemKind};
+use rustc_hir::{ImplPolarity, ItemId, ItemKind, hir_id::OwnerId};
 use rustc_middle::ty::{FloatTy, IntTy, ParamEnv, Ty, TyCtxt, TyKind, UintTy};
 // use crate::rap_info;
 

@@ -9,7 +9,7 @@ use crate::{
 use annotate_snippets::{Level, Renderer, Snippet};
 use once_cell::sync::OnceCell;
 
-use rustc_hir::{intravisit, Expr, ExprKind};
+use rustc_hir::{Expr, ExprKind, intravisit};
 use rustc_middle::{
     mir::Local,
     ty::{TyCtxt, TypeckResults},

@@ -1,9 +1,14 @@
-use super::graph::*;
-use crate::utils::source::*;
+use super::{bug_records::TyBug, graph::*};
+use crate::{
+    analysis::{
+        core::alias_analysis::default::{types::TyKind, value::*},
+        utils::fn_info::{convert_alias_to_sets, generate_mir_cfg_dot},
+    },
+    utils::source::*,
+};
 use rustc_data_structures::fx::FxHashSet;
 use rustc_middle::mir::SourceInfo;
-use rustc_span::symbol::Symbol;
-use rustc_span::Span;
+use rustc_span::{Span, symbol::Symbol};
 
 impl<'tcx> SafeDropGraph<'tcx> {
     pub fn report_bugs(&self) {
@@ -26,141 +31,253 @@ impl<'tcx> SafeDropGraph<'tcx> {
         self.bug_records.df_bugs_output(fn_name, self.span);
         self.bug_records.uaf_bugs_output(fn_name, self.span);
         self.bug_records.dp_bug_output(fn_name, self.span);
+        let _ = generate_mir_cfg_dot(self.tcx, self.def_id);
+        rap_debug!("Alias: {:?}", convert_alias_to_sets(self.alias_set.clone()));
     }
 
-    pub fn uaf_check(&mut self, aliaset_idx: usize, span: Span, local: usize, is_func_call: bool) {
-        let mut record = FxHashSet::default();
-        if self.values[aliaset_idx].may_drop
-            && (!self.values[aliaset_idx].is_ptr()
-                || self.values[aliaset_idx].local != local
-                || is_func_call)
-            && self.exist_dead(aliaset_idx, &mut record, false)
-            && !self.bug_records.uaf_bugs.contains(&span)
-        {
-            self.bug_records.uaf_bugs.insert(span.clone());
+    pub fn uaf_check(&mut self, bb_idx: usize, idx: usize, span: Span, is_func_call: bool) {
+        let local = self.values[idx].local;
+        if !self.values[idx].may_drop {
+            return;
         }
+        /*
+         * Check
+         * 1) if the birth of the value > -1;
+         * 2) there is a drop_record entry.
+         * */
+        if !self.is_dangling(idx) || !self.drop_record[idx].0 {
+            return;
+        }
+        if self.values[idx].is_ptr() && !is_func_call {
+            return;
+        }
+
+        let confidence = match self.values[idx].kind {
+            TyKind::CornerCase => 0,
+            _ => 99,
+        };
+
+        let bug = TyBug {
+            drop_bb: self.drop_record[idx].1,
+            drop_id: self.drop_record[idx].2,
+            trigger_bb: bb_idx,
+            trigger_id: local,
+            span: span.clone(),
+            confidence,
+        };
+        rap_debug!("Find use-after-free bug {:?}; add to records", bug);
+        if self.bug_records.uaf_bugs.contains_key(&local) {
+            return;
+        }
+        self.bug_records.uaf_bugs.insert(local, bug);
+        rap_debug!("Find use-after-free bug {:?}; add to records", local);
     }
 
-    pub fn exist_dead(
-        &mut self,
-        node: usize,
-        record: &mut FxHashSet<usize>,
-        dangling: bool,
-    ) -> bool {
-        if node >= self.values.len() {
+    pub fn is_dangling(&mut self, local: usize) -> bool {
+        let mut record = FxHashSet::default();
+        return self.is_dangling_inner(local, &mut record);
+    }
+
+    fn is_dangling_inner(&mut self, idx: usize, record: &mut FxHashSet<usize>) -> bool {
+        if idx >= self.values.len() {
             return false;
         }
         //if is a dangling pointer check, only check the pointer type varible.
-        if self.values[node].is_alive() == false
-            && (dangling && self.values[node].is_ptr() || !dangling)
-        {
+        if self.values[idx].is_dropped() && (idx != 0 || (idx == 0 && self.values[idx].is_ptr())) {
             return true;
         }
-        record.insert(node);
-        if self.union_has_alias(node) {
-            // for i in self.values[node].alias.clone().into_iter() {
-            //     if i != node && record.contains(&i) == false && self.exist_dead(i, record, dangling)
-            //     {
-            //         return true;
-            //     }
-            // }
+        record.insert(idx);
+        if self.union_has_alias(idx) {
             for i in 0..self.alias_set.len() {
-                if i != node && !self.union_is_same(i, node) {
+                if i != idx && !self.union_is_same(i, idx) {
                     continue;
                 }
-                if record.contains(&i) == false && self.exist_dead(i, record, dangling) {
-                    return true;
+                if record.contains(&i) == false && self.is_dangling_inner(i, record) {
+                    let local = self.values[i].local;
+                    if self.drop_record[local].0 {
+                        rap_debug!(
+                            "is_dangling_inner: idx={}, i={}, {:?}",
+                            idx,
+                            local,
+                            self.drop_record[local]
+                        );
+                        self.drop_record[idx] = self.drop_record[local];
+                        return true;
+                    }
                 }
             }
         }
-        for i in self.values[node].fields.clone().into_iter() {
-            if record.contains(&i.1) == false && self.exist_dead(i.1, record, dangling) {
+        for i in self.values[idx].fields.clone().into_iter() {
+            if record.contains(&i.1) == false && self.is_dangling_inner(i.1, record) {
                 return true;
             }
         }
         return false;
     }
 
-    pub fn is_dangling(&mut self, local: usize) -> bool {
-        let mut record = FxHashSet::default();
-        return self.exist_dead(local, &mut record, local != 0);
-    }
-
-    pub fn df_check(&mut self, drop: usize, span: Span) -> bool {
-        let root = self.values[drop].local;
-        if self.values[drop].is_alive() == false
-            && self.bug_records.df_bugs.contains_key(&root) == false
-        {
-            self.bug_records.df_bugs.insert(root, span.clone());
+    pub fn df_check(&mut self, bb_idx: usize, idx: usize, span: Span, flag_cleanup: bool) -> bool {
+        let local = self.values[idx].local;
+        if !self.values[idx].is_dropped() {
+            return false;
         }
-        return self.values[drop].is_alive() == false;
+        let confidence = match self.values[idx].kind {
+            TyKind::CornerCase => 0,
+            _ => 99,
+        };
+        let bug = TyBug {
+            drop_bb: self.drop_record[idx].1,
+            drop_id: self.drop_record[idx].2,
+            trigger_bb: bb_idx,
+            trigger_id: local,
+            span: span.clone(),
+            confidence,
+        };
+
+        if flag_cleanup {
+            if !self.bug_records.df_bugs_unwind.contains_key(&local) {
+                self.bug_records.df_bugs_unwind.insert(local, bug);
+                rap_debug!(
+                    "Find double free bug {} during unwinding; add to records.",
+                    local
+                );
+            }
+        } else {
+            if !self.bug_records.df_bugs.contains_key(&local) {
+                self.bug_records.df_bugs.insert(local, bug);
+                rap_debug!("Find double free bug {}; add to records.", local);
+            }
+        }
+        return true;
     }
 
-    pub fn dp_check(&mut self, current_block: &BlockNode<'tcx>) {
-        match current_block.is_cleanup {
-            true => {
-                for i in 0..self.arg_size {
-                    if self.values[i + 1].is_ptr() && self.is_dangling(i + 1) {
-                        self.bug_records.dp_bugs_unwind.insert(self.span);
+    pub fn dp_check(&mut self, flag_cleanup: bool) {
+        if flag_cleanup {
+            for arg_idx in 1..self.arg_size + 1 {
+                if self.values[arg_idx].is_ptr() && self.is_dangling(arg_idx) {
+                    let confidence = match self.values[arg_idx].kind {
+                        TyKind::CornerCase => 0,
+                        _ => 99,
+                    };
+                    let bug = TyBug {
+                        drop_bb: self.drop_record[arg_idx].1,
+                        drop_id: self.drop_record[arg_idx].2,
+                        trigger_bb: usize::MAX,
+                        trigger_id: arg_idx,
+                        span: self.span.clone(),
+                        confidence,
+                    };
+                    self.bug_records.dp_bugs_unwind.insert(arg_idx, bug);
+                    rap_debug!(
+                        "Find dangling pointer {} during unwinding; add to record.",
+                        arg_idx
+                    );
+                }
+            }
+        } else {
+            if self.values[0].may_drop && self.is_dangling(0) {
+                let confidence = match self.values[0].kind {
+                    TyKind::CornerCase => 0,
+                    _ => 99,
+                };
+                let bug = TyBug {
+                    drop_bb: self.drop_record[0].1,
+                    drop_id: self.drop_record[0].2,
+                    trigger_bb: usize::MAX,
+                    trigger_id: 0,
+                    span: self.span.clone(),
+                    confidence,
+                };
+                self.bug_records.dp_bugs.insert(0, bug);
+                rap_debug!("Find dangling pointer 0; add to record.");
+            } else {
+                for arg_idx in 0..self.arg_size + 1 {
+                    if self.values[arg_idx].is_ptr() && self.is_dangling(arg_idx) {
+                        let confidence = match self.values[arg_idx].kind {
+                            TyKind::CornerCase => 0,
+                            _ => 99,
+                        };
+                        let bug = TyBug {
+                            drop_bb: self.drop_record[arg_idx].1,
+                            drop_id: self.drop_record[arg_idx].2,
+                            trigger_bb: usize::MAX,
+                            trigger_id: arg_idx,
+                            span: self.span.clone(),
+                            confidence,
+                        };
+                        self.bug_records.dp_bugs.insert(arg_idx, bug);
+                        rap_debug!("Find dangling pointer {}; add to record.", arg_idx);
                     }
                 }
             }
-            false => {
-                if self.values[0].may_drop && self.is_dangling(0) {
-                    self.bug_records.dp_bugs.insert(self.span);
-                } else {
-                    for i in 0..self.arg_size {
-                        if self.values[i + 1].is_ptr() && self.is_dangling(i + 1) {
-                            self.bug_records.dp_bugs.insert(self.span);
-                        }
-                    }
-                }
-            }
         }
     }
 
-    pub fn dead_node(&mut self, drop: usize, birth: usize, info: &SourceInfo, alias: bool) {
+    /*
+     * Mark the node as dropped.
+     * flag_cleanup: used to distinguish if a bug occurs in the unwinding path.
+     */
+    pub fn drop_node(
+        &mut self,
+        idx: usize,     // the value to be dropped
+        via_idx: usize, // the value is dropped via its alias: via_idx
+        birth: usize,
+        info: &SourceInfo,
+        flag_inprocess: bool,
+        bb_idx: usize,
+        flag_cleanup: bool,
+    ) {
         //Rc drop
-        if self.values[drop].is_corner_case() {
+        if self.values[idx].is_corner_case() {
             return;
         }
         //check if there is a double free bug.
-        if !alias && self.df_check(drop, info.span) {
+        if !flag_inprocess && self.df_check(bb_idx, idx, self.span, flag_cleanup) {
             return;
         }
-        if self.dead_record[drop] {
+        let (flag_dropped, _, _) = self.drop_record[idx];
+        if flag_dropped {
             return;
         } else {
-            self.dead_record[drop] = true;
+            self.drop_record[idx] = (true, bb_idx, self.values[via_idx].local);
         }
         //drop their alias
-        if self.alias_set[drop] != drop {
-            // for i in self.values[drop].alias.clone().into_iter() {
-            //     if self.values[i].is_ref() {
-            //         continue;
-            //     }
-            //     self.dead_node(i, birth, info, true);
-            // }
+        if self.alias_set[idx] != idx {
             for i in 0..self.values.len() {
-                if !self.union_is_same(drop, i) || i == drop || self.values[i].is_ref() {
+                if !self.union_is_same(idx, i) || i == idx || self.values[i].is_ref() {
                     continue;
                 }
-                self.dead_node(i, birth, info, true);
+                self.drop_node(
+                    i,
+                    self.values[via_idx].local,
+                    birth,
+                    info,
+                    true,
+                    bb_idx,
+                    flag_cleanup,
+                );
             }
         }
         //drop the fields of the root node.
         //alias flag is used to avoid the fields of the alias are dropped repeatly.
-        if alias == false {
-            for i in self.values[drop].fields.clone().into_iter() {
-                if self.values[drop].is_tuple() == true && self.values[i.1].need_drop == false {
+        if !flag_inprocess {
+            for (_, field_idx) in self.values[idx].fields.clone() {
+                if self.values[idx].is_tuple() && !self.values[field_idx].need_drop {
                     continue;
                 }
-                self.dead_node(i.1, birth, info, false);
+                self.drop_node(
+                    field_idx,
+                    self.values[via_idx].local,
+                    birth,
+                    info,
+                    false,
+                    bb_idx,
+                    flag_cleanup,
+                );
             }
         }
         //SCC.
-        if self.values[drop].birth < birth as isize && self.values[drop].may_drop {
-            self.values[drop].dead();
+        if self.values[idx].birth < birth as isize && self.values[idx].may_drop {
+            self.values[idx].drop();
         }
     }
 

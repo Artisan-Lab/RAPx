@@ -3,8 +3,8 @@ use rustc_middle::{mir::TerminatorKind, ty::InstanceKind::Item};
 use std::collections::BinaryHeap;
 //use stopwatch::Stopwatch;
 
-use super::super::ranalyzer::{FlowAnalysis, NodeOrder};
 use super::super::RcxMut;
+use super::super::ranalyzer::{FlowAnalysis, NodeOrder};
 
 impl<'tcx, 'a> FlowAnalysis<'tcx, 'a> {
     pub fn order(&mut self) {

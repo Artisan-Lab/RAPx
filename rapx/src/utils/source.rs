@@ -1,9 +1,9 @@
 use rustc_hir::Node::*;
 use rustc_middle::ty::TyCtxt;
 use rustc_span::{
+    FileName, FileNameDisplayPreference,
     def_id::{CrateNum, DefId},
     symbol::Symbol,
-    FileName, FileNameDisplayPreference,
 };
 
 extern crate rustc_hir;

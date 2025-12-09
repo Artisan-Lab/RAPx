@@ -1,0 +1,67 @@
+use super::doc_attr;
+use rustc_ast::*;
+use rustc_span::{DUMMY_SP, symbol::Ident};
+use thin_vec::ThinVec;
+
+fn make_dummy_fn_sig() -> FnSig {
+    let fn_decl = FnDecl {
+        inputs: ThinVec::new(),
+        output: FnRetTy::Default(DUMMY_SP),
+    };
+
+    FnSig {
+        decl: Box::new(fn_decl),
+        header: FnHeader {
+            safety: Safety::Default,
+            constness: Const::No,
+            ext: Extern::None,
+            coroutine_kind: None,
+        },
+        span: DUMMY_SP,
+    }
+}
+
+fn make_dummy_block() -> Block {
+    Block {
+        stmts: ThinVec::new(),
+        id: DUMMY_NODE_ID,
+        rules: BlockCheckMode::Default,
+        span: DUMMY_SP,
+        tokens: None,
+    }
+}
+
+fn make_dummy_fn(ident_name: &str) -> Box<Item> {
+    let ident = Ident::from_str(ident_name);
+
+    let fn_ast = Fn {
+        defaultness: Defaultness::Final,
+        ident,
+        generics: Generics::default(),
+        sig: make_dummy_fn_sig(),
+        contract: None,
+        define_opaque: None,
+        body: Some(Box::new(make_dummy_block())),
+    };
+
+    Box::new(Item {
+        attrs: ThinVec::from([doc_attr()]),
+        id: DUMMY_NODE_ID,
+        kind: ItemKind::Fn(Box::new(fn_ast)),
+        vis: Visibility {
+            span: DUMMY_SP,
+            kind: VisibilityKind::Public,
+            tokens: None,
+        },
+        span: DUMMY_SP,
+        tokens: None,
+    })
+}
+
+pub(crate) fn create_dummy_fns(krate: &mut Crate) {
+    let raw_ptr_fn = make_dummy_fn("__raw_ptr_deref_dummy");
+    //let static_mut_fn = make_dummy_fn("__static_mut_deref_dummy");
+
+    krate.items.push(raw_ptr_fn);
+    //krate.items.push(static_mut_fn);
+}

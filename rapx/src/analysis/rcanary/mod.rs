@@ -1,8 +1,8 @@
 pub mod ranalyzer;
 
 use crate::analysis::{
-    core::ownedheap_analysis::{default::OwnedHeapAnalyzer, OHAResultMap, OwnedHeapAnalysis},
     Analysis,
+    core::ownedheap_analysis::{OHAResultMap, OwnedHeapAnalysis, default::OwnedHeapAnalyzer},
 };
 use ranalyzer::{FlowAnalysis, IcxSliceFroBlock, IntraFlowContext, MirGraph};
 use rustc_middle::ty::TyCtxt;

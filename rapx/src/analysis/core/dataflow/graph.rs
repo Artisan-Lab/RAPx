@@ -10,7 +10,7 @@ use rustc_middle::{
     },
     ty::TyKind,
 };
-use rustc_span::{Span, DUMMY_SP};
+use rustc_span::{DUMMY_SP, Span};
 
 use crate::{analysis::core::dataflow::*, utils::log::relative_pos_range};
 
@@ -117,7 +117,7 @@ impl Graph {
                     graph.add_node_edge(src, dst, EdgeOp::Deref);
                 }
                 PlaceElem::Field(field_idx, _) => {
-                    graph.add_node_edge(src, dst, EdgeOp::Field(format!("{:?}", field_idx)));
+                    graph.add_node_edge(src, dst, EdgeOp::Field(field_idx.as_usize()));
                 }
                 PlaceElem::Downcast(symbol, _) => {
                     graph.add_node_edge(src, dst, EdgeOp::Downcast(symbol.unwrap().to_string()));
@@ -405,6 +405,62 @@ impl Graph {
             ret.remove(&local);
         }
         ret
+    }
+
+    pub fn collect_descending_locals(&self, local: Local, self_included: bool) -> HashSet<Local> {
+        let mut ret = HashSet::new();
+        let mut node_operator = |_: &Graph, idx: Local| -> DFSStatus {
+            ret.insert(idx);
+            DFSStatus::Continue
+        };
+        let mut seen = HashSet::new();
+        self.dfs(
+            local,
+            Direction::Downside,
+            &mut node_operator,
+            &mut Graph::always_true_edge_validator,
+            true,
+            &mut seen,
+        );
+        if !self_included {
+            ret.remove(&local);
+        }
+        ret
+    }
+
+    pub fn get_field_sequence(&self, local: Local) -> Option<(Local, Vec<usize>)> {
+        let mut fields = vec![];
+        let var = Cell::new(local);
+        let mut node_operator = |graph: &Graph, idx: Local| -> DFSStatus {
+            if graph.is_marker(idx) {
+                DFSStatus::Continue
+            } else {
+                var.set(idx);
+                DFSStatus::Stop
+            }
+        };
+        let mut edge_validator = |graph: &Graph, idx: EdgeIdx| -> DFSStatus {
+            if let EdgeOp::Field(field) = graph.edges[idx].op {
+                fields.insert(0, field);
+                DFSStatus::Continue
+            } else {
+                DFSStatus::Stop
+            }
+        };
+        let mut seen = HashSet::new();
+        self.dfs(
+            local,
+            Direction::Upside,
+            &mut node_operator,
+            &mut edge_validator,
+            false,
+            &mut seen,
+        );
+        if fields.is_empty() {
+            None
+        } else {
+            Some((var.get(), fields))
+        }
     }
 
     pub fn is_connected(&self, idx_1: Local, idx_2: Local) -> bool {

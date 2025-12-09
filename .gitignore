@@ -1,6 +1,7 @@
 .idea/
 .vscode/
 target/
+UPG/
 **/*.txt
 tests/**/Cargo.lock
 **/*.dot

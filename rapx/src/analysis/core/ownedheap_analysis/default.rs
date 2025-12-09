@@ -1,8 +1,8 @@
 use rustc_abi::VariantIdx;
 use rustc_middle::{
     mir::{
-        visit::{TyContext, Visitor},
         BasicBlock, BasicBlockData, Body, Local, LocalDecl, Operand, TerminatorKind,
+        visit::{TyContext, Visitor},
     },
     ty::{
         self, EarlyBinder, GenericArgKind, InstanceKind::Item, Ty, TyCtxt, TyKind,

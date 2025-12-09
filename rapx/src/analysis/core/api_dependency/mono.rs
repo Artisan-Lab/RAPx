@@ -1,11 +1,13 @@
+#![allow(warnings, unused)]
+
 use super::graph::TyWrapper;
 use super::utils::{self, fn_sig_with_generic_args};
 use crate::analysis::utils::def_path::path_str_def_id;
 use crate::{rap_debug, rap_trace};
-use rand::seq::SliceRandom;
 use rand::Rng;
-use rustc_hir::def_id::DefId;
+use rand::seq::SliceRandom;
 use rustc_hir::LangItem;
+use rustc_hir::def_id::DefId;
 use rustc_infer::infer::DefineOpaqueTypes;
 use rustc_infer::infer::{InferCtxt, TyCtxtInferExt};
 use rustc_infer::traits::{ImplSource, Obligation, ObligationCause};
@@ -182,7 +184,7 @@ impl<'tcx> MonoSet<'tcx> {
     }
 
     fn filter_by_trait_bound(mut self, fn_did: DefId, tcx: TyCtxt<'tcx>) -> Self {
-        let early_fn_sig = tcx.fn_sig(fn_did);
+        //let early_fn_sig = tcx.fn_sig(fn_did);
         self.monos
             .retain(|args| is_args_fit_trait_bound(fn_did, &args.value, tcx));
         self
@@ -215,7 +217,7 @@ fn unify_ty<'tcx>(
             .at(cause, param_env)
             .eq(DefineOpaqueTypes::Yes, lhs, rhs)
         {
-            Ok(infer_ok) => {
+            Ok(_infer_ok) => {
                 // rap_trace!("[infer_ok] {} = {} : {:?}", lhs, rhs, infer_ok);
                 let mono = identity
                     .iter()
@@ -229,7 +231,7 @@ fn unify_ty<'tcx>(
                     .collect();
                 Some(mono)
             }
-            Err(e) => {
+            Err(_e) => {
                 // rap_trace!("[infer_err] {} = {} : {:?}", lhs, rhs, e);
                 None
             }

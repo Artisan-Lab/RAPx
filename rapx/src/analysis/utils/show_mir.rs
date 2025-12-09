@@ -217,4 +217,18 @@ impl<'tcx> ShowMir<'tcx> {
             display_mir(def_id, body);
         }
     }
+
+    pub fn start_generate_dot(&mut self) {
+        rap_info!("Generate MIR DOT");
+        std::process::Command::new("mkdir")
+            .args(["MIR_dot_graph"])
+            .output()
+            .expect("Failed to create directory");
+
+        let mir_keys = self.tcx.mir_keys(());
+        for each_mir in mir_keys {
+            let def_id = each_mir.to_def_id();
+            let _ = crate::analysis::utils::fn_info::generate_mir_cfg_dot(self.tcx, def_id);
+        }
+    }
 }

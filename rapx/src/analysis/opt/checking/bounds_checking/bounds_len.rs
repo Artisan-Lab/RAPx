@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use once_cell::sync::OnceCell;
 
 use rustc_ast::BinOpKind;
-use rustc_hir::{intravisit, Expr, ExprKind};
+use rustc_hir::{Expr, ExprKind, intravisit};
 use rustc_middle::{mir::Local, ty::TyCtxt};
 use rustc_span::Span;
 

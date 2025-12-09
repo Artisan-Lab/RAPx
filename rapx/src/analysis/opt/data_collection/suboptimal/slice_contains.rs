@@ -6,7 +6,7 @@ use crate::{
     analysis::{core::dataflow::graph::*, opt::OptCheck, utils::def_path::DefPath},
     utils::log::{relative_pos_range, span_to_filename, span_to_line_number, span_to_source_code},
 };
-use rustc_hir::{intravisit, Expr, ExprKind};
+use rustc_hir::{Expr, ExprKind, intravisit};
 use rustc_middle::ty::{TyCtxt, TypeckResults};
 use rustc_span::Span;
 

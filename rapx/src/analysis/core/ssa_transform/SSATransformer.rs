@@ -3,13 +3,13 @@
 #![allow(dead_code)]
 
 use rustc_data_structures::graph::dominators::Dominators;
-use rustc_data_structures::graph::{dominators, Predecessors};
+use rustc_data_structures::graph::{Predecessors, dominators};
 use rustc_driver::args;
 use rustc_hir::def_id::DefId;
-use rustc_hir::def_id::{CrateNum, DefIndex, LocalDefId, CRATE_DEF_INDEX, LOCAL_CRATE};
+use rustc_hir::def_id::{CRATE_DEF_INDEX, CrateNum, DefIndex, LOCAL_CRATE, LocalDefId};
 use rustc_middle::mir::*;
 use rustc_middle::{
-    mir::{visit::Visitor, Body, Local, Location},
+    mir::{Body, Local, Location, visit::Visitor},
     ty::TyCtxt,
 };
 use rustc_span::symbol::Symbol;

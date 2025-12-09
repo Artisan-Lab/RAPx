@@ -3,7 +3,6 @@ pub mod bug_records;
 pub mod check_bugs;
 pub mod corner_handle;
 pub mod graph;
-#[allow(clippy::module_inception)]
 pub mod safedrop;
 
 use rustc_hir::def_id::DefId;
@@ -11,7 +10,7 @@ use rustc_middle::ty::TyCtxt;
 
 use crate::analysis::core::{
     alias_analysis::default::{AliasAnalyzer, MopAAResultMap},
-    ownedheap_analysis::{default::OwnedHeapAnalyzer, OHAResultMap, OwnedHeapAnalysis},
+    ownedheap_analysis::{OHAResultMap, OwnedHeapAnalysis, default::OwnedHeapAnalyzer},
 };
 use graph::SafeDropGraph;
 use safedrop::*;

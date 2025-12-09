@@ -3,7 +3,7 @@ extern crate indexmap;
 use indexmap::IndexMap;
 use rustc_hir::def_id::DefId;
 use rustc_middle::ty::TyCtxt;
-use rustc_public::{rustc_internal, CrateDef};
+use rustc_public::{CrateDef, rustc_internal};
 use std::sync::OnceLock;
 
 static INIT: OnceLock<Intrinsics> = OnceLock::new();

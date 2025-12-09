@@ -1,7 +1,8 @@
-use rustc_ast::{token::CommentKind, *};
+use super::doc_attr;
+use rustc_ast::*;
 use rustc_span::{
-    symbol::{Ident, Symbol},
     DUMMY_SP,
+    symbol::{Ident, Symbol},
 };
 use thin_vec::ThinVec;
 
@@ -87,15 +88,4 @@ pub(crate) fn create_struct(name: &str, fields_def: Vec<(&str, Symbol)>) -> Box<
         span: DUMMY_SP,
         tokens: None,
     })
-}
-
-/// Empty `#[doc]` on the struct.
-/// cc https://github.com/Artisan-Lab/RAPx/issues/184
-fn doc_attr() -> Attribute {
-    Attribute {
-        kind: AttrKind::DocComment(CommentKind::Line, Symbol::intern("doc")),
-        id: AttrId::ZERO,
-        style: AttrStyle::Outer,
-        span: DUMMY_SP,
-    }
 }

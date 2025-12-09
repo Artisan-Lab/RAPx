@@ -81,7 +81,7 @@ impl<'ctx> IntraVar<'ctx> {
 
     pub fn extract(&self) -> ast::BV<'ctx> {
         match self {
-            IntraVar::Init(ref ast) => ast.clone(),
+            IntraVar::Init(ast) => ast.clone(),
             _ => unreachable!(),
         }
     }

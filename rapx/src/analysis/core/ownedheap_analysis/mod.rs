@@ -9,7 +9,7 @@ use std::{
     fmt::{self, Display},
 };
 
-use crate::{rap_info, utils::source::get_fn_name_byid, Analysis};
+use crate::{Analysis, rap_info, utils::source::get_fn_name_byid};
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -92,7 +92,7 @@ pub trait OwnedHeapAnalysis: Analysis {
     fn is_heapowner<'tcx>(hares: OHAResultMap, ty: Ty<'tcx>) -> Result<bool, &'static str> {
         match ty.kind() {
             TyKind::Adt(adtdef, ..) => {
-                let heapinfo = hares.get(&adtdef.0 .0.did).unwrap();
+                let heapinfo = hares.get(&adtdef.0.0.did).unwrap();
                 for item in heapinfo {
                     if item.0 == OwnedHeap::True {
                         return Ok(true);
@@ -109,7 +109,7 @@ pub trait OwnedHeapAnalysis: Analysis {
     fn maybe_heapowner<'tcx>(hares: OHAResultMap, ty: Ty<'tcx>) -> Result<bool, &'static str> {
         match ty.kind() {
             TyKind::Adt(adtdef, ..) => {
-                let heapinfo = hares.get(&adtdef.0 .0.did).unwrap();
+                let heapinfo = hares.get(&adtdef.0.0.did).unwrap();
                 for item in heapinfo {
                     if item.0 == OwnedHeap::False && item.1.contains(&true) {
                         return Ok(true);

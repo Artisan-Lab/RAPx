@@ -1,150 +1,18 @@
 use super::bug_records::*;
 use crate::{
-    analysis::{core::alias_analysis::default::types::*, core::ownedheap_analysis::OHAResultMap},
+    analysis::{
+        core::alias_analysis::default::{assign::*, block::*, types::*, value::*},
+        core::ownedheap_analysis::OHAResultMap,
+    },
     def_id::*,
 };
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_middle::mir::{
-    BasicBlock, Body, Const, Operand, Place, Rvalue, StatementKind, Terminator, TerminatorKind,
-    UnwindAction,
+    BasicBlock, Body, Const, Operand, Rvalue, StatementKind, TerminatorKind, UnwindAction,
 };
 use rustc_middle::ty::{self, TyCtxt, TypingEnv};
-use rustc_span::{def_id::DefId, Span};
-use std::{cell::RefCell, cmp::min, vec::Vec};
-
-#[derive(PartialEq, Debug, Copy, Clone)]
-pub enum AssignType {
-    Copy,
-    Move,
-    InitBox,
-    Variant,
-}
-
-//self-defined assignments structure.
-#[derive(Debug, Clone)]
-pub struct Assignment<'tcx> {
-    pub lv: Place<'tcx>,
-    pub rv: Place<'tcx>,
-    pub atype: AssignType,
-    pub span: Span,
-}
-
-impl<'tcx> Assignment<'tcx> {
-    pub fn new(
-        lv: Place<'tcx>,
-        rv: Place<'tcx>,
-        atype: AssignType,
-        span: Span,
-    ) -> Assignment<'tcx> {
-        Assignment {
-            lv,
-            rv,
-            atype,
-            span,
-        }
-    }
-}
-
-/*
- * Self-defined basicblock structure;
- * Used both for the original CFG and after SCC.
- */
-
-#[derive(Debug, Clone)]
-pub struct BlockNode<'tcx> {
-    pub index: usize,
-    pub is_cleanup: bool,
-    pub next: FxHashSet<usize>,
-    pub assignments: Vec<Assignment<'tcx>>,
-    pub calls: Vec<Terminator<'tcx>>,
-    pub drops: Vec<Terminator<'tcx>>,
-    //store the index of the basic blocks as a SCC node.
-    pub scc_sub_blocks: Vec<usize>,
-    //store const values defined in this block, i.e., which id has what value;
-    pub const_value: Vec<(usize, usize)>,
-    //store switch stmts in current block for the path filtering in path-sensitive analysis.
-    pub switch_stmts: Vec<Terminator<'tcx>>,
-    pub modified_value: FxHashSet<usize>,
-    // (SwitchInt target, enum index) -> outside nodes.
-    pub scc_outer: SccOuter,
-}
-
-pub type SccOuter = RefCell<Option<FxHashMap<(usize, usize), Vec<usize>>>>;
-
-impl<'tcx> BlockNode<'tcx> {
-    pub fn new(index: usize, is_cleanup: bool) -> BlockNode<'tcx> {
-        BlockNode {
-            index,
-            is_cleanup,
-            next: FxHashSet::<usize>::default(),
-            assignments: Vec::<Assignment<'tcx>>::new(),
-            calls: Vec::<Terminator<'tcx>>::new(),
-            drops: Vec::<Terminator<'tcx>>::new(),
-            scc_sub_blocks: Vec::<usize>::new(),
-            const_value: Vec::<(usize, usize)>::new(),
-            switch_stmts: Vec::<Terminator<'tcx>>::new(),
-            modified_value: FxHashSet::<usize>::default(),
-            scc_outer: RefCell::new(None),
-        }
-    }
-
-    pub fn add_next(&mut self, index: usize) {
-        self.next.insert(index);
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ValueNode {
-    pub index: usize, // node index
-    pub local: usize, // location?
-    pub need_drop: bool,
-    pub may_drop: bool,
-    pub kind: TyKind,
-    pub father: usize,
-    pub field_id: usize, // the field id of its father node.
-    pub birth: isize,
-    pub fields: FxHashMap<usize, usize>,
-}
-
-impl ValueNode {
-    pub fn new(index: usize, local: usize, need_drop: bool, may_drop: bool) -> Self {
-        ValueNode {
-            index,
-            local,
-            need_drop,
-            father: local,
-            field_id: usize::MAX,
-            birth: 0,
-            may_drop,
-            kind: TyKind::Adt,
-            fields: FxHashMap::default(),
-        }
-    }
-
-    pub fn dead(&mut self) {
-        self.birth = -1;
-    }
-
-    pub fn is_alive(&self) -> bool {
-        self.birth > -1
-    }
-
-    pub fn is_tuple(&self) -> bool {
-        self.kind == TyKind::Tuple
-    }
-
-    pub fn is_ptr(&self) -> bool {
-        self.kind == TyKind::RawPtr || self.kind == TyKind::Ref
-    }
-
-    pub fn is_ref(&self) -> bool {
-        self.kind == TyKind::Ref
-    }
-
-    pub fn is_corner_case(&self) -> bool {
-        self.kind == TyKind::CornerCase
-    }
-}
+use rustc_span::{Span, def_id::DefId};
+use std::{cmp::min, vec::Vec};
 
 pub struct SafeDropGraph<'tcx> {
     pub def_id: DefId,
@@ -166,7 +34,8 @@ pub struct SafeDropGraph<'tcx> {
     // a threhold to avoid path explosion.
     pub visit_times: usize,
     pub alias_set: Vec<usize>,
-    pub dead_record: Vec<bool>,
+    // Whether a value is dropped; which block it is dropped at, and via which local;
+    pub drop_record: Vec<(bool, usize, usize)>,
     // analysis of heap item
     pub adt_owner: OHAResultMap,
     pub child_scc: FxHashMap<
@@ -193,7 +62,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
         let arg_size = body.arg_count;
         let mut values = Vec::<ValueNode>::new();
         let mut alias = Vec::<usize>::new();
-        let mut dead = Vec::<bool>::new();
+        let mut drop_record = Vec::<(bool, usize, usize)>::new();
         let ty_env = TypingEnv::post_analysis(tcx, def_id);
         for (local, local_decl) in locals.iter_enumerated() {
             let need_drop = local_decl.ty.needs_drop(tcx, ty_env); // the type is drop
@@ -206,7 +75,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
             );
             node.kind = kind(local_decl.ty);
             alias.push(alias.len());
-            dead.push(false);
+            drop_record.push((false, usize::MAX, usize::MAX));
             values.push(node);
         }
 
@@ -292,7 +161,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
                                 lvl0.field_id = 0;
                                 values[lv_local].fields.insert(0, lvl0.index);
                                 alias.push(alias.len());
-                                dead.push(false);
+                                drop_record.push((false, usize::MAX, usize::MAX));
                                 values.push(lvl0);
                             }
                             match x {
@@ -473,6 +342,9 @@ impl<'tcx> SafeDropGraph<'tcx> {
             blocks.push(cur_bb);
         }
 
+        rap_debug!("Values: {:?}", values);
+        rap_debug!("Alias: {:?}", alias);
+
         SafeDropGraph {
             def_id,
             tcx,
@@ -486,7 +358,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
             bug_records: BugRecords::new(),
             visit_times: 0,
             alias_set: alias,
-            dead_record: dead,
+            drop_record,
             adt_owner,
             child_scc: FxHashMap::default(),
             disc_map,

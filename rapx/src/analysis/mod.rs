@@ -5,7 +5,7 @@ pub mod safedrop;
 pub mod scan;
 pub mod senryx;
 pub mod test;
-pub mod unsafety_isolation;
+pub mod upg;
 pub mod utils;
 
 /// This is a general trait designed for all program analysis features.

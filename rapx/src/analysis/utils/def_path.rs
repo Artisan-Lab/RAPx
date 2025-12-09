@@ -1,10 +1,10 @@
-use rustc_hir::def::{DefKind, Res};
-use rustc_hir::def_id::{CrateNum, DefId, LocalDefId, LOCAL_CRATE};
 use rustc_hir::HirId;
 use rustc_hir::PrimTy;
+use rustc_hir::def::{DefKind, Res};
+use rustc_hir::def_id::{CrateNum, DefId, LOCAL_CRATE, LocalDefId};
 use rustc_hir::{ImplItemId, ItemKind, Mutability, Node, OwnerId, TraitItemId};
-use rustc_middle::ty::fast_reject::SimplifiedType;
 use rustc_middle::ty::TyCtxt;
+use rustc_middle::ty::fast_reject::SimplifiedType;
 use rustc_middle::ty::{FloatTy, IntTy, UintTy};
 use rustc_span::symbol::{Ident, Symbol};
 
@@ -54,7 +54,9 @@ pub fn def_path_def_ids(tcx: &TyCtxt<'_>, path: &[&str]) -> impl Iterator<Item =
 pub fn def_path_res(tcx: &TyCtxt<'_>, path: &[&str]) -> Vec<Res> {
     let (base, path) = match path {
         [primitive] => {
-            return vec![PrimTy::from_name(Symbol::intern(primitive)).map_or(Res::Err, Res::PrimTy)];
+            return vec![
+                PrimTy::from_name(Symbol::intern(primitive)).map_or(Res::Err, Res::PrimTy),
+            ];
         }
         [base, path @ ..] => (base, path),
         _ => return Vec::new(),

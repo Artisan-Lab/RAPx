@@ -1,14 +1,14 @@
 use crate::{
     analysis::{
-        core::{
-            alias_analysis::{default::AliasAnalyzer, AAResultMapWrapper, AliasAnalysis},
-            dataflow::{default::DataFlowAnalyzer, Arg2RetMapWrapper, DataFlowAnalysis},
-            ownedheap_analysis::{
-                default::OwnedHeapAnalyzer, OHAResultMapWrapper, OwnedHeapAnalysis,
-            },
-            range_analysis::{default::RangeAnalyzer, PathConstraintMapWrapper, RangeAnalysis},
-        },
         Analysis,
+        core::{
+            alias_analysis::{AAResultMapWrapper, AliasAnalysis, default::AliasAnalyzer},
+            dataflow::{Arg2RetMapWrapper, DataFlowAnalysis, default::DataFlowAnalyzer},
+            ownedheap_analysis::{
+                OHAResultMapWrapper, OwnedHeapAnalysis, default::OwnedHeapAnalyzer,
+            },
+            range_analysis::{PathConstraintMapWrapper, RangeAnalysis, default::RangeAnalyzer},
+        },
     },
     rap_info,
 };

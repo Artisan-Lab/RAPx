@@ -1,13 +1,13 @@
+use super::Config;
 use super::graph::ApiDependencyGraph;
 use super::graph::{DepEdge, DepNode};
 use super::is_def_id_public;
-use super::Config;
 use crate::analysis::core::api_dependency::mono;
 use crate::{rap_debug, rap_trace};
 use rustc_hir::{
+    BodyId, BodyOwnerKind, FnDecl,
     def_id::{DefId, LocalDefId},
     intravisit::{FnKind, Visitor},
-    BodyId, BodyOwnerKind, FnDecl,
 };
 use rustc_middle::ty::{self, FnSig, ParamEnv, Ty, TyCtxt, TyKind};
 use rustc_span::Span;

@@ -469,7 +469,9 @@ impl<'tcx> DominatedGraph<'tcx> {
                 // TODO: maybe unsafe here for setting ty as None!
                 _ => {
                     rap_warn!("ty {:?}, field: {:?}", cur_node.ty.unwrap(), field);
-                    rap_warn!("set field type as None! --- src: Dominated Graph / find_var_id_with_fields_seq");
+                    rap_warn!(
+                        "set field type as None! --- src: Dominated Graph / find_var_id_with_fields_seq"
+                    );
                     cur = self.get_field_node_id(cur, field, None);
                 }
             }

@@ -71,26 +71,3 @@ impl<'tcx> SafeDropGraph<'tcx> {
         return true;
     }
 }
-
-//these adt structs use the Rc-kind drop instruction, which we do not focus on.
-pub fn is_corner_adt(str: String) -> bool {
-    if let Some(_) = str.find("cell::RefMut") {
-        return true;
-    }
-    if let Some(_) = str.find("cell::Ref") {
-        return true;
-    }
-    if let Some(_) = str.find("rc::Rc") {
-        return true;
-    }
-    if let Some(_) = str.find("arc::Arc") {
-        return true;
-    }
-    if let Some(_) = str.find("rc::Weak") {
-        return true;
-    }
-    if let Some(_) = str.find("sync::Weak") {
-        return true;
-    }
-    return false;
-}

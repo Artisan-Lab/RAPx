@@ -24,7 +24,7 @@ use rustc_index::IndexVec;
 use rustc_middle::mir::visit::{PlaceContext, Visitor};
 use rustc_middle::{
     mir::*,
-    ty::{self, print, ScalarInt, TyCtxt},
+    ty::{self, ScalarInt, TyCtxt, print},
 };
 use rustc_span::source_map::Spanned;
 use rustc_span::sym::var;
@@ -261,7 +261,7 @@ where
 
         for (&_key_place, place_set) in places_map {
             for &place in place_set {
-                let found = self.vars.iter().find(|(&p, _)| *p == place);
+                let found = self.vars.iter().find(|&(&p, _)| *p == place);
 
                 if let Some((&found_place, var_node)) = found {
                     final_vars.insert(found_place, var_node.clone());
@@ -486,12 +486,11 @@ where
 
             // }
 
-            // 找出所有符合条件的项
             let matches: Vec<(_, _)> = self
                 .defmap
                 .iter()
-                .filter(|(&p, _)| p.local == v.local && p.projection.is_empty())
-                .map(|(&p, &def_op)| (p, def_op))
+                .filter(|(p, _)| p.local == v.local && p.projection.is_empty())
+                .map(|(p, def_op)| (*p, *def_op))
                 .collect();
 
             for (base_place, def_op) in matches {
@@ -509,7 +508,6 @@ where
                 self.defmap.insert(v, self.oprs.len() - 1);
             }
 
-            // 一轮处理完成后跳出循环
         }
 
         node_ref
@@ -540,8 +538,8 @@ where
             let matches: Vec<(_, _)> = self
                 .defmap
                 .iter()
-                .filter(|(&p, _)| p.local == v.local && p.projection.is_empty())
-                .map(|(&p, &def_op)| (p, def_op))
+                .filter(|(p, _)| p.local == v.local && p.projection.is_empty())
+                .map(|(p, &def_op)| (*p, def_op))
                 .collect();
 
             for (base_place, def_op) in matches {
@@ -565,11 +563,10 @@ where
     pub fn postprocess_defmap(&mut self) {
         for place in self.vars.keys() {
             if !place.projection.is_empty() {
-                // 在 defmap 中查找同 local 且 projection 为空的 place
                 if let Some((&base_place, &base_value)) = self
                     .defmap
                     .iter()
-                    .find(|(&p, _)| p.local == place.local && p.projection.is_empty())
+                    .find(|(p, _)| p.local == place.local && p.projection.is_empty())
                 {
                     // 将当前 place 插入 defmap
                     self.defmap.insert(place, base_value);
@@ -1980,7 +1977,9 @@ where
                 // This case is unlikely for functions that return a value, as `_0`
                 // should have been created during the initial graph build.
                 // We add a trace message for robustness.
-                rap_trace!("Warning: RETURN_PLACE (_0) not found in self.vars. Cannot assign merged return range.");
+                rap_trace!(
+                    "Warning: RETURN_PLACE (_0) not found in self.vars. Cannot assign merged return range."
+                );
             }
         }
     }
@@ -2111,267 +2110,7 @@ where
             stack.push(place);
         }
     }
-    // pub fn get_symbolicexpression(&self, place: &'tcx Place<'tcx>) -> Option<SymbolicExpr<'tcx>> {
-    //     let mut memo: HashMap<&'tcx Place<'tcx>, Option<SymbolicExpr<'tcx>>> = HashMap::new();
-    //     let mut in_progress: HashSet<&'tcx Place<'tcx>> = HashSet::new();
 
-    //     self.get_symbolic_expression_recursive(place, &mut memo, &mut in_progress)
-    // }
-
-    // fn get_symbolic_expression_recursive(
-    //     &self,
-    //     place: &'tcx Place<'tcx>,
-    //     memo: &mut HashMap<&'tcx Place<'tcx>, Option<SymbolicExpr<'tcx>>>,
-    //     in_progress: &mut HashSet<&'tcx Place<'tcx>>,
-    // ) -> Option<SymbolicExpr<'tcx>> {
-    //     if memo.contains_key(place) {
-    //         return memo.get(place).cloned().unwrap();
-    //     }
-
-    //     if !in_progress.insert(place) {
-    //         rap_trace!("Cyclic dependency detected for place: {:?}", place);
-    //         let expr = Some(SymbolicExpr::Unknown(UnknownReason::CyclicDependency));
-    //         memo.insert(place, expr.clone());
-    //         return expr;
-    //     }
-
-    //     let result = if place.projection.is_empty() {
-    //         if let Some(&op_idx) = self.defmap.get(place) {
-    //             let op_kind = &self.oprs[op_idx];
-    //             self.op_kind_to_symbolic_expr(op_kind, memo, in_progress)
-    //         } else if place.local.as_usize() > 0 {
-    //             rap_trace!(
-    //                 "Place {:?} not found in defmap, assuming it's an argument.",
-    //                 place
-    //             );
-    //             Some(SymbolicExpr::Argument(*place))
-    //         } else {
-    //             let op_idx = self.defmap.get(place);
-    //             let op_kind = &self.oprs[*op_idx.unwrap()];
-
-    //             rap_trace!("Local {:?} not defined by an operation and not considered an argument. Returning Unknown.", place);
-    //             Some(SymbolicExpr::Unknown(UnknownReason::CyclicDependency))
-    //         }
-    //     } else {
-    //         let mut current_expr =
-    //             match self.get_symbolic_expression_recursive(place, memo, in_progress) {
-    //                 Some(e) => e,
-    //                 None => {
-    //                     in_progress.remove(place);
-    //                     memo.insert(place, None);
-    //                     return None;
-    //                 }
-    //             };
-
-    //         for proj_elem in place.projection.iter() {
-    //             match proj_elem {
-    //                 PlaceElem::Deref => {
-    //                     // 解引用操作：`*expr`
-    //                     current_expr = SymbolicExpr::Deref(Box::new(current_expr));
-    //                 }
-    //                 PlaceElem::Field(field_idx, _ty) => {
-    //                     rap_trace!("Unsupported PlaceElem::Field {:?} at {:?}. Returning Unknown for SymbolicExpr.", field_idx, place);
-    //                     in_progress.remove(place);
-    //                     memo.insert(
-    //                         place,
-    //                         Some(SymbolicExpr::Unknown(UnknownReason::CyclicDependency)),
-    //                     );
-    //                     return Some(SymbolicExpr::Unknown(UnknownReason::CyclicDependency));
-    //                 }
-    //                 PlaceElem::Index(index_place) => {
-    //                     // let index_expr = match self.get_symbolic_expression_recursive(index_place, memo, in_progress) {
-    //                     //     Some(e) => e,
-    //                     //     None => {
-    //                     //         rap_trace!("Could not resolve index place {:?} for projected place {:?}. Returning Unknown.", index_place, place);
-    //                     //         in_progress.remove(place);
-    //                     //         memo.insert(place, Some(SymbolicExpr::Unknown(UnknownReason::CyclicDependency)));
-    //                     //         return Some(SymbolicExpr::Unknown(UnknownReason::CyclicDependency));
-    //                     //     }
-    //                     // };
-    //                     // current_expr = SymbolicExpr::Index {
-    //                     //     base: Box::new(current_expr),
-    //                     //     index: Box::new(index_expr),
-    //                     // };
-    //                     return Some(SymbolicExpr::Unknown(UnknownReason::Unsupported));
-    //                 }
-    //                 PlaceElem::ConstantIndex {
-    //                     offset,
-    //                     min_length,
-    //                     from_end,
-    //                 } => {
-    //                     rap_trace!("Unsupported PlaceElem::ConstantIndex at {:?}. Requires TyCtxt to create Const<'tcx>. Returning Unknown.", place);
-    //                     in_progress.remove(place);
-    //                     memo.insert(
-    //                         place,
-    //                         Some(SymbolicExpr::Unknown(UnknownReason::CyclicDependency)),
-    //                     );
-    //                     return Some(SymbolicExpr::Unknown(UnknownReason::CyclicDependency));
-    //                 }
-
-    //                 _ => {
-    //                     rap_trace!("Unsupported PlaceElem kind at {:?}. Cannot convert to SymbolicExpr. Returning Unknown.", place);
-    //                     in_progress.remove(place);
-    //                     memo.insert(
-    //                         place,
-    //                         Some(SymbolicExpr::Unknown(UnknownReason::CyclicDependency)),
-    //                     );
-    //                     return Some(SymbolicExpr::Unknown(UnknownReason::CyclicDependency));
-    //                 }
-    //             }
-    //         }
-    //         Some(current_expr)
-    //     };
-
-    //     in_progress.remove(place);
-    //     memo.insert(place, result.clone());
-    //     result
-    // }
-
-    // fn op_kind_to_symbolic_expr(
-    //     &self,
-    //     op_kind: &BasicOpKind<'tcx, T>,
-    //     memo: &mut HashMap<&'tcx Place<'tcx>, Option<SymbolicExpr<'tcx>>>,
-    //     in_progress: &mut HashSet<&'tcx Place<'tcx>>,
-    // ) -> Option<SymbolicExpr<'tcx>> {
-    //     match op_kind {
-    //         BasicOpKind::Binary(bop) => {
-    //             let (original_op1, original_op2) = {
-    //                 if let StatementKind::Assign(box (
-    //                     _lhs,
-    //                     Rvalue::BinaryOp(_op, box (op1_mir, op2_mir)),
-    //                 )) = &bop.inst.kind
-    //                 {
-    //                     (op1_mir, op2_mir)
-    //                 } else {
-    //                     // This case should ideally not happen if BasicOpKind::Binary is correctly formed from MIR.
-    //                     rap_trace!("Error: BinaryOp's instruction {:?} is not a BinaryOp statement. Returning Unknown.", bop.inst);
-    //                     return Some(SymbolicExpr::Unknown(UnknownReason::CannotParse));
-    //                 }
-    //             };
-
-    //             let left_expr = if let Some(src_place) = bop.source1 {
-    //                 self.get_symbolic_expression_recursive(src_place, memo, in_progress)?
-    //             } else if let Operand::Constant(c) = original_op1 {
-    //                 SymbolicExpr::Constant(c.const_)
-    //             } else {
-    //                 rap_trace!("Error: BinaryOp source1 is None, but original op1 is not a constant for inst {:?}. Returning Unknown.", bop.inst);
-    //                 return Some(SymbolicExpr::Unknown(UnknownReason::CannotParse));
-    //             };
-
-    //             let right_expr = if let Some(src_place) = bop.source2 {
-    //                 self.get_symbolic_expression_recursive(src_place, memo, in_progress)?
-    //             } else if let Operand::Constant(c) = original_op2 {
-    //                 SymbolicExpr::Constant(c.const_)
-    //             } else {
-    //                 rap_trace!("Error: BinaryOp source2 is None, but original op2 is not a constant for inst {:?}. Returning Unknown.", bop.inst);
-    //                 return Some(SymbolicExpr::Unknown(UnknownReason::CannotParse));
-    //             };
-
-    //             Some(SymbolicExpr::BinaryOp {
-    //                 op: bop.op,
-    //                 left: Box::new(left_expr),
-    //                 right: Box::new(right_expr),
-    //             })
-    //         }
-    //         BasicOpKind::Unary(uop) => {
-    //             let original_operand_mir = {
-    //                 if let StatementKind::Assign(box (_lhs, Rvalue::UnaryOp(_op, operand_mir))) =
-    //                     &uop.inst.kind
-    //                 {
-    //                     operand_mir
-    //                 } else {
-    //                     rap_trace!("Error: UnaryOp's instruction {:?} is not a UnaryOp statement. Returning Unknown.", uop.inst);
-    //                     return Some(SymbolicExpr::Unknown(UnknownReason::CannotParse));
-    //                 }
-    //             };
-
-    //             let operand_expr = if let Operand::Constant(c) = original_operand_mir {
-    //                 SymbolicExpr::Constant(c.const_)
-    //             } else if let Operand::Copy(place) | Operand::Move(place) = original_operand_mir {
-    //                 self.get_symbolic_expression_recursive(place, memo, in_progress)?
-    //             } else {
-    //                 rap_trace!("Error: UnaryOp's operand is neither Place nor Constant for inst {:?}. Returning Unknown.", uop.inst);
-    //                 return Some(SymbolicExpr::Unknown(UnknownReason::CannotParse));
-    //             };
-
-    //             Some(SymbolicExpr::UnaryOp {
-    //                 op: uop.op,
-    //                 operand: Box::new(operand_expr),
-    //             })
-    //         }
-    //         BasicOpKind::Use(use_op) => {
-    //             if let Some(c) = use_op.const_value {
-    //                 Some(SymbolicExpr::Constant(c))
-    //             } else if let Some(source_place) = use_op.source {
-    //                 self.get_symbolic_expression_recursive(source_place, memo, in_progress)
-    //             } else {
-    //                 rap_trace!("Error: UseOp has neither source nor const_value for inst {:?}. Returning Unknown.", use_op.inst);
-    //                 Some(SymbolicExpr::Unknown(UnknownReason::CannotParse))
-    //             }
-    //         }
-    //         BasicOpKind::Phi(phi_op) => {
-    //             let mut operands_exprs = Vec::new();
-    //             for &source_place in phi_op.get_sources() {
-    //                 // Note: If a source is itself part of a cycle, this recursive call
-    //                 // will correctly return Unknown(CyclicDependency), which then
-    //                 // is propagated up as part of the Phi's sources.
-    //                 if let Some(expr) =
-    //                     self.get_symbolic_expression_recursive(source_place, memo, in_progress)
-    //                 {
-    //                     operands_exprs.push(expr);
-    //                 } else {
-    //                     // If any source cannot be resolved (e.g., due to an unhandled MIR construct),
-    //                     // the entire Phi node becomes unresolvable.
-    //                     rap_trace!("Warning: One source of Phi {:?} cannot be resolved to a symbolic expression. Returning Unknown for the Phi.", phi_op.sink);
-    //                     return Some(SymbolicExpr::Unknown(UnknownReason::CannotParse));
-    //                 }
-    //             }
-    //             Some(SymbolicExpr::Ssa(operands_exprs))
-    //         }
-    //         BasicOpKind::Essa(essa_op) => {
-    //             let operand_expr = self.get_symbolic_expression_recursive(
-    //                 essa_op.get_source(),
-    //                 memo,
-    //                 in_progress,
-    //             )?;
-
-    //             // Now, extract constraint_operand and bin_op from EssaOp's IntervalType
-    //             // This is the tricky part because EssaOp might use SymbInterval for constraints.
-    //             let (constraint_op_operand, bin_op) = match essa_op.get_intersect() {
-    //                 super::domain::IntervalType::Symb(symb_interval) => {
-    //                     // If it's a SymbInterval, it contains the Place and the BinOp
-    //                     (
-    //                         VarorConst::Place(*symb_interval.get_bound()),
-    //                         symb_interval.get_operation(),
-    //                     )
-    //                 }
-    //                 super::domain::IntervalType::Basic(basic_interval) => {
-    //                     if let Some(vbm) = self.values_branchmap.get(essa_op.get_source()) {
-    //                         rap_trace!("Warning: EssaOp with BasicInterval constraint. Cannot directly reconstruct original BinOp and constraint_operand from EssaOp's internal state. Returning Unknown for constraint part.",);
-    //                         // Fallback if we cannot precisely reconstruct
-    //                         return Some(SymbolicExpr::Unknown(UnknownReason::CannotParse));
-    //                     } else {
-    //                         rap_trace!("Warning: EssaOp with BasicInterval constraint, but source not found in values_branchmap. Returning Unknown for constraint part.",);
-    //                         return Some(SymbolicExpr::Unknown(UnknownReason::CannotParse));
-    //                     }
-    //                 }
-    //             };
-
-    //             Some(SymbolicExpr::Essa {
-    //                 operand: Box::new(operand_expr),
-    //                 constraint_operand: constraint_op_operand,
-    //                 bin_op: bin_op,
-    //             })
-    //         }
-    //         BasicOpKind::ControlDep(_) => {
-    //             rap_trace!("Encountered unexpected ControlDep operation defining a place. Returning Unknown.");
-    //             Some(SymbolicExpr::Unknown(UnknownReason::CannotParse))
-    //         }
-    //         BasicOpKind::Call(call_op) => todo!(),
-    //         BasicOpKind::Ref(ref_op) => todo!(),
-    //         BasicOpKind::Aggregate(aggregate_op) => todo!(),
-    //     }
-    // }
     pub fn start_analyze_path_constraints(
         &mut self,
         body: &'tcx Body<'tcx>,
@@ -2443,8 +2182,8 @@ where
 
         all_path_results
     }
-}
 
+}
 #[derive(Debug)]
 pub struct Nuutila<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub variables: &'tcx VarNodes<'tcx, T>,

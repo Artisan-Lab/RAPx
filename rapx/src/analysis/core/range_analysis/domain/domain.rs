@@ -510,6 +510,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> fmt::Display for BasicO
             BasicOpKind::Call(op) => write!(f, "CallOp: intersect {} sink:{:?} args:{:?} inst:{:?}", op.intersect, op.sink, op.args, op.inst),
             BasicOpKind::Ref(op) => write!(f, "RefOp: intersect {} sink:{:?} source:{:?} inst:{:?} borrowkind:{:?}", op.intersect, op.sink, op.source, op.inst, op.borrowkind),
             BasicOpKind::Aggregate(op) => write!(f, "AggregateOp: intersect {} sink:{:?} operands:{:?} inst:{:?}", op.intersect, op.sink, op.operands, op.inst),
+
         }
     }
 }
@@ -811,13 +812,13 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> CallOp<'tcx, T> {
                                     let arg_range = caller_arg_node.get_range().clone();
                                     callee_arg_node.set_range(arg_range);
                                     rap_debug!(
-                                                    "Passing argument from {:?} to callee {:?} : {:?} {:?} -> {:?}",
-                                                    caller_arg_place,
-                                                    self.def_id,
-                                                    callee_arg_node.get_value(),
-                                                    caller_arg_node.get_range(),
-                                                    callee_arg_node.get_range()
-                                                );
+                                        "Passing argument from {:?} to callee {:?} : {:?} {:?} -> {:?}",
+                                        caller_arg_place,
+                                        self.def_id,
+                                        callee_arg_node.get_value(),
+                                        caller_arg_node.get_range(),
+                                        callee_arg_node.get_range()
+                                    );
                                 }
                             }
                         }
@@ -843,13 +844,13 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> CallOp<'tcx, T> {
                                     );
                                     callee_arg_node.set_range(arg_range.clone());
                                     rap_debug!(
-                                                    "Passing argument from {:?} to callee {:?} : {:?} {:?} -> {:?}",
-                                                    const_value,
-                                                    self.def_id,
-                                                    callee_arg_node.get_value(),
-                                                    arg_range,
-                                                    callee_arg_node.get_range()
-                                                );
+                                        "Passing argument from {:?} to callee {:?} : {:?} {:?} -> {:?}",
+                                        const_value,
+                                        self.def_id,
+                                        callee_arg_node.get_value(),
+                                        arg_range,
+                                        callee_arg_node.get_range()
+                                    );
                                 }
                             }
                             // Find the corresponding Place and VarNode in the callee.

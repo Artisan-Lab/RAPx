@@ -8,8 +8,9 @@ use std::{collections::HashMap, hash::Hash};
 
 use super::visitor::CallGraphVisitor;
 use crate::{
+    Analysis,
     analysis::core::callgraph::{CallGraph, CallGraphAnalysis},
-    rap_debug, rap_info, Analysis,
+    rap_debug, rap_info,
 };
 
 pub struct CallGraphAnalyzer<'tcx> {
@@ -23,8 +24,7 @@ impl<'tcx> Analysis for CallGraphAnalyzer<'tcx> {
     }
 
     fn run(&mut self) {
-        let mut analysis = CallGraphAnalyzer::new(self.tcx);
-        analysis.start();
+        self.start();
     }
 
     fn reset(&mut self) {
@@ -134,8 +134,8 @@ impl Node {
 
 pub struct CallGraphInfo<'tcx> {
     pub functions: HashMap<usize, Node>, // id -> node
-    pub fn_calls: HashMap<usize, Vec<(usize, &'tcx mir::Terminator<'tcx>)>>, // caller_id -> Vec<(callee_id, terminator)>
-    pub node_registry: HashMap<String, usize>,                               // path -> id
+    pub fn_calls: HashMap<usize, Vec<(usize, Option<&'tcx mir::Terminator<'tcx>>)>>, // caller_id -> Vec<(callee_id, terminator)>
+    pub node_registry: HashMap<String, usize>,                                       // path -> id
 }
 
 impl<'tcx> CallGraphInfo<'tcx> {
@@ -167,12 +167,16 @@ impl<'tcx> CallGraphInfo<'tcx> {
         }
     }
 
-    pub fn add_node(&mut self, def_id: DefId, def_path: &String) {
-        if self.node_registry.get(def_path).is_none() {
-            let id = self.node_registry.len();
+    /// Add a node and return its id. If node already exists, only return its id.
+    pub fn add_node(&mut self, def_id: DefId, def_path: &String) -> usize {
+        if let Some(old_id) = self.node_registry.get(def_path) {
+            *old_id
+        } else {
+            let new_id = self.node_registry.len();
             let node = Node::new(def_id, def_path);
-            self.node_registry.insert(def_path.clone(), id);
-            self.functions.insert(id, node);
+            self.node_registry.insert(def_path.clone(), new_id);
+            self.functions.insert(new_id, node);
+            new_id
         }
     }
 
@@ -180,7 +184,7 @@ impl<'tcx> CallGraphInfo<'tcx> {
         &mut self,
         caller_id: usize,
         callee_id: usize,
-        terminator_stmt: &'tcx mir::Terminator<'tcx>,
+        terminator_stmt: Option<&'tcx mir::Terminator<'tcx>>,
     ) {
         let entry = self.fn_calls.entry(caller_id).or_insert_with(Vec::new);
         entry.push((callee_id, terminator_stmt));
@@ -189,8 +193,10 @@ impl<'tcx> CallGraphInfo<'tcx> {
     pub fn get_node_by_path(&self, def_path: &String) -> Option<usize> {
         self.node_registry.get(def_path).copied()
     }
-    pub fn get_callers_map(&self) -> HashMap<usize, Vec<(usize, &'tcx mir::Terminator<'tcx>)>> {
-        let mut callers_map: HashMap<usize, Vec<(usize, &'tcx mir::Terminator<'tcx>)>> =
+    pub fn get_callers_map(
+        &self,
+    ) -> HashMap<usize, Vec<(usize, Option<&'tcx mir::Terminator<'tcx>>)>> {
+        let mut callers_map: HashMap<usize, Vec<(usize, Option<&'tcx mir::Terminator<'tcx>>)>> =
             HashMap::new();
 
         for (&caller_id, calls_vec) in &self.fn_calls {
@@ -208,18 +214,28 @@ impl<'tcx> CallGraphInfo<'tcx> {
         rap_info!("CallGraph Analysis:");
         for (caller_id, callees) in &self.fn_calls {
             if let Some(caller_node) = self.functions.get(caller_id) {
-                for (callee_id, terminator_stmt) in callees {
+                for (callee_id, terminator) in callees {
                     if let Some(callee_node) = self.functions.get(callee_id) {
                         let caller_def_path = caller_node.get_def_path();
                         let callee_def_path = callee_node.get_def_path();
-                        rap_info!(
-                            "{}:{} -> {}:{} @ {:?}",
-                            caller_id,
-                            caller_def_path,
-                            *callee_id,
-                            callee_def_path,
-                            terminator_stmt.kind
-                        );
+                        if let Some(terminator_stmt) = terminator {
+                            rap_info!(
+                                "{}:{} -> {}:{} @ {:?}",
+                                caller_id,
+                                caller_def_path,
+                                *callee_id,
+                                callee_def_path,
+                                terminator_stmt.kind
+                            );
+                        } else {
+                            rap_info!(
+                                " (Virtual) {}:{} -> {}:{}",
+                                caller_id,
+                                caller_def_path,
+                                *callee_id,
+                                callee_def_path,
+                            );
+                        }
                     }
                 }
             }

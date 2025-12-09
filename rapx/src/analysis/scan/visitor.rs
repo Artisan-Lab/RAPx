@@ -1,9 +1,9 @@
 use super::statistic::Statistics;
 use crate::{rap_debug, rap_info, rap_trace};
 use rustc_hir::{
-    def_id::{DefId, LocalDefId},
-    intravisit::{walk_block, walk_fn, FnKind, Visitor},
     BodyId, BodyOwnerKind, FnDecl,
+    def_id::{DefId, LocalDefId},
+    intravisit::{FnKind, Visitor, walk_block, walk_fn},
 };
 use rustc_middle::{
     hir::nested_filter,

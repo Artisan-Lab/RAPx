@@ -17,7 +17,7 @@ use rustc_span::Span;
 static DEFPATHS: OnceCell<DefPaths> = OnceCell::new();
 
 use super::super::super::LEVEL;
-use rustc_hir::{intravisit, Expr, ExprKind};
+use rustc_hir::{Expr, ExprKind, intravisit};
 use rustc_middle::ty::TypeckResults;
 
 struct DefPaths {

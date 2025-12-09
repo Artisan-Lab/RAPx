@@ -137,3 +137,9 @@ pub fn skip2() -> &'static [String] {
 pub fn current_exe_path() -> &'static Path {
     &ARGS.current_exe_path
 }
+
+/// NOTE: for simplicify in rapx argument forwarding, only `-timeout=` is correctly handled,
+/// even though both flavors are accepted here.
+pub fn timeout() -> Option<u64> {
+    ARGS.get_arg_flag_value("-timeout")?.parse().ok()
+}

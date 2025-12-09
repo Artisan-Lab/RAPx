@@ -15,7 +15,7 @@ pub fn kind(current_ty: Ty<'_>) -> TyKind {
         ty::RawPtr(..) => TyKind::RawPtr,
         ty::Ref(..) => TyKind::Ref,
         ty::Tuple(..) => TyKind::Tuple,
-        ty::Adt(ref adt, _) => {
+        ty::Adt(adt, _) => {
             let s = format!("{:?}", adt);
             if s.contains("cell::RefMut") || s.contains("cell::Ref") || s.contains("rc::Rc") {
                 TyKind::CornerCase
@@ -30,8 +30,8 @@ pub fn kind(current_ty: Ty<'_>) -> TyKind {
 pub fn is_not_drop<'tcx>(tcx: TyCtxt<'tcx>, current_ty: Ty<'tcx>) -> bool {
     match current_ty.kind() {
         ty::Bool | ty::Char | ty::Int(_) | ty::Uint(_) | ty::Float(_) => true,
-        ty::Array(ref tys, _) => is_not_drop(tcx, *tys),
-        ty::Adt(ref adtdef, substs) => {
+        ty::Array(tys, _) => is_not_drop(tcx, *tys),
+        ty::Adt(adtdef, substs) => {
             for field in adtdef.all_fields() {
                 if !is_not_drop(tcx, field.ty(tcx, substs)) {
                     return false;
