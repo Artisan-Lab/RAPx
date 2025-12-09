@@ -175,7 +175,6 @@ where
         let mut dot = String::new();
         writeln!(&mut dot, "digraph ConstraintGraph {{").unwrap();
 
-        // 布局参数
         writeln!(&mut dot, "    layout=neato;").unwrap();
         writeln!(&mut dot, "    overlap=false;").unwrap();
         writeln!(&mut dot, "    splines=true;").unwrap();
@@ -187,7 +186,7 @@ where
         writeln!(&mut dot, "    node [fontname=\"Fira Code\"];").unwrap();
         writeln!(&mut dot, "\n    // Variable Nodes").unwrap();
         writeln!(&mut dot, "    subgraph cluster_vars {{").unwrap();
-        writeln!(&mut dot, "        rank=same;").unwrap(); // 把变量放在同一层
+        writeln!(&mut dot, "        rank=same;").unwrap();
         for (place, var_node) in &self.vars {
             let place_id = format!("{:?}", place);
             let label = format!("{:?}", place);
@@ -201,7 +200,7 @@ where
 
         writeln!(&mut dot, "\n    // Operation Nodes").unwrap();
         writeln!(&mut dot, "    subgraph cluster_ops {{").unwrap();
-        writeln!(&mut dot, "        rank=same;").unwrap(); // 操作放另一层
+        writeln!(&mut dot, "        rank=same;").unwrap();
         for (op_idx, op) in self.oprs.iter().enumerate() {
             let op_id = format!("op_{}", op_idx);
             let label = match op {
@@ -584,7 +583,7 @@ where
         let node_ref: &mut VarNode<'tcx, T> = self
             .vars
             .entry(v)
-            .and_modify(|old| *old = node.clone())
+            // .and_modify(|old| *old = node.clone())
             .or_insert(node);
         self.usemap.entry(v).or_insert(HashSet::new());
 
