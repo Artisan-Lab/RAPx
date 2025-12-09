@@ -573,6 +573,54 @@ where
 
         node_ref
     }
+    pub fn add_varnode_sym(
+        &mut self,
+        v: &'tcx Place<'tcx>,
+        rvalue: &'tcx Rvalue<'tcx>,
+    ) -> &mut VarNode<'tcx, T> {
+        let local_decls = &self.body.local_decls;
+        let node = VarNode::new_symb(v, SymbExpr::from_rvalue(rvalue));
+        rap_debug!("add_varnode_sym node:{:?}", node);
+        let node_ref: &mut VarNode<'tcx, T> = self
+            .vars
+            .entry(v)
+            .and_modify(|old| *old = node.clone())
+            .or_insert(node);
+        self.usemap.entry(v).or_insert(HashSet::new());
+
+        let ty = local_decls[v.local].ty;
+        let place_ty = v.ty(local_decls, self.tcx);
+
+        if v.projection.is_empty() || self.defmap.contains_key(v) {
+            return node_ref;
+        }
+
+        if !v.projection.is_empty() {
+            let matches: Vec<(_, _)> = self
+                .defmap
+                .iter()
+                .filter(|(&p, _)| p.local == v.local && p.projection.is_empty())
+                .map(|(&p, &def_op)| (p, def_op))
+                .collect();
+
+            for (base_place, def_op) in matches {
+                let mut v_op = self.oprs[def_op].clone();
+                v_op.set_sink(v);
+
+                for source in v_op.get_sources() {
+                    self.usemap
+                        .entry(source)
+                        .or_insert(HashSet::new())
+                        .insert(self.oprs.len());
+                }
+
+                self.oprs.push(v_op);
+                self.defmap.insert(v, self.oprs.len() - 1);
+            }
+        }
+
+        node_ref
+    }
     pub fn postprocess_defmap(&mut self) {
         for place in self.vars.keys() {
             if !place.projection.is_empty() {
@@ -2184,7 +2232,6 @@ where
                                             symb_interval.get_operation().clone(),
                                         ));
                                     }
-                                    IntervalType::SymbolicExpr { expr, cached_range } => {}
                                 }
                             }
                         }
