@@ -53,24 +53,26 @@ fn cargo_check(dir: &Utf8Path) {
 
     rap_trace!("Command is: {:?}.", cmd);
 
-    // Read `-timeout=` or default to 10 minutes.
-    let timeout = Duration::from_secs(args::timeout().unwrap_or(600));
     let mut child = cmd.spawn().expect("Could not run cargo check.");
-    match child
-        .wait_timeout(timeout)
-        .expect("Failed to wait for subprocess.")
-    {
-        Some(status) => {
-            if !status.success() {
-                rap_error_and_exit("Finished with non-zero exit code.");
+    if let Some(timeout) = args::timeout() {
+        match child
+            .wait_timeout(Duration::from_secs(timeout))
+            .expect("Failed to wait for subprocess.")
+        {
+            Some(status) => {
+                if !status.success() {
+                    rap_error_and_exit("Finished with non-zero exit code.");
+                }
             }
-        }
-        None => {
-            child.kill().expect("Failed to kill subprocess.");
-            child.wait().expect("Failed to wait for subprocess.");
-            rap_error_and_exit("Process killed due to timeout.");
-        }
-    };
+            None => {
+                child.kill().expect("Failed to kill subprocess.");
+                child.wait().expect("Failed to wait for subprocess.");
+                rap_error_and_exit("Process killed due to timeout.");
+            }
+        };
+    } else if !child.wait().unwrap().success() {
+        rap_error_and_exit("Finished with non-zero exit code.");
+    }
 }
 
 fn cargo_clean(dir: &Utf8Path, really: bool) {
