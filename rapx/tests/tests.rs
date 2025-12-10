@@ -30,7 +30,7 @@ fn test_dangling_min() {
 fn test_df_min() {
     let output = running_tests_with_arg("uaf/df_min", "-F");
     assert_eq!(
-        output.contains("Double free detected in function main"),
+        output.contains("Double free detected in function \"main\""),
         true
     );
 }
