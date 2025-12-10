@@ -587,11 +587,6 @@ impl<'tcx> Replacer<'tcx> {
                     }
                 }
                 // StatementKind::FakeRead(_, place)
-                StatementKind::Deinit(place) | StatementKind::SetDiscriminant { place, .. } => {
-                    // let place_mut = unsafe { &mut *(place as *const _ as *mut _) };
-
-                    // self.replace_place(place.as_mut());
-                }
                 StatementKind::StorageLive(local) => {
                     // self.rename_local_def(*local);
                 }

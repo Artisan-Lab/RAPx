@@ -75,7 +75,6 @@ impl<'tcx> Display for StatementKind<'tcx> {
             }
             StatementKind::FakeRead(..) => s += "FakeRead",
             StatementKind::SetDiscriminant { .. } => s += "SetDiscriminant",
-            StatementKind::Deinit(..) => s += "Deinit",
             StatementKind::StorageLive(..) => s += "StorageLive",
             StatementKind::StorageDead(..) => s += "StorageDead",
             StatementKind::Retag(..) => s += "Retag",
