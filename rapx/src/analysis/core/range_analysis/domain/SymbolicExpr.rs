@@ -14,6 +14,7 @@ use num_traits::{Bounded, Num, Zero};
 use rustc_ast::token::TokenKind::Plus;
 use rustc_hir::def_id::DefId;
 use rustc_middle::{mir::*, ty::Ty};
+use rustc_public::mir::NullOp;
 use std::ops::{Add, Mul, Sub};
 
 use crate::{
@@ -79,7 +80,7 @@ pub enum SymbolicExpr<'tcx> {
         bin_op: BinOp,
     },
     Discriminant(Box<SymbolicExpr<'tcx>>),
-    NullaryOp(NullOp<'tcx>, Ty<'tcx>),
+    NullaryOp(NullOp, Ty<'tcx>),
     ThreadLocalRef(DefId),
     Unknown(UnknownReason),
 }
