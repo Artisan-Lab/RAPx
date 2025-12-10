@@ -229,8 +229,7 @@ impl Graph {
                     self.add_operand(operand, dst);
                     self.nodes[dst].ops[seq] = NodeOp::UnaryOp;
                 }
-                Rvalue::NullaryOp(_, ty) => {
-                    self.add_const_edge(ty.to_string(), ty.to_string(), dst, EdgeOp::Nop);
+                Rvalue::NullaryOp(_) => {
                     self.nodes[dst].ops[seq] = NodeOp::NullaryOp;
                 }
                 Rvalue::ThreadLocalRef(_) => {
