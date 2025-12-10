@@ -2836,8 +2836,7 @@ impl<'tcx, 'ctx, 'a> IntraFlowAnalysis<'tcx, 'ctx, 'a> {
                 ProjectionElem::ConstantIndex { .. }
                 | ProjectionElem::Subslice { .. }
                 | ProjectionElem::Index(..)
-                | ProjectionElem::OpaqueCast(..)
-                | ProjectionElem::Subtype(..) => {
+                | ProjectionElem::OpaqueCast(..) => {
                     prj.unsupport = true;
                     break;
                 }

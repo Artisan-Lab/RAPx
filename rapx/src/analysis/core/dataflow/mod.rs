@@ -231,7 +231,6 @@ pub enum EdgeOp {
     Index,
     ConstIndex,
     SubSlice,
-    SubType,
 }
 
 #[derive(Clone, Copy, Debug)]

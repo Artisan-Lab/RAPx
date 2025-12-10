@@ -132,9 +132,6 @@ impl Graph {
                 PlaceElem::Subslice { .. } => {
                     graph.add_node_edge(src, dst, EdgeOp::SubSlice);
                 }
-                PlaceElem::Subtype(..) => {
-                    graph.add_node_edge(src, dst, EdgeOp::SubType);
-                }
                 _ => {
                     println!("{:?}", place_elem);
                     todo!()
@@ -618,8 +615,7 @@ impl Graph {
             | EdgeOp::Field(_)
             | EdgeOp::Index
             | EdgeOp::ConstIndex
-            | EdgeOp::SubSlice
-            | EdgeOp::SubType => DFSStatus::Stop,
+            | EdgeOp::SubSlice => DFSStatus::Stop,
         }
     }
 
