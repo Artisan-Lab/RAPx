@@ -154,7 +154,6 @@ impl<'tcx> SymbExpr<'tcx> {
             }
             Rvalue::Ref(..)
             | Rvalue::ThreadLocalRef(..)
-            | Rvalue::Len(..)
             | Rvalue::Aggregate(..)
             | Rvalue::Repeat(..)
             | Rvalue::ShallowInitBox(..)

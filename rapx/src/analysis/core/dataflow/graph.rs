@@ -180,11 +180,6 @@ impl Graph {
                     self.add_node_edge(src, dst, op);
                     self.nodes[dst].ops[seq] = NodeOp::Ref;
                 }
-                Rvalue::Len(place) => {
-                    let src = self.parse_place(place);
-                    self.add_node_edge(src, dst, EdgeOp::Nop);
-                    self.nodes[dst].ops[seq] = NodeOp::Len;
-                }
                 Rvalue::Cast(_cast_kind, operand, _) => {
                     self.add_operand(operand, dst);
                     self.nodes[dst].ops[seq] = NodeOp::Cast;
