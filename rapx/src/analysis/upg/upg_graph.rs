@@ -3,11 +3,8 @@ use std::{
     fmt::{self, Write},
 };
 
-use crate::{
-    analysis::utils::fn_info::*,
-    utils::source::get_adt_name,
-};
-use rustc_hir::{def_id::DefId, Safety};
+use crate::{analysis::utils::fn_info::*, utils::source::get_adt_name};
+use rustc_hir::{Safety, def_id::DefId};
 use rustc_middle::ty::TyCtxt;
 
 use super::upg_unit::UPGUnit;
@@ -16,7 +13,6 @@ use petgraph::{
     dot::{Config, Dot},
     graph::{DiGraph, EdgeReference, NodeIndex},
 };
-
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum UPGNode {
@@ -175,7 +171,6 @@ impl UPGraph {
         dot
     }
 
-
     fn node_to_dot_attr(node: &UPGNode) -> String {
         match node {
             UPGNode::SafeFn(def_id, shape) => {
@@ -226,7 +221,7 @@ impl UPGraph {
 
         let caller_node = graph.add_node(UPGNode::from(upg.caller));
         if !upg.caller_cons.is_empty() {
-            let cons_labels: Vec<String> = upg 
+            let cons_labels: Vec<String> = upg
                 .caller_cons
                 .iter()
                 .map(|con| format!("{:?}", con.def_id))
@@ -237,7 +232,7 @@ impl UPGraph {
         }
 
         if !upg.mut_methods.is_empty() {
-            let mut_method_labels: Vec<String> = upg 
+            let mut_method_labels: Vec<String> = upg
                 .mut_methods
                 .iter()
                 .map(|def_id| format!("{:?}", def_id))

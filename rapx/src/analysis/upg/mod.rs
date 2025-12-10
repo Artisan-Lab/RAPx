@@ -1,12 +1,12 @@
 /*
  * This module generates the unsafety propagation graph for each Rust module in the target crate.
  */
+pub mod draw_dot;
 pub mod fn_collector;
 pub mod hir_visitor;
 pub mod std_upg;
 pub mod upg_graph;
 pub mod upg_unit;
-pub mod draw_dot;
 
 use crate::{
     analysis::utils::{draw_dot::render_dot_graphs, fn_info::*},
@@ -227,6 +227,4 @@ impl<'tcx> UPGAnalysis<'tcx> {
         rap_info!("{:?}", final_dots); // Output required for tests; do not change.
         render_dot_graphs(final_dots);
     }
-
-
 }

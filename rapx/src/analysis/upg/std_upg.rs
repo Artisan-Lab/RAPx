@@ -1,7 +1,7 @@
 use super::{UPGAnalysis, upg_graph::UPGraph};
 use crate::analysis::{
     upg::draw_dot::render_dot_graphs,
-    utils::{fn_info::*, show_mir::display_mir}
+    utils::{fn_info::*, show_mir::display_mir},
 };
 use rustc_hir::{Safety, def::DefKind, def_id::DefId};
 use rustc_middle::{
@@ -11,7 +11,6 @@ use rustc_middle::{
 };
 use rustc_span::Symbol;
 use std::collections::{HashMap, HashSet};
-
 
 impl<'tcx> UPGAnalysis<'tcx> {
     pub fn audit_std_unsafe(&mut self) {
