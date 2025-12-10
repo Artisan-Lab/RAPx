@@ -10,7 +10,6 @@ mod utils;
 mod visitor;
 
 use crate::analysis::Analysis;
-use crate::{rap_debug, rap_info, rap_trace};
 pub use graph::ApiDependencyGraph;
 pub use graph::{DepEdge, DepNode};
 use rustc_hir::def_id::{DefId, LOCAL_CRATE};

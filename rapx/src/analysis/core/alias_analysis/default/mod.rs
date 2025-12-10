@@ -7,7 +7,7 @@ pub mod types;
 pub mod value;
 
 use super::{AAFact, AAResult, AAResultMap, AliasAnalysis};
-use crate::{analysis::Analysis, def_id::*, rap_debug, rap_trace, utils::source::*};
+use crate::{analysis::Analysis, def_id::*, utils::source::*};
 use graph::MopGraph;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;

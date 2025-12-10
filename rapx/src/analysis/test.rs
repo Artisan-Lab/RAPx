@@ -1,16 +1,11 @@
-use crate::{
-    analysis::{
-        Analysis,
-        core::{
-            alias_analysis::{AAResultMapWrapper, AliasAnalysis, default::AliasAnalyzer},
-            dataflow::{Arg2RetMapWrapper, DataFlowAnalysis, default::DataFlowAnalyzer},
-            ownedheap_analysis::{
-                OHAResultMapWrapper, OwnedHeapAnalysis, default::OwnedHeapAnalyzer,
-            },
-            range_analysis::{PathConstraintMapWrapper, RangeAnalysis, default::RangeAnalyzer},
-        },
+use crate::analysis::{
+    Analysis,
+    core::{
+        alias_analysis::{AAResultMapWrapper, AliasAnalysis, default::AliasAnalyzer},
+        dataflow::{Arg2RetMapWrapper, DataFlowAnalysis, default::DataFlowAnalyzer},
+        ownedheap_analysis::{OHAResultMapWrapper, OwnedHeapAnalysis, default::OwnedHeapAnalyzer},
+        range_analysis::{PathConstraintMapWrapper, RangeAnalysis, default::RangeAnalyzer},
     },
-    rap_info,
 };
 
 use rustc_middle::ty::TyCtxt;

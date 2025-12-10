@@ -1,4 +1,3 @@
-use crate::rap_info;
 use colorful::{Color, Colorful};
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{

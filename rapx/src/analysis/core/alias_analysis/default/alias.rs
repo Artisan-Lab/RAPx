@@ -1,5 +1,5 @@
 use super::{MopAAFact, MopAAResultMap, assign::*, graph::*, types::*, value::*};
-use crate::{def_id::*, rap_debug};
+use crate::def_id::*;
 use rustc_hir::def_id::DefId;
 use rustc_middle::{
     mir::{Operand, Place, ProjectionElem, TerminatorKind},

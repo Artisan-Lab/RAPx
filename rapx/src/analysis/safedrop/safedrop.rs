@@ -1,5 +1,5 @@
 use super::graph::*;
-use crate::{analysis::core::alias_analysis::default::MopAAResultMap, rap_error};
+use crate::analysis::core::alias_analysis::default::MopAAResultMap;
 use rustc_data_structures::fx::FxHashSet;
 use rustc_middle::{
     mir::{

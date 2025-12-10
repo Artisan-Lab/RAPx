@@ -6,7 +6,6 @@ use rustc_span::{
 };
 use thin_vec::ThinVec;
 
-use crate::rap_debug;
 pub(crate) fn create_ssa_struct(_krate: &mut Crate) {
     rap_debug!("[CALLBACK] Injecting new structs into the AST...");
 

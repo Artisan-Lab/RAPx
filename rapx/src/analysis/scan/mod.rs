@@ -5,10 +5,7 @@ mod statistic;
 
 #[allow(unused)]
 mod visitor;
-use crate::{
-    analysis::{Analysis, scan::visitor::FnVisitor},
-    rap_info,
-};
+use crate::analysis::{Analysis, scan::visitor::FnVisitor};
 use rustc_hir::def_id::LOCAL_CRATE;
 use rustc_middle::ty::TyCtxt;
 

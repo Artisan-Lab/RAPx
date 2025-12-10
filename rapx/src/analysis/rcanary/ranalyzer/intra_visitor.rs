@@ -20,7 +20,6 @@ use super::ownership::IntraVar;
 use super::{FlowAnalysis, IcxSliceFroBlock, IntraFlowAnalysis};
 use crate::{
     analysis::core::ownedheap_analysis::{default::*, *},
-    rap_debug, rap_error, rap_trace, rap_warn,
     utils::{
         log::{
             are_spans_in_same_file, relative_pos_range, span_to_filename, span_to_line_number,

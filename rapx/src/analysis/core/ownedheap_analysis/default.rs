@@ -13,7 +13,6 @@ use rustc_span::def_id::DefId;
 use std::{collections::HashMap, ops::ControlFlow};
 
 use super::*;
-use crate::rap_debug;
 
 pub struct OwnedHeapAnalyzer<'tcx> {
     tcx: TyCtxt<'tcx>,

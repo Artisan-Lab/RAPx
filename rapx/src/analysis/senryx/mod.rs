@@ -21,14 +21,11 @@ use rustc_middle::{
 use std::collections::{HashMap, HashSet};
 use visitor::{BodyVisitor, CheckResult};
 
-use crate::{
-    analysis::{
-        Analysis,
-        core::alias_analysis::{AAResult, AliasAnalysis, default::AliasAnalyzer},
-        upg::{fn_collector::FnCollector, hir_visitor::ContainsUnsafe},
-        utils::fn_info::*,
-    },
-    rap_info, rap_warn,
+use crate::analysis::{
+    Analysis,
+    core::alias_analysis::{AAResult, AliasAnalysis, default::AliasAnalyzer},
+    upg::{fn_collector::FnCollector, hir_visitor::ContainsUnsafe},
+    utils::fn_info::*,
 };
 
 macro_rules! cond_print {

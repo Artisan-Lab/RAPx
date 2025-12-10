@@ -4,11 +4,8 @@ use rustc_middle::{
 };
 
 use super::graph::*;
-use crate::{
-    analysis::core::alias_analysis::default::{
-        MopAAFact, MopAAResultMap, assign::*, types::*, value::*,
-    },
-    rap_error,
+use crate::analysis::core::alias_analysis::default::{
+    MopAAFact, MopAAResultMap, assign::*, types::*, value::*,
 };
 
 impl<'tcx> SafeDropGraph<'tcx> {

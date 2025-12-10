@@ -1,4 +1,4 @@
-use crate::{analysis::utils::fn_info::get_sp_json, rap_warn};
+use crate::analysis::utils::fn_info::get_sp_json;
 use rustc_middle::mir::Const;
 use rustc_middle::mir::Operand;
 use std::collections::{HashMap, HashSet};
