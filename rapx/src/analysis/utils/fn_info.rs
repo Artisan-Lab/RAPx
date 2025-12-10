@@ -6,6 +6,7 @@ use crate::analysis::{
         matcher::parse_unsafe_api,
     },
 };
+use crate::def_id::*;
 use crate::{rap_debug, rap_warn};
 use rustc_ast::ItemKind;
 use rustc_data_structures::fx::FxHashMap;
@@ -25,6 +26,7 @@ use rustc_middle::{
 };
 use rustc_span::{def_id::LocalDefId, kw, sym};
 use serde::de;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
@@ -149,7 +151,7 @@ pub fn get_cleaned_def_path_name_ori(tcx: TyCtxt, def_id: DefId) -> String {
     cleaned_path
 }
 
-pub fn get_sp_json() -> serde_json::Value {
+pub fn get_sp_tags_json() -> serde_json::Value {
     let json_data: serde_json::Value =
         serde_json::from_str(include_str!("data/std_sps.json")).expect("Unable to parse JSON");
     json_data
@@ -161,9 +163,33 @@ pub fn get_std_api_signature_json() -> serde_json::Value {
     json_data
 }
 
+pub fn get_sp_tags_and_args_json() -> serde_json::Value {
+    let json_data: serde_json::Value =
+        serde_json::from_str(include_str!("data/std_sps_args.json")).expect("Unable to parse JSON");
+    json_data
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ContractEntry {
+    pub tag: String,
+    pub args: Vec<String>,
+}
+
+pub fn get_std_contracts(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<ContractEntry> {
+    let cleaned_path_name = get_cleaned_def_path_name(tcx, def_id);
+    let json_data: serde_json::Value = get_sp_tags_and_args_json();
+
+    if let Some(entries) = json_data.get(&cleaned_path_name) {
+        if let Ok(contracts) = serde_json::from_value::<Vec<ContractEntry>>(entries.clone()) {
+            return contracts;
+        }
+    }
+    Vec::new()
+}
+
 pub fn get_sp(tcx: TyCtxt<'_>, def_id: DefId) -> HashSet<String> {
     let cleaned_path_name = get_cleaned_def_path_name(tcx, def_id);
-    let json_data: serde_json::Value = get_sp_json();
+    let json_data: serde_json::Value = get_sp_tags_json();
 
     if let Some(function_info) = json_data.get(&cleaned_path_name) {
         if let Some(sp_list) = function_info.get("0") {
@@ -626,6 +652,7 @@ pub fn match_std_unsafe_callee(tcx: TyCtxt<'_>, terminator: &Terminator<'_>) -> 
         if let Operand::Constant(func_constant) = func {
             if let ty::FnDef(callee_def_id, _raw_list) = func_constant.const_.ty().kind() {
                 let func_name = get_cleaned_def_path_name(tcx, *callee_def_id);
+                // rap_info!("{func_name}");
                 if parse_unsafe_api(&func_name).is_some() {
                     results.push(func_name);
                 }
@@ -665,6 +692,63 @@ pub fn reverse_op(op: BinOp) -> BinOp {
         BinOp::Ne => BinOp::Ne,
         _ => op,
     }
+}
+
+/// Generate contracts from pre-defined std-lib JSON configuration (std_sps_args.json).
+pub fn generate_contract_from_std_annotation_json(
+    tcx: TyCtxt<'_>,
+    def_id: DefId,
+) -> Vec<(usize, Vec<usize>, PropertyContract<'_>)> {
+    let mut results = Vec::new();
+    let std_contracts = get_std_contracts(tcx, def_id);
+
+    for entry in std_contracts {
+        let tag_name = entry.tag;
+        let raw_args = entry.args;
+
+        if raw_args.is_empty() {
+            continue;
+        }
+
+        let arg_index_str = &raw_args[0];
+        let local_id = if let Ok(arg_idx) = arg_index_str.parse::<usize>() {
+            arg_idx + 1
+        } else {
+            rap_error!(
+                "JSON Contract Error: First argument must be an arg index number, got {}",
+                arg_index_str
+            );
+            continue;
+        };
+
+        let mut exprs: Vec<Expr> = Vec::new();
+        for arg_str in &raw_args {
+            match syn::parse_str::<Expr>(arg_str) {
+                Ok(expr) => exprs.push(expr),
+                Err(_) => {
+                    rap_error!(
+                        "JSON Contract Error: Failed to parse arg '{}' as Rust Expr for tag {}",
+                        arg_str,
+                        tag_name
+                    );
+                }
+            }
+        }
+
+        // Robustness check of arguments transition
+        if exprs.len() != raw_args.len() {
+            rap_error!(
+                "Parse std API args error: Failed to parse arg '{:?}'",
+                raw_args
+            );
+            continue;
+        }
+        let fields: Vec<usize> = Vec::new();
+        let contract = PropertyContract::new(tcx, def_id, &tag_name, &exprs);
+        results.push((local_id, fields, contract));
+    }
+
+    results
 }
 
 /// Same with `generate_contract_from_annotation` but does not contain field types.
@@ -1206,13 +1290,50 @@ fn try_get_mir(tcx: TyCtxt<'_>, def_id: DefId) -> Option<&rustc_middle::mir::Bod
 }
 
 pub fn get_cleaned_def_path_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
-    tcx.def_path_str(def_id)
-        .replace("::", "_")
-        .replace("<", "_")
-        .replace(">", "_")
-        .replace(",", "_")
-        .replace(" ", "")
-        .replace("__", "_")
+    let def_id_str = format!("{:?}", def_id);
+    let mut parts: Vec<&str> = def_id_str.split("::").collect();
+
+    let mut remove_first = false;
+    if let Some(first_part) = parts.get_mut(0) {
+        if first_part.contains("core") {
+            *first_part = "core";
+        } else if first_part.contains("std") {
+            *first_part = "std";
+        } else if first_part.contains("alloc") {
+            *first_part = "alloc";
+        } else {
+            remove_first = true;
+        }
+    }
+    if remove_first && !parts.is_empty() {
+        parts.remove(0);
+    }
+
+    let new_parts: Vec<String> = parts
+        .into_iter()
+        .filter_map(|s| {
+            if s.contains("{") {
+                if remove_first {
+                    get_struct_name(tcx, def_id)
+                } else {
+                    None
+                }
+            } else {
+                Some(s.to_string())
+            }
+        })
+        .collect();
+
+    let mut cleaned_path = new_parts.join("::");
+    cleaned_path = cleaned_path.trim_end_matches(')').to_string();
+    cleaned_path
+    // tcx.def_path_str(def_id)
+    //     .replace("::", "_")
+    //     .replace("<", "_")
+    //     .replace(">", "_")
+    //     .replace(",", "_")
+    //     .replace(" ", "")
+    //     .replace("__", "_")
 }
 
 pub fn print_unsafe_chains(chains: &[Vec<String>]) {
@@ -1258,19 +1379,27 @@ pub fn get_all_std_fns_by_rustc_public(tcx: TyCtxt) -> Vec<DefId> {
     results
 }
 
-pub fn generate_mir_cfg_dot(tcx: TyCtxt<'_>, def_id: DefId) -> Result<(), std::io::Error> {
+pub fn generate_mir_cfg_dot<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    def_id: DefId,
+    alias_set: &[usize],
+) -> Result<(), std::io::Error> {
     let mir = tcx.optimized_mir(def_id);
 
     let mut dot_content = String::new();
 
-    // Setup Header
+    let alias_sets = convert_alias_to_sets(alias_set.to_vec());
+    let alias_info_str = format!("Alias Sets: {:?}", alias_sets);
+
     dot_content.push_str(&format!(
         "digraph mir_cfg_{} {{\n",
         get_cleaned_def_path_name(tcx, def_id)
     ));
+
     dot_content.push_str(&format!(
-        "    label = \"MIR CFG for {}\";\n",
-        tcx.def_path_str(def_id)
+        "    label = \"MIR CFG for {}\\n{}\\n\";\n",
+        tcx.def_path_str(def_id),
+        alias_info_str.replace("\"", "\\\"")
     ));
     dot_content.push_str("    labelloc = \"t\";\n");
     dot_content.push_str("    node [shape=box, fontname=\"Courier\", align=\"left\"];\n\n");
@@ -1285,7 +1414,29 @@ pub fn generate_mir_cfg_dot(tcx: TyCtxt<'_>, def_id: DefId) -> Result<(), std::i
         let mut node_style = String::new();
 
         if let Some(terminator) = &bb_data.terminator {
-            if let TerminatorKind::Drop { .. } = terminator.kind {
+            let mut is_drop_related = false;
+
+            match &terminator.kind {
+                TerminatorKind::Drop { .. } => {
+                    is_drop_related = true;
+                }
+                TerminatorKind::Call { func, .. } => {
+                    if let Operand::Constant(c) = func {
+                        if let ty::FnDef(def_id, _) = *c.ty().kind() {
+                            if def_id == drop()
+                                || def_id == drop_in_place()
+                                || def_id == manually_drop()
+                                || dealloc_opt().map(|f| f == def_id).unwrap_or(false)
+                            {
+                                is_drop_related = true;
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+
+            if is_drop_related {
                 node_style = ", style=\"filled\", fillcolor=\"#ffdddd\", color=\"red\"".to_string();
             }
 

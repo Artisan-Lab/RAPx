@@ -132,6 +132,38 @@ pub fn span_to_line_number(span: Span) -> usize {
     get_source_map().unwrap().lookup_char_pos(span.lo()).line
 }
 
+pub fn get_variable_name<'tcx>(
+    body: &rustc_middle::mir::Body<'tcx>,
+    local_index: usize,
+) -> Option<String> {
+    let target_local = rustc_middle::mir::Local::from_usize(local_index);
+
+    for info in &body.var_debug_info {
+        if let rustc_middle::mir::VarDebugInfoContents::Place(place) = info.value {
+            if place.local == target_local && place.projection.is_empty() {
+                return Some(info.name.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+pub fn get_basic_block_span<'tcx>(body: &rustc_middle::mir::Body<'tcx>, bb_index: usize) -> Span {
+    let bb = rustc_middle::mir::BasicBlock::from_usize(bb_index);
+    let block_data = &body.basic_blocks[bb];
+
+    if let Some(ref term) = block_data.terminator {
+        return term.source_info.span;
+    }
+
+    if let Some(stmt) = block_data.statements.first() {
+        return stmt.source_info.span;
+    }
+
+    body.span
+}
+
 #[inline]
 // this function computes the relative pos range of two spans which could be generated from two dirrerent files or not intersect with each other
 // warning: we just return 0..0 to drop off the unintersected pairs

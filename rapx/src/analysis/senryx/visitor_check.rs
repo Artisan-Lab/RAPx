@@ -14,7 +14,8 @@ use crate::{
         senryx::contracts::property::{CisRange, CisRangeItem, PropertyContract},
         utils::fn_info::{
             display_hashmap, generate_contract_from_annotation_without_field_types,
-            get_cleaned_def_path_name, is_strict_ty_convert, reflect_generic,
+            generate_contract_from_std_annotation_json, get_cleaned_def_path_name,
+            is_strict_ty_convert, reflect_generic,
         },
     },
     rap_debug, rap_error, rap_info, rap_warn,
@@ -41,13 +42,11 @@ impl<'tcx> BodyVisitor<'tcx> {
         generic_mapping: FxHashMap<String, Ty<'tcx>>,
     ) {
         let func_name = get_cleaned_def_path_name(self.tcx, *def_id);
-        let args_with_contracts =
-            generate_contract_from_annotation_without_field_types(self.tcx, *def_id);
-        rap_debug!(
-            "Checking contracts {:?} for {:?}",
-            args_with_contracts,
-            def_id
-        );
+
+        // If the contracts of target API has not been defined in 'std_sps_args.json',
+        // this fn-call could be replaced with 'generate_contract_from_annotation_without_field_types(self.tcx, *def_id);'
+        let args_with_contracts = generate_contract_from_std_annotation_json(self.tcx, *def_id);
+
         let mut count = 0;
         for (base, fields, contract) in args_with_contracts {
             rap_debug!("Find contract for {:?}, {base}: {:?}", def_id, contract);

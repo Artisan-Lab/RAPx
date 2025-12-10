@@ -1,0 +1,26 @@
+{
+  "core::ptr::read": [
+    {
+      "tag": "ValidPtr",
+      "args": ["0", "T", "1"]
+    },
+    {
+      "tag": "Align",
+      "args": ["0", "T"]
+    },
+    {
+      "tag": "Typed",
+      "args": ["0", "T"]
+    }
+  ],
+  "core::ptr::const_ptr::byte_offset": [
+    {
+        "tag": "InBound",
+        "args": ["0", "T", "count"]
+    },
+    {
+        "tag": "ValidNum",
+        "args": []
+    }
+  ]
+}

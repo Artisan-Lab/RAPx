@@ -25,6 +25,11 @@ pub fn render_dot_graphs(dot_graphs: Vec<(String, String)>) {
 }
 
 pub fn render_dot_string(name: String, dot_graph: String) {
+    Command::new("mkdir")
+        .args(["MIR_dot_graph"])
+        .output()
+        .expect("Failed to create directory");
+
     let file_name = format!("{}.dot", name);
     rap_debug!("render graph {:?}", file_name);
     let mut file = File::create(&file_name).expect("Unable to create file");

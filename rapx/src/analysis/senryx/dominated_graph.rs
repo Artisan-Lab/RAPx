@@ -1,9 +1,6 @@
 use crate::{
     analysis::{
-        senryx::contracts::{
-            contract,
-            property::{CisRangeItem, ContractualInvariantState, PropertyContract},
-        },
+        senryx::contracts::property::{CisRangeItem, ContractualInvariantState, PropertyContract},
         utils::fn_info::{display_hashmap, get_pointee, is_ptr, is_ref, is_slice, reverse_op},
     },
     rap_debug, rap_warn,
@@ -675,4 +672,151 @@ impl<'tcx> DominatedGraph<'tcx> {
             println!();
         }
     }
+}
+
+use std::fmt::Write;
+impl<'tcx> DominatedGraph<'tcx> {
+    pub fn to_dot_graph(&self) -> String {
+        let mut dot = String::new();
+        writeln!(dot, "digraph DominatedGraph {{").unwrap();
+
+        writeln!(
+            dot,
+            "    graph [compound=true, splines=polyline, nodesep=0.5, ranksep=0.5];"
+        )
+        .unwrap();
+        writeln!(dot, "    node [shape=plain, fontname=\"Courier\"];").unwrap();
+        writeln!(dot, "    edge [fontname=\"Courier\"];").unwrap();
+
+        let mut isolated_nodes = Vec::new();
+        let mut connected_nodes = Vec::new();
+
+        let mut keys: Vec<&usize> = self.variables.keys().collect();
+        keys.sort();
+
+        for id in keys {
+            if let Some(node) = self.variables.get(id) {
+                let is_isolated =
+                    node.points_to.is_none() && node.field.is_empty() && node.pointed_by.is_empty();
+
+                if is_isolated {
+                    isolated_nodes.push(*id);
+                } else {
+                    connected_nodes.push(*id);
+                }
+            }
+        }
+
+        if !isolated_nodes.is_empty() {
+            writeln!(dot, "    subgraph cluster_isolated {{").unwrap();
+            writeln!(dot, "        label = \"Isolated Variables (Grid Layout)\";").unwrap();
+            writeln!(dot, "        style = dashed;").unwrap();
+            writeln!(dot, "        color = grey;").unwrap();
+
+            let total_iso = isolated_nodes.len();
+            let cols = (total_iso as f64).sqrt().ceil() as usize;
+
+            for id in &isolated_nodes {
+                if let Some(node) = self.variables.get(id) {
+                    let node_label = self.generate_node_label(node);
+                    writeln!(dot, "        {} [label=<{}>];", id, node_label).unwrap();
+                }
+            }
+
+            for chunk in isolated_nodes.chunks(cols) {
+                write!(dot, "        {{ rank=same;").unwrap();
+                for id in chunk {
+                    write!(dot, " {};", id).unwrap();
+                }
+                writeln!(dot, " }}").unwrap();
+            }
+
+            for i in 0..isolated_nodes.chunks(cols).len() {
+                let current_row_idx = i * cols;
+                let next_row_idx = (i + 1) * cols;
+
+                if next_row_idx < total_iso {
+                    let curr_id = isolated_nodes[current_row_idx];
+                    let next_id = isolated_nodes[next_row_idx];
+                    writeln!(
+                        dot,
+                        "        {} -> {} [style=invis, weight=100];",
+                        curr_id, next_id
+                    )
+                    .unwrap();
+                }
+            }
+
+            writeln!(dot, "    }}").unwrap();
+        }
+
+        if !connected_nodes.is_empty() {
+            writeln!(dot, "    subgraph cluster_connected {{").unwrap();
+            writeln!(dot, "        label = \"Reference Graph\";").unwrap();
+            writeln!(dot, "        color = black;").unwrap();
+
+            for id in &connected_nodes {
+                if let Some(node) = self.variables.get(id) {
+                    let node_label = self.generate_node_label(node);
+                    writeln!(dot, "        {} [label=<{}>];", id, node_label).unwrap();
+                }
+            }
+            writeln!(dot, "    }}").unwrap();
+        }
+
+        // draw edges
+        writeln!(dot, "").unwrap();
+        for id in &connected_nodes {
+            if let Some(node) = self.variables.get(id) {
+                if let Some(target) = node.points_to {
+                    writeln!(
+                        dot,
+                        "    {} -> {} [label=\"ptr\", color=\"blue\", fontcolor=\"blue\"];",
+                        id, target
+                    )
+                    .unwrap();
+                }
+
+                let mut field_indices: Vec<&usize> = node.field.keys().collect();
+                field_indices.sort();
+                for field_idx in field_indices {
+                    let target_id = node.field.get(field_idx).unwrap();
+                    writeln!(
+                        dot,
+                        "    {} -> {} [label=\".{}\", style=\"dashed\"];",
+                        id, target_id, field_idx
+                    )
+                    .unwrap();
+                }
+            }
+        }
+
+        writeln!(dot, "}}").unwrap();
+        dot
+    }
+
+    fn generate_node_label(&self, node: &VariableNode<'tcx>) -> String {
+        let ty_str = match node.ty {
+            Some(t) => format!("{:?}", t),
+            None => "None".to_string(),
+        };
+        let safe_ty = html_escape(&ty_str);
+
+        format!(
+            r#"<table border="0" cellborder="1" cellspacing="0" cellpadding="4">
+                <tr><td colspan="2"><b>ID: {}</b></td></tr>
+                <tr><td align="left">Type:</td><td align="left">{}</td></tr>
+                <tr><td align="left">Const:</td><td align="left">{}</td></tr>
+               </table>"#,
+            node.id, safe_ty, node.const_value,
+        )
+    }
+}
+
+fn html_escape(input: &str) -> String {
+    input
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
 }

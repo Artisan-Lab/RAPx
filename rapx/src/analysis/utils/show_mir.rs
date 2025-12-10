@@ -225,7 +225,7 @@ impl<'tcx> ShowMir<'tcx> {
         let mir_keys = self.tcx.mir_keys(());
         for each_mir in mir_keys {
             let def_id = each_mir.to_def_id();
-            let _ = crate::analysis::utils::fn_info::generate_mir_cfg_dot(self.tcx, def_id);
+            let _ = crate::analysis::utils::fn_info::generate_mir_cfg_dot(self.tcx, def_id, &[]);
         }
     }
 }

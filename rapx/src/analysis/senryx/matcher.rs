@@ -1,4 +1,4 @@
-use crate::analysis::utils::fn_info::get_sp_json;
+use crate::analysis::utils::fn_info::get_sp_tags_json;
 use rustc_middle::mir::Const;
 use rustc_middle::mir::Operand;
 use std::collections::{HashMap, HashSet};
@@ -22,7 +22,7 @@ pub struct UnsafeApi {
 }
 
 pub fn parse_unsafe_api(func_name: &str) -> Option<UnsafeApi> {
-    let json_data = get_sp_json();
+    let json_data = get_sp_tags_json();
     let function_info = json_data.get(func_name)?;
 
     let params = function_info.as_object().map(|obj| {

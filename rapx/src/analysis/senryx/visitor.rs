@@ -9,9 +9,9 @@ use crate::{
         safedrop::graph::SafeDropGraph,
         senryx::{
             contracts::property::{CisRangeItem, PropertyContract},
-            symbolic_analysis::ValueDomain,
+            symbolic_analysis::{AnaOperand, SymbolicDef, ValueDomain},
         },
-        utils::{fn_info::*, show_mir::display_mir},
+        utils::{draw_dot::render_dot_string, fn_info::*, show_mir::display_mir},
     },
     rap_debug, rap_warn,
 };
@@ -27,7 +27,6 @@ use syn::Constraint;
 use super::contracts::abstract_state::{
     AbstractStateItem, AlignState, PathInfo, StateType, VType, Value,
 };
-use super::contracts::contract::Contract;
 use super::dominated_graph::DominatedGraph;
 use super::dominated_graph::InterResultNode;
 use super::generic_check::GenericChecker;
@@ -104,6 +103,7 @@ pub struct BodyVisitor<'tcx> {
     pub proj_ty: HashMap<usize, Ty<'tcx>>,
     pub chains: DominatedGraph<'tcx>,
     pub value_domains: HashMap<usize, ValueDomain>,
+    pub path_constraints: Vec<SymbolicDef>,
 }
 
 impl<'tcx> BodyVisitor<'tcx> {
@@ -133,6 +133,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             proj_ty: HashMap::new(),
             chains,
             value_domains: HashMap::new(),
+            path_constraints: Vec::new(),
             // paths: HashSet::new(),
         }
     }
@@ -158,7 +159,6 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
         // get path and body
         let paths = self.get_all_paths();
-        // self.paths = paths.clone();
         let body = self.tcx.optimized_mir(self.def_id);
         let target_name = get_cleaned_def_path_name(self.tcx, self.def_id);
         // initialize local vars' types
@@ -172,17 +172,20 @@ impl<'tcx> BodyVisitor<'tcx> {
         // Iterate all the paths. Paths have been handled by tarjan.
         let tmp_chain = self.chains.clone();
         for (index, (path, constraint)) in paths.iter().enumerate() {
+            self.value_domains.clear();
             self.chains = tmp_chain.clone();
             self.set_constraint(constraint);
             self.abstract_states.insert(index, PathInfo::new());
-            for block_index in path.iter() {
+            for (i, block_index) in path.iter().enumerate() {
                 if block_index >= &body.basic_blocks.len() {
                     continue;
                 }
+                let next_block = path.get(i + 1).cloned();
                 self.path_analyze_block(
                     &body.basic_blocks[BasicBlock::from_usize(*block_index)].clone(),
                     index,
                     *block_index,
+                    next_block,
                     fn_map,
                 );
                 let tem_scc_sub_blocks = self.safedrop_graph.blocks[*block_index]
@@ -194,19 +197,31 @@ impl<'tcx> BodyVisitor<'tcx> {
                             &body.basic_blocks[BasicBlock::from_usize(*sub_block)].clone(),
                             index,
                             *block_index,
+                            next_block,
                             fn_map,
                         );
                     }
                 }
             }
+
+            // Used for debug
+            if self.visit_time == 0 {
+                let base_name = get_cleaned_def_path_name(self.tcx, self.def_id);
+                let path_suffix = path
+                    .iter()
+                    .map(|b| b.to_string())
+                    .collect::<Vec<String>>()
+                    .join("_");
+
+                let name = format!("{}_path_{}", base_name, path_suffix);
+                let dot_string = self.chains.to_dot_graph();
+                render_dot_string(name, dot_string);
+            }
+
             // merge path analysis results
             let curr_path_inter_return_value =
                 InterResultNode::construct_from_var_node(self.chains.clone(), 0);
             inter_return_value.merge(curr_path_inter_return_value);
-        }
-        if self.visit_time == 0 && target_name.contains("into_raw_parts_with_alloc") {
-            display_mir(self.def_id, body);
-            display_hashmap(&self.chains.variables, 1);
         }
 
         inter_return_value
@@ -217,12 +232,19 @@ impl<'tcx> BodyVisitor<'tcx> {
         block: &BasicBlockData<'tcx>,
         path_index: usize,
         bb_index: usize,
+        next_block: Option<usize>,
         fn_map: &FxHashMap<DefId, AAResult>,
     ) {
         for statement in block.statements.iter() {
             self.path_analyze_statement(statement, path_index);
         }
-        self.path_analyze_terminator(&block.terminator(), path_index, bb_index, fn_map);
+        self.path_analyze_terminator(
+            &block.terminator(),
+            path_index,
+            bb_index,
+            next_block,
+            fn_map,
+        );
     }
 
     pub fn path_analyze_statement(&mut self, statement: &Statement<'tcx>, _path_index: usize) {
@@ -241,18 +263,20 @@ impl<'tcx> BodyVisitor<'tcx> {
                 }
                 _ => {}
             },
-            StatementKind::StorageDead(local) => {
-                // self.chains.delete_node(local.as_usize());
-            }
+            StatementKind::StorageDead(local) => {}
             _ => {}
         }
     }
+}
 
+/// Implementation for teminator
+impl<'tcx> BodyVisitor<'tcx> {
     pub fn path_analyze_terminator(
         &mut self,
         terminator: &Terminator<'tcx>,
         path_index: usize,
         bb_index: usize,
+        next_block: Option<usize>,
         fn_map: &FxHashMap<DefId, AAResult>,
     ) {
         match &terminator.kind {
@@ -302,6 +326,11 @@ impl<'tcx> BodyVisitor<'tcx> {
                     // );
                 }
             }
+            TerminatorKind::SwitchInt { discr, targets } => {
+                if let Some(next_bb) = next_block {
+                    self.handle_switch_int(discr, targets, next_bb);
+                }
+            }
             _ => {}
         }
     }
@@ -336,7 +365,10 @@ impl<'tcx> BodyVisitor<'tcx> {
             self.get_generic_mapping(raw_list, &parent_def_id, generic_mapping);
         }
     }
+}
 
+/// Implementation for statements
+impl<'tcx> BodyVisitor<'tcx> {
     pub fn path_analyze_assign(
         &mut self,
         lplace: &Place<'tcx>,
@@ -345,17 +377,26 @@ impl<'tcx> BodyVisitor<'tcx> {
     ) {
         let lpjc_local = self.handle_proj(false, lplace.clone());
         match rvalue {
-            Rvalue::Use(op) => match op {
-                Operand::Move(rplace) => {
-                    let rpjc_local = self.handle_proj(true, rplace.clone());
-                    self.chains.merge(lpjc_local, rpjc_local);
+            Rvalue::Use(op) => {
+                if let Some(ana_op) = self.lift_operand(op) {
+                    let def = match ana_op {
+                        AnaOperand::Local(src) => SymbolicDef::Use(src),
+                        AnaOperand::Const(val) => SymbolicDef::Constant(val),
+                    };
+                    self.record_value_def(lpjc_local, def);
                 }
-                Operand::Copy(rplace) => {
-                    let rpjc_local = self.handle_proj(true, rplace.clone());
-                    self.chains.copy_node(lpjc_local, rpjc_local);
+                match op {
+                    Operand::Move(rplace) => {
+                        let rpjc_local = self.handle_proj(true, rplace.clone());
+                        self.chains.merge(lpjc_local, rpjc_local);
+                    }
+                    Operand::Copy(rplace) => {
+                        let rpjc_local = self.handle_proj(true, rplace.clone());
+                        self.chains.copy_node(lpjc_local, rpjc_local);
+                    }
+                    _ => {}
                 }
-                _ => {}
-            },
+            }
             Rvalue::Repeat(op, _const) => match op {
                 Operand::Move(rplace) | Operand::Copy(rplace) => {
                     let _rpjc_local = self.handle_proj(true, rplace.clone());
@@ -364,22 +405,66 @@ impl<'tcx> BodyVisitor<'tcx> {
             },
             Rvalue::Ref(_, _, rplace) | Rvalue::RawPtr(_, rplace) => {
                 let rpjc_local = self.handle_proj(true, rplace.clone());
-                // self.chains.insert_node(lpjc_local, self.chains.get_local_ty_by_place(lpjc_local));
+                self.record_value_def(lpjc_local, SymbolicDef::Ref(rpjc_local));
                 self.chains.point(lpjc_local, rpjc_local);
             }
-            Rvalue::Cast(cast_kind, op, ty) => match op {
-                Operand::Move(rplace) | Operand::Copy(rplace) => {
-                    let rpjc_local = self.handle_proj(true, rplace.clone());
-                    let r_point_to = self.chains.get_point_to_id(rpjc_local);
-                    if r_point_to == rpjc_local {
-                        self.chains.merge(lpjc_local, rpjc_local);
-                    } else {
-                        self.chains.point(lpjc_local, r_point_to);
+            Rvalue::Cast(cast_kind, op, ty) => {
+                if let Some(AnaOperand::Local(src_idx)) = self.lift_operand(op) {
+                    self.record_value_def(
+                        lpjc_local,
+                        SymbolicDef::Cast(src_idx, format!("{:?}", cast_kind)),
+                    );
+                }
+                match op {
+                    Operand::Move(rplace) | Operand::Copy(rplace) => {
+                        let rpjc_local = self.handle_proj(true, rplace.clone());
+                        let r_point_to = self.chains.get_point_to_id(rpjc_local);
+                        if r_point_to == rpjc_local {
+                            self.chains.merge(lpjc_local, rpjc_local);
+                        } else {
+                            self.chains.point(lpjc_local, r_point_to);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Rvalue::BinaryOp(bin_op, box (op1, op2)) => {
+                if let (Some(ana_op1), Some(ana_op2)) =
+                    (self.lift_operand(op1), self.lift_operand(op2))
+                {
+                    let def = match (ana_op1.clone(), ana_op2) {
+                        (AnaOperand::Local(l), rhs) => Some(SymbolicDef::Binary(*bin_op, l, rhs)),
+                        (AnaOperand::Const(_), AnaOperand::Local(l)) => match bin_op {
+                            BinOp::Add
+                            | BinOp::Mul
+                            | BinOp::BitAnd
+                            | BinOp::BitOr
+                            | BinOp::BitXor
+                            | BinOp::Eq
+                            | BinOp::Ne => Some(SymbolicDef::Binary(*bin_op, l, ana_op1)),
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+
+                    if let Some(d) = def {
+                        self.record_value_def(lpjc_local, d);
+                    } else if let (AnaOperand::Const(c), AnaOperand::Local(l)) = (
+                        self.lift_operand(op1).unwrap(),
+                        self.lift_operand(op2).unwrap(),
+                    ) {
+                        if matches!(bin_op, BinOp::Add | BinOp::Mul | BinOp::Eq) {
+                            self.record_value_def(
+                                lpjc_local,
+                                SymbolicDef::Binary(*bin_op, l, AnaOperand::Const(c)),
+                            );
+                        }
                     }
                 }
-                _ => {}
-            },
-            Rvalue::BinaryOp(_bin_op, box (_op1, _op2)) => {}
+            }
+            Rvalue::UnaryOp(un_op, op) => {
+                self.record_value_def(lpjc_local, SymbolicDef::UnOp(*un_op));
+            }
             Rvalue::ShallowInitBox(op, _ty) => match op {
                 Operand::Move(rplace) | Operand::Copy(rplace) => {
                     let _rpjc_local = self.handle_proj(true, rplace.clone());
@@ -405,9 +490,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                 }
                 _ => {}
             },
-            Rvalue::Discriminant(_place) => {
-                // println!("Discriminant {}:{:?}",lpjc_local,rvalue);
-            }
+            Rvalue::Discriminant(_place) => {}
             _ => {}
         }
     }
@@ -423,11 +506,6 @@ impl<'tcx> BodyVisitor<'tcx> {
         generic_mapping: FxHashMap<String, Ty<'tcx>>,
     ) {
         if !self.tcx.is_mir_available(def_id) {
-            self.insert_path_abstate(
-                path_index,
-                dst_place.local.as_usize(),
-                AbstractStateItem::new_default(),
-            );
             return;
         }
 
@@ -575,21 +653,6 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
-    // if inter analysis's params are in mut_ref, then we should update their post states
-    pub fn update_post_state(
-        &mut self,
-        post_state: &HashMap<usize, AbstractStateItem<'tcx>>,
-        args: &Box<[Spanned<Operand>]>,
-        path_index: usize,
-    ) {
-        for (idx, arg) in args.iter().enumerate() {
-            let arg_place = get_arg_place(&arg.node);
-            if let Some(state_item) = post_state.get(&idx) {
-                self.insert_path_abstate(path_index, arg_place.1, state_item.clone());
-            }
-        }
-    }
-
     pub fn get_args_post_states(&mut self) -> HashMap<usize, AbstractStateItem<'tcx>> {
         let tcx = self.tcx;
         let def_id = self.def_id;
@@ -634,20 +697,6 @@ impl<'tcx> BodyVisitor<'tcx> {
         // display_hashmap(&path_constraints, 1);
         path_constraints
     }
-
-    // pub fn get_all_paths(&mut self) -> Vec<Vec<usize>> {
-    //     self.safedrop_graph.solve_scc();
-    //     let mut results: Vec<Vec<usize>> = self.safedrop_graph.get_paths();
-    //     // If it's the first level analysis, then filter the paths not containing unsafe
-    //     if self.visit_time == 0 {
-    //         let contains_unsafe_blocks = get_all_std_unsafe_callees_block_id(self.tcx, self.def_id);
-    //         results.retain(|path| {
-    //             path.iter()
-    //                 .any(|block_id| contains_unsafe_blocks.contains(block_id))
-    //         });
-    //     }
-    //     results
-    // }
 
     pub fn abstract_states_mop(&mut self) -> PathInfo<'tcx> {
         let mut result_state = PathInfo {
@@ -713,6 +762,46 @@ impl<'tcx> BodyVisitor<'tcx> {
             let p1_num = self.handle_proj(false, p1.clone());
             let p2_num = self.handle_proj(false, p2.clone());
             self.chains.insert_patial_op(p1_num, p2_num, op);
+
+            if let BinOp::Eq = op {
+                let maybe_const = self.value_domains.get(&p2_num).and_then(|d| {
+                    if let Some(SymbolicDef::Constant(c)) = d.def {
+                        Some(c)
+                    } else {
+                        None
+                    }
+                });
+
+                if let Some(c) = maybe_const {
+                    self.value_domains
+                        .entry(p1_num)
+                        .and_modify(|d| d.value_constraint = Some(c))
+                        .or_insert(ValueDomain {
+                            def: None,
+                            value_constraint: Some(c),
+                            align: None,
+                        });
+                }
+
+                let maybe_const_p1 = self.value_domains.get(&p1_num).and_then(|d| {
+                    if let Some(SymbolicDef::Constant(c)) = d.def {
+                        Some(c)
+                    } else {
+                        None
+                    }
+                });
+
+                if let Some(c) = maybe_const_p1 {
+                    self.value_domains
+                        .entry(p2_num)
+                        .and_modify(|d| d.value_constraint = Some(c))
+                        .or_insert(ValueDomain {
+                            def: None,
+                            value_constraint: Some(c),
+                            align: None,
+                        });
+                }
+            }
         }
     }
 
@@ -796,43 +885,6 @@ impl<'tcx> BodyVisitor<'tcx> {
         AbstractStateItem::new_default()
     }
 
-    pub fn handle_cast(
-        &mut self,
-        rpjc_local: usize,
-        lpjc_local: usize,
-        ty: &Ty<'tcx>,
-        path_index: usize,
-        cast_kind: &CastKind,
-    ) {
-        let mut src_ty = self.get_layout_by_place_usize(rpjc_local);
-        match cast_kind {
-            CastKind::PtrToPtr | CastKind::PointerCoercion(_, _) => {
-                let r_abitem = self.get_abstate_by_place_in_path(rpjc_local, path_index);
-                for state in &r_abitem.state {
-                    if let StateType::AlignState(r_align_state) = state.clone() {
-                        match r_align_state {
-                            AlignState::Cast(from, _to) => {
-                                src_ty = from.clone();
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-
-                let dst_ty = self.visit_ty_and_get_layout(*ty);
-                let align_state =
-                    StateType::AlignState(AlignState::Cast(src_ty.clone(), dst_ty.clone()));
-                let abitem = AbstractStateItem::new(
-                    (Value::None, Value::None),
-                    VType::Pointer(dst_ty),
-                    HashSet::from([align_state]),
-                );
-                self.insert_path_abstate(path_index, lpjc_local, abitem);
-            }
-            _ => {}
-        }
-    }
-
     pub fn handle_binary_op(
         &mut self,
         first_op: &Operand,
@@ -846,6 +898,43 @@ impl<'tcx> BodyVisitor<'tcx> {
                 let _second_place = get_arg_place(second_op);
             }
             _ => {}
+        }
+    }
+
+    fn handle_switch_int(
+        &mut self,
+        discr: &Operand<'tcx>,
+        targets: &mir::SwitchTargets,
+        next_bb: usize,
+    ) {
+        let discr_op = match self.lift_operand(discr) {
+            Some(op) => op,
+            None => return,
+        };
+
+        let discr_local_idx = match discr_op {
+            AnaOperand::Local(idx) => idx,
+            _ => return,
+        };
+
+        let mut matched_val = None;
+        for (val, target_bb) in targets.iter() {
+            if target_bb.as_usize() == next_bb {
+                matched_val = Some(val);
+                break;
+            }
+        }
+
+        if let Some(val) = matched_val {
+            let constraint =
+                SymbolicDef::Binary(BinOp::Eq, discr_local_idx, AnaOperand::Const(val));
+            self.path_constraints.push(constraint);
+        } else if targets.otherwise().as_usize() == next_bb {
+            for (val, _) in targets.iter() {
+                let constraint =
+                    SymbolicDef::Binary(BinOp::Ne, discr_local_idx, AnaOperand::Const(val));
+                self.path_constraints.push(constraint);
+            }
         }
     }
 
@@ -868,5 +957,150 @@ impl<'tcx> BodyVisitor<'tcx> {
             }
         }
         proj_id
+    }
+
+    fn record_value_def(&mut self, local_idx: usize, def: SymbolicDef) {
+        self.value_domains
+            .entry(local_idx)
+            .and_modify(|d| d.def = Some(def.clone()))
+            .or_insert(ValueDomain {
+                def: Some(def),
+                value_constraint: None,
+                align: None,
+            });
+    }
+
+    fn lift_operand(&mut self, op: &Operand<'tcx>) -> Option<AnaOperand> {
+        match op {
+            Operand::Copy(place) | Operand::Move(place) => {
+                if place.projection.is_empty() {
+                    Some(AnaOperand::Local(place.local.as_usize()))
+                } else {
+                    Some(AnaOperand::Local(self.handle_proj(true, place.clone())))
+                }
+            }
+            Operand::Constant(box c) => match c.const_ {
+                rustc_middle::mir::Const::Ty(_ty, const_value) => {
+                    if let Some(val) = const_value.try_to_target_usize(self.tcx) {
+                        Some(AnaOperand::Const(val as u128))
+                    } else {
+                        None
+                    }
+                }
+                rustc_middle::mir::Const::Unevaluated(_unevaluated, _ty) => None,
+                rustc_middle::mir::Const::Val(const_value, _ty) => {
+                    if let Some(scalar) = const_value.try_to_scalar_int() {
+                        let val = scalar.to_uint(scalar.size());
+                        Some(AnaOperand::Const(val))
+                    } else {
+                        None
+                    }
+                }
+            },
+        }
+    }
+}
+
+impl<'tcx> BodyVisitor<'tcx> {
+    pub fn display_value_domains(&self) {
+        println!("\n{:=^80}", " Value Domain Analysis Report ");
+
+        let mut locals: Vec<&usize> = self.value_domains.keys().collect();
+        locals.sort();
+
+        if locals.is_empty() {
+            println!("  [Empty Value Domains]");
+            println!("{:=^80}\n", "");
+            return;
+        }
+
+        // Table: Local(6) | Definition(40) | Constraint(15) | Alignment(12)
+        let header = format!(
+            "| {:^6} | {:^40} | {:^15} | {:^12} |",
+            "Local", "Symbolic Definition", "Constraint", "Align"
+        );
+        let sep = format!("+{:-^6}+{:-^40}+{:-^15}+{:-^12}+", "", "", "", "");
+
+        println!("{}", sep);
+        println!("{}", header);
+        println!("{}", sep);
+
+        for local_idx in locals {
+            let domain = &self.value_domains[local_idx];
+
+            let local_str = format!("_{}", local_idx);
+            let def_str = self.format_symbolic_def(domain.def.as_ref());
+            let constraint_str = match domain.value_constraint {
+                Some(v) => format!("== {}", v),
+                None => String::from("-"),
+            };
+            let align_str = match domain.align {
+                Some((a, s)) => format!("a:{}, s:{}", a, s),
+                None => String::from("-"),
+            };
+
+            let def_str_display = if def_str.len() > 38 {
+                format!("{}..", &def_str[..36])
+            } else {
+                def_str
+            };
+
+            println!(
+                "| {:<6} | {:<40} | {:<15} | {:<12} |",
+                local_str, def_str_display, constraint_str, align_str
+            );
+        }
+
+        println!("{}", sep);
+        println!("{:=^80}\n", " End Report ");
+    }
+
+    fn format_symbolic_def(&self, def: Option<&SymbolicDef>) -> String {
+        match def {
+            None => String::from("Top (Unknown)"),
+            Some(d) => match d {
+                SymbolicDef::Param(idx) => format!("Param(arg_{})", idx),
+                SymbolicDef::Constant(val) => format!("Const({})", val),
+                SymbolicDef::Use(idx) => format!("Copy(__{})", idx),
+                SymbolicDef::Ref(idx) => format!("&__{}", idx),
+                SymbolicDef::Cast(idx, ty_str) => format!("_{} as {}", idx, ty_str),
+                SymbolicDef::UnOp(op) => format!("{:?}(op)", op), // 建议修改 UnOp 定义以包含操作数
+                SymbolicDef::Binary(op, lhs, rhs) => {
+                    let op_str = self.binop_to_symbol(op);
+                    let rhs_str = match rhs {
+                        AnaOperand::Local(i) => format!("_{}", i),
+                        AnaOperand::Const(c) => format!("{}", c),
+                    };
+                    format!("_{} {} {}", lhs, op_str, rhs_str)
+                }
+                SymbolicDef::Call(func_name, args) => {
+                    let args_str: Vec<String> = args.iter().map(|a| format!("_{}", a)).collect();
+                    format!("{}({})", func_name, args_str.join(", "))
+                }
+            },
+        }
+    }
+
+    fn binop_to_symbol(&self, op: &BinOp) -> &'static str {
+        match op {
+            BinOp::Add => "+",
+            BinOp::Sub => "-",
+            BinOp::Mul => "*",
+            BinOp::Div => "/",
+            BinOp::Rem => "%",
+            BinOp::BitXor => "^",
+            BinOp::BitAnd => "&",
+            BinOp::BitOr => "|",
+            BinOp::Shl => "<<",
+            BinOp::Shr => ">>",
+            BinOp::Eq => "==",
+            BinOp::Ne => "!=",
+            BinOp::Lt => "<",
+            BinOp::Le => "<=",
+            BinOp::Gt => ">",
+            BinOp::Ge => ">=",
+            BinOp::Offset => "ptr_offset",
+            _ => "",
+        }
     }
 }
