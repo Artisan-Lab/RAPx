@@ -712,7 +712,7 @@ pub fn generate_contract_from_std_annotation_json(
 
         let arg_index_str = &raw_args[0];
         let local_id = if let Ok(arg_idx) = arg_index_str.parse::<usize>() {
-            arg_idx + 1
+            arg_idx
         } else {
             rap_error!(
                 "JSON Contract Error: First argument must be an arg index number, got {}",
@@ -747,7 +747,7 @@ pub fn generate_contract_from_std_annotation_json(
         let contract = PropertyContract::new(tcx, def_id, &tag_name, &exprs);
         results.push((local_id, fields, contract));
     }
-
+    rap_error!("{:?}", results);
     results
 }
 

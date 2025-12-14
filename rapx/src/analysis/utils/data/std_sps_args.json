@@ -16,7 +16,7 @@
   "core::ptr::const_ptr::byte_offset": [
     {
         "tag": "InBound",
-        "args": ["0", "T", "count"]
+        "args": ["0", "T", "Arg_1"]
     },
     {
         "tag": "ValidNum",

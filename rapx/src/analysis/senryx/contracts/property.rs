@@ -186,10 +186,31 @@ impl<'tcx> PropertyContract<'tcx> {
             CisRangeItem::Var(var_len.0, var_len.1.iter().map(|(x, _)| *x).collect())
         } else if parse_expr_into_number(expr).is_some() {
             CisRangeItem::Value(parse_expr_into_number(expr).unwrap())
+        } else if Self::parse_arg_length(expr).is_some() {
+            return Self::parse_arg_length(expr).unwrap();
         } else {
-            rap_error!("Range length error in {:?} Tag!", sp);
+            rap_error!(
+                "Range length error in {:?} Tag! Unknown anntation:\n{:?}",
+                sp,
+                expr
+            );
             CisRangeItem::Unknown
         }
+    }
+
+    fn parse_arg_length(expr: &Expr) -> Option<CisRangeItem> {
+        if let Expr::Path(expr_path) = expr {
+            if let Some(ident) = expr_path.path.get_ident() {
+                let s = ident.to_string();
+
+                if let Some(num_str) = s.strip_prefix("Arg_") {
+                    if let Ok(idx) = num_str.parse::<usize>() {
+                        return Some(CisRangeItem::Var(idx, Vec::new()));
+                    }
+                }
+            }
+        }
+        None
     }
 }
 

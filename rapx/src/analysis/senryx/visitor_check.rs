@@ -47,14 +47,14 @@ impl<'tcx> BodyVisitor<'tcx> {
         // this fn-call could be replaced with 'generate_contract_from_annotation_without_field_types(self.tcx, *def_id);'
         let args_with_contracts = generate_contract_from_std_annotation_json(self.tcx, *def_id);
 
-        let mut count = 0;
+        let mut result_count_flag = 0;
         for (base, fields, contract) in args_with_contracts {
             rap_debug!("Find contract for {:?}, {base}: {:?}", def_id, contract);
             if base == 0 {
                 rap_warn!("Wrong base index for {:?}, with {:?}", def_id, contract);
                 continue;
             }
-            let arg_tuple = get_arg_place(&args[base - 1].node);
+            let arg_tuple = get_arg_place(&args[base].node);
             // if this arg is a constant
             if arg_tuple.0 {
                 continue; //TODO: check the constant value
@@ -67,303 +67,58 @@ impl<'tcx> BodyVisitor<'tcx> {
                     &generic_mapping,
                     func_name.clone(),
                     fn_span,
-                    count,
+                    result_count_flag,
                 );
             }
-            count += 1;
+            result_count_flag += 1;
         }
-
+        // Handle SPs defined via UnsafeApi structure
         for (idx, sp_set) in fn_result.sps.iter().enumerate() {
-            if args.is_empty() {
+            if idx >= args.len() {
                 break;
             }
             let arg_tuple = get_arg_place(&args[idx].node);
-            // if this arg is a constant
             if arg_tuple.0 {
                 continue;
             }
             let arg_place = arg_tuple.1;
-            let _self_func_name = get_cleaned_def_path_name(self.tcx, self.def_id);
-            let func_name = get_cleaned_def_path_name(self.tcx, *def_id);
+            let func_name_str = func_name.clone();
+
             for sp in sp_set {
-                match sp.sp_name.as_str() {
-                    "NonNull" => {
-                        if !self.check_non_null(arg_place) {
-                            self.insert_failed_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "NonNull",
-                            );
-                        } else {
-                            self.insert_successful_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "NonNull",
-                            );
-                        }
-                    }
+                let sp_name = sp.sp_name.as_str();
+                let passed = match sp_name {
+                    "NonNull" => self.check_non_null(arg_place),
                     "AllocatorConsistency" => {
-                        if !self.check_allocator_consistency(func_name.clone(), arg_place) {
-                            self.insert_failed_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "AllocatorConsistency",
-                            );
-                        } else {
-                            self.insert_successful_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "AllocatorConsistency",
-                            );
-                        }
+                        self.check_allocator_consistency(func_name_str.clone(), arg_place)
                     }
-                    "!ZST" => {
-                        if !self.check_non_zst(arg_place) {
-                            self.insert_failed_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "!ZST",
-                            );
-                        } else {
-                            self.insert_successful_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "!ZST",
-                            );
-                        }
-                    }
-                    "Typed" => {
-                        if !self.check_typed(arg_place) {
-                            self.insert_failed_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "Typed",
-                            );
-                        } else {
-                            self.insert_successful_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "Typed",
-                            );
-                        }
-                    }
-                    "Allocated" => {
-                        if !self.check_allocated(arg_place) {
-                            self.insert_failed_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "Allocated",
-                            );
-                        } else {
-                            self.insert_successful_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "Allocated",
-                            );
-                        }
-                    }
-                    "ValidString" => {
-                        if !self.check_valid_string(arg_place) {
-                            self.insert_failed_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "ValidString",
-                            );
-                        } else {
-                            self.insert_successful_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "ValidString",
-                            );
-                        }
-                    }
-                    "ValidCStr" => {
-                        if !self.check_valid_cstr(arg_place) {
-                            self.insert_failed_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "ValidCStr",
-                            );
-                        } else {
-                            self.insert_successful_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "ValidCStr",
-                            );
-                        }
-                    }
-                    "ValidInt" => {
-                        if !self.check_valid_num(arg_place) {
-                            self.insert_failed_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "ValidNum",
-                            );
-                        } else {
-                            self.insert_successful_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "ValidInt",
-                            );
-                        }
-                    }
-                    "Init" => {
-                        if !self.check_init(arg_place) {
-                            self.insert_failed_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "Init",
-                            );
-                        } else {
-                            self.insert_successful_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "Init",
-                            );
-                        }
-                    }
-                    "ValidPtr" => {
-                        if !self.check_valid_ptr(arg_place) {
-                            self.insert_failed_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "ValidPtr",
-                            );
-                        } else {
-                            self.insert_successful_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "ValidPtr",
-                            );
-                        }
-                    }
-                    "Ref2Ptr" => {
-                        if !self.check_ref_to_ptr(arg_place) {
-                            self.insert_failed_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "Ref2Ptr",
-                            );
-                        } else {
-                            self.insert_successful_check_result(
-                                func_name.clone(),
-                                fn_span,
-                                idx + 1,
-                                "Ref2Ptr",
-                            );
-                        }
-                    }
-                    _ => {}
+                    "!ZST" => self.check_non_zst(arg_place),
+                    "Typed" => self.check_typed(arg_place),
+                    "Allocated" => self.check_allocated(arg_place),
+                    "ValidString" => self.check_valid_string(arg_place),
+                    "ValidCStr" => self.check_valid_cstr(arg_place),
+                    "ValidInt" => self.check_valid_num(arg_place),
+                    "Init" => self.check_init(arg_place),
+                    "ValidPtr" => self.check_valid_ptr(arg_place),
+                    "Ref2Ptr" => self.check_ref_to_ptr(arg_place),
+                    _ => true, // Unknown tag, default to passed or ignored
+                };
+
+                if passed {
+                    self.insert_successful_check_result(
+                        func_name_str.clone(),
+                        fn_span,
+                        idx + 1,
+                        sp_name,
+                    );
+                } else {
+                    self.insert_failed_check_result(
+                        func_name_str.clone(),
+                        fn_span,
+                        idx + 1,
+                        sp_name,
+                    );
                 }
             }
-        }
-    }
-
-    pub fn insert_failed_check_result(
-        &mut self,
-        func_name: String,
-        fn_span: Span,
-        idx: usize,
-        sp: &str,
-    ) {
-        if let Some(existing) = self
-            .check_results
-            .iter_mut()
-            .find(|result| result.func_name == func_name && result.func_span == fn_span)
-        {
-            if let Some(passed_set) = existing.passed_contracts.get_mut(&idx) {
-                passed_set.remove(sp);
-                if passed_set.is_empty() {
-                    existing.passed_contracts.remove(&idx);
-                }
-            }
-            existing
-                .failed_contracts
-                .entry(idx)
-                .and_modify(|set| {
-                    set.insert(sp.to_string());
-                })
-                .or_insert_with(|| {
-                    let mut new_set = HashSet::new();
-                    new_set.insert(sp.to_string());
-                    new_set
-                });
-        } else {
-            let mut new_result = CheckResult::new(&func_name, fn_span);
-            new_result
-                .failed_contracts
-                .insert(idx, HashSet::from([sp.to_string()]));
-            self.check_results.push(new_result);
-        }
-    }
-
-    pub fn insert_successful_check_result(
-        &mut self,
-        func_name: String,
-        fn_span: Span,
-        idx: usize,
-        sp: &str,
-    ) {
-        if let Some(existing) = self
-            .check_results
-            .iter_mut()
-            .find(|result| result.func_name == func_name && result.func_span == fn_span)
-        {
-            if let Some(failed_set) = existing.failed_contracts.get_mut(&idx) {
-                if failed_set.contains(sp) {
-                    return;
-                }
-            }
-
-            existing
-                .passed_contracts
-                .entry(idx)
-                .and_modify(|set| {
-                    set.insert(sp.to_string());
-                })
-                .or_insert_with(|| HashSet::from([sp.to_string()]));
-        } else {
-            let mut new_result = CheckResult::new(&func_name, fn_span);
-            new_result
-                .passed_contracts
-                .insert(idx, HashSet::from([sp.to_string()]));
-            self.check_results.push(new_result);
-        }
-    }
-
-    pub fn insert_checking_result(
-        &mut self,
-        sp: &str,
-        is_passed: bool,
-        func_name: String,
-        fn_span: Span,
-        idx: usize,
-    ) {
-        if is_passed {
-            self.insert_successful_check_result(func_name.clone(), fn_span, idx + 1, sp);
-        } else {
-            self.insert_failed_check_result(func_name.clone(), fn_span, idx + 1, sp);
         }
     }
 
@@ -617,10 +372,6 @@ impl<'tcx> BodyVisitor<'tcx> {
         false
     }
 
-    // fn compare_cis_range(&self, cis_range: CisRange, right_len: &CisRangeItem) -> bool {
-    //     false
-    // }
-
     pub fn check_valid_string(&self, _arg: usize) -> bool {
         true
     }
@@ -660,5 +411,97 @@ impl<'tcx> BodyVisitor<'tcx> {
             get_cleaned_def_path_name(self.tcx, self.def_id)
         );
         display_hashmap(&self.chains.variables, 1);
+    }
+
+    // -------------------------- helper functions: insert checking results --------------------------
+
+    // Insert result general API
+    pub fn insert_checking_result(
+        &mut self,
+        sp: &str,
+        is_passed: bool,
+        func_name: String,
+        fn_span: Span,
+        idx: usize,
+    ) {
+        if is_passed {
+            self.insert_successful_check_result(func_name.clone(), fn_span, idx + 1, sp);
+        } else {
+            self.insert_failed_check_result(func_name.clone(), fn_span, idx + 1, sp);
+        }
+    }
+
+    // Insert falied SP result
+    pub fn insert_failed_check_result(
+        &mut self,
+        func_name: String,
+        fn_span: Span,
+        idx: usize,
+        sp: &str,
+    ) {
+        if let Some(existing) = self
+            .check_results
+            .iter_mut()
+            .find(|result| result.func_name == func_name && result.func_span == fn_span)
+        {
+            if let Some(passed_set) = existing.passed_contracts.get_mut(&idx) {
+                passed_set.remove(sp);
+                if passed_set.is_empty() {
+                    existing.passed_contracts.remove(&idx);
+                }
+            }
+            existing
+                .failed_contracts
+                .entry(idx)
+                .and_modify(|set| {
+                    set.insert(sp.to_string());
+                })
+                .or_insert_with(|| {
+                    let mut new_set = HashSet::new();
+                    new_set.insert(sp.to_string());
+                    new_set
+                });
+        } else {
+            let mut new_result = CheckResult::new(&func_name, fn_span);
+            new_result
+                .failed_contracts
+                .insert(idx, HashSet::from([sp.to_string()]));
+            self.check_results.push(new_result);
+        }
+    }
+
+    // Insert successful SP result
+    pub fn insert_successful_check_result(
+        &mut self,
+        func_name: String,
+        fn_span: Span,
+        idx: usize,
+        sp: &str,
+    ) {
+        if let Some(existing) = self
+            .check_results
+            .iter_mut()
+            .find(|result| result.func_name == func_name && result.func_span == fn_span)
+        {
+            if let Some(failed_set) = existing.failed_contracts.get_mut(&idx) {
+                if failed_set.contains(sp) {
+                    return;
+                }
+            }
+
+            existing
+                .passed_contracts
+                .entry(idx)
+                .and_modify(|set| {
+                    set.insert(sp.to_string());
+                })
+                .or_insert_with(|| HashSet::from([sp.to_string()]));
+        } else {
+            let mut new_result = CheckResult::new(&func_name, fn_span);
+            new_result
+                .passed_contracts
+                .insert(idx, HashSet::from([sp.to_string()]));
+            self.check_results.push(new_result);
+        }
     }
 }
