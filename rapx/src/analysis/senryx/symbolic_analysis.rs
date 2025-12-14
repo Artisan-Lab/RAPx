@@ -12,7 +12,7 @@ pub enum SymbolicDef {
     Cast(usize, String),
     Binary(BinOp, usize, AnaOperand),
     UnOp(UnOp),
-    Call(String, Vec<usize>),
+    Call(String, Vec<AnaOperand>),
     Ref(usize),
 }
 
@@ -67,11 +67,11 @@ where
 
         if let Some(ref def) = domain.def {
             match def {
-                SymbolicDef::Call(name, args) if name.contains("byte_add") && args.len() == 2 => {
-                    if let (Some(lhs), Some(rhs)) = (z3_vars.get(&args[0]), z3_vars.get(&args[1])) {
-                        solver.assert(&current_var._eq(&lhs.bvadd(rhs)));
-                    }
-                }
+                // SymbolicDef::Call(name, args) if name.contains("byte_add") && args.len() == 2 => {
+                //     if let (Some(lhs), Some(rhs)) = (z3_vars.get(&args[0]), z3_vars.get(&args[1])) {
+                //         solver.assert(&current_var._eq(&lhs.bvadd(rhs)));
+                //     }
+                // }
                 SymbolicDef::Cast(src_idx, _) => {
                     if let Some(src_var) = z3_vars.get(src_idx) {
                         solver.assert(&current_var._eq(src_var));
@@ -133,25 +133,4 @@ where
         SatResult::Unsat => true,
         _ => false,
     }
-}
-
-pub fn verify_alignment(
-    values: HashMap<usize, ValueDomain>,
-    path_constraints: Vec<SymbolicDef>,
-    local_idx: usize,
-    required_align: u64,
-) -> bool {
-    verify_with_z3(
-        values,
-        path_constraints,
-        |ctx, vars: &HashMap<usize, BV>| {
-            if let Some(var) = vars.get(&local_idx) {
-                let z3_align = BV::from_u64(ctx, required_align, 64);
-                let zero = BV::from_u64(ctx, 0, 64);
-                var.bvurem(&z3_align)._eq(&zero)
-            } else {
-                Bool::from_bool(ctx, false)
-            }
-        },
-    )
 }

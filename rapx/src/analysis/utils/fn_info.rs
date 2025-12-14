@@ -747,7 +747,6 @@ pub fn generate_contract_from_std_annotation_json(
         let contract = PropertyContract::new(tcx, def_id, &tag_name, &exprs);
         results.push((local_id, fields, contract));
     }
-    rap_error!("{:?}", results);
     results
 }
 

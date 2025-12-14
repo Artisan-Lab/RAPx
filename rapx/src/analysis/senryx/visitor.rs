@@ -207,16 +207,17 @@ impl<'tcx> BodyVisitor<'tcx> {
 
             // Used for debug
             if self.visit_time == 0 {
-                let base_name = get_cleaned_def_path_name(self.tcx, self.def_id);
-                let path_suffix = path
-                    .iter()
-                    .map(|b| b.to_string())
-                    .collect::<Vec<String>>()
-                    .join("_");
+                self.display_value_domains();
+                // let base_name = get_cleaned_def_path_name(self.tcx, self.def_id);
+                // let path_suffix = path
+                //     .iter()
+                //     .map(|b| b.to_string())
+                //     .collect::<Vec<String>>()
+                //     .join("_");
 
-                let name = format!("{}_path_{}", base_name, path_suffix);
-                let dot_string = self.chains.to_dot_graph();
-                render_dot_string(name, dot_string);
+                // let name = format!("{}_path_{}", base_name, path_suffix);
+                // let dot_string = self.chains.to_dot_graph();
+                // render_dot_string(name, dot_string);
             }
 
             // merge path analysis results
@@ -500,12 +501,23 @@ impl<'tcx> BodyVisitor<'tcx> {
         &mut self,
         dst_place: &Place<'tcx>,
         def_id: &DefId,
-        args: &Box<[Spanned<Operand>]>,
+        args: &Box<[Spanned<Operand<'tcx>>]>,
         path_index: usize,
         fn_map: &FxHashMap<DefId, AAResult>,
         fn_span: Span,
         generic_mapping: FxHashMap<String, Ty<'tcx>>,
     ) {
+        // record for symbolic analysis
+        let dst_local = self.handle_proj(false, *dst_place);
+        let func_name = get_cleaned_def_path_name(self.tcx, *def_id);
+        let mut call_arg_indices = Vec::new();
+        for arg in args.iter() {
+            if let Some(ana_op) = self.lift_operand(&arg.node) {
+                call_arg_indices.push(ana_op);
+            }
+        }
+        self.record_value_def(dst_local, SymbolicDef::Call(func_name, call_arg_indices));
+
         if !self.tcx.is_mir_available(def_id) {
             return;
         }
@@ -1068,8 +1080,8 @@ impl<'tcx> BodyVisitor<'tcx> {
             Some(d) => match d {
                 SymbolicDef::Param(idx) => format!("Param(arg_{})", idx),
                 SymbolicDef::Constant(val) => format!("Const({})", val),
-                SymbolicDef::Use(idx) => format!("Copy(__{})", idx),
-                SymbolicDef::Ref(idx) => format!("&__{}", idx),
+                SymbolicDef::Use(idx) => format!("Copy(_{})", idx),
+                SymbolicDef::Ref(idx) => format!("&_{}", idx),
                 SymbolicDef::Cast(idx, ty_str) => format!("_{} as {}", idx, ty_str),
                 SymbolicDef::UnOp(op) => format!("{:?}(op)", op), // 建议修改 UnOp 定义以包含操作数
                 SymbolicDef::Binary(op, lhs, rhs) => {
@@ -1081,7 +1093,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                     format!("_{} {} {}", lhs, op_str, rhs_str)
                 }
                 SymbolicDef::Call(func_name, args) => {
-                    let args_str: Vec<String> = args.iter().map(|a| format!("_{}", a)).collect();
+                    let args_str: Vec<String> = args.iter().map(|a| format!("_{:?}", a)).collect();
                     format!("{}({})", func_name, args_str.join(", "))
                 }
             },

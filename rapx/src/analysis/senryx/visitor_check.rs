@@ -30,6 +30,7 @@ use rustc_span::Span;
 use rustc_span::source_map::Spanned;
 
 impl<'tcx> BodyVisitor<'tcx> {
+    /// Entry point for handling standard library unsafe API calls and verifying their contracts.
     pub fn handle_std_unsafe_call(
         &mut self,
         _dst_place: &Place<'_>,
@@ -49,10 +50,6 @@ impl<'tcx> BodyVisitor<'tcx> {
 
         for (idx, (base, fields, contract)) in args_with_contracts.iter().enumerate() {
             rap_debug!("Find contract for {:?}, {base}: {:?}", def_id, contract);
-            if *base == 0 {
-                rap_warn!("Wrong base index for {:?}, with {:?}", def_id, contract);
-                continue;
-            }
             let arg_tuple = get_arg_place(&args[*base].node);
             // if this arg is a constant
             if arg_tuple.0 {
@@ -72,6 +69,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
+    /// Dispatcher function that validates a specific contract type.
     pub fn check_contract(
         &mut self,
         arg: usize,
@@ -117,8 +115,6 @@ impl<'tcx> BodyVisitor<'tcx> {
 
     // TODO: Currently can not support unaligned offset checking
     pub fn check_align(&self, arg: usize, contract_required_ty: Ty<'tcx>) -> bool {
-        // rap_warn!("Checking Align {arg}!");
-        // display_hashmap(&self.chains.variables, 1);
         // 1. Check the var's cis.
         let var = self.chains.get_var_node(arg).unwrap();
         let required_ty = self.visit_ty_and_get_layout(contract_required_ty);
@@ -134,8 +130,6 @@ impl<'tcx> BodyVisitor<'tcx> {
         let cur_ty = self.visit_ty_and_get_layout(var.ty.unwrap());
         let point_to_id = self.chains.get_point_to_id(arg);
         let var_ty = self.chains.get_var_node(point_to_id);
-        // display_hashmap(&self.chains.variables, 1);
-        // rap_warn!("{:?}, {:?}, {:?}, {:?}", arg, cur_ty, point_to_id, mem_ty);
         return AlignState::Cast(mem_ty, cur_ty).check() && var_ty.unwrap().ots.align;
     }
 
@@ -166,7 +160,6 @@ impl<'tcx> BodyVisitor<'tcx> {
     pub fn check_typed(&self, arg: usize) -> bool {
         let obj_ty = self.chains.get_obj_ty_through_chain(arg).unwrap();
         let var = self.chains.get_var_node(arg);
-        // display_hashmap(&self.chains.variables, 1);
         let var_ty = var.unwrap().ty.unwrap();
         if obj_ty != var_ty && is_strict_ty_convert(self.tcx, obj_ty, var_ty) {
             return false;
@@ -188,7 +181,6 @@ impl<'tcx> BodyVisitor<'tcx> {
     pub fn check_init(&self, arg: usize) -> bool {
         let point_to_id = self.chains.get_point_to_id(arg);
         let var = self.chains.get_var_node(point_to_id);
-        // display_hashmap(&self.chains.variables, 1);
         if var.unwrap().field.is_empty() {
             let mut init_flag = true;
             for field in &var.unwrap().field {
@@ -214,101 +206,6 @@ impl<'tcx> BodyVisitor<'tcx> {
         length_arg: CisRangeItem,
         contract_ty: Ty<'tcx>,
     ) -> bool {
-        // 1. Check the var's cis.
-        // let mem_arg = self.chains.get_point_to_id(arg);
-        // let mem_var = self.chains.get_var_node(mem_arg).unwrap();
-        // for cis in &mem_var.cis.contracts {
-        //     if let PropertyContract::InBound(cis_ty, len) = cis {
-        //         // display_hashmap(&self.chains.variables, 1);
-        //         // return self.check_le_op(&contract_ty, length_arg, cis_ty, len);
-        //     }
-        // }
-        false
-    }
-
-    /// return the result of less equal comparison （left_len * left_ty <= right_len * right_ty）
-    fn check_le_op(
-        &self,
-        left_ty: &Ty<'tcx>,
-        left_arg: usize,
-        right_ty: &Ty<'tcx>,
-        right_len: &CisRangeItem,
-    ) -> bool {
-        // If they have same types, then compare the length
-        // rap_warn!("{:?}, {left_arg}, {:?}, {:?}", left_ty, right_ty, right_len);
-        // If they have the same type, compare their patial order
-        if left_ty == right_ty {
-            return self
-                .compare_patial_order_of_two_args(left_arg, right_len.get_var_base().unwrap());
-        }
-        // Otherwise, take size of types into consideration
-        let left_layout = self.visit_ty_and_get_layout(*left_ty);
-        let right_layout = self.visit_ty_and_get_layout(*right_ty);
-        let get_size_range = |layout: &PlaceTy<'tcx>| -> Option<(u128, u128)> {
-            match layout {
-                PlaceTy::Ty(_, size) => Some((*size as u128, *size as u128)),
-                PlaceTy::GenericTy(_, _, layouts) if !layouts.is_empty() => {
-                    let sizes: Vec<u128> = layouts.iter().map(|(_, s)| *s as u128).collect();
-                    let min = *sizes.iter().min().unwrap();
-                    let max = *sizes.iter().max().unwrap();
-                    Some((min, max))
-                }
-                _ => None,
-            }
-        };
-        let (left_min_size, left_max_size) = match get_size_range(&left_layout) {
-            Some(range) => range,
-            None => return false, // Can not detemine size
-        };
-        let (right_min_size, right_max_size) = match get_size_range(&right_layout) {
-            Some(range) => range,
-            None => return false, // Can not detemine size
-        };
-        // TODO:
-
-        false
-    }
-
-    /// compare two args, return true if left <= right
-    fn compare_patial_order_of_two_args(&self, left: usize, right: usize) -> bool {
-        // Find the same value node set
-        let mut dataflow_analyzer = DataFlowAnalyzer::new(self.tcx, false);
-        dataflow_analyzer.build_graph(self.def_id);
-        let left_local = rustc_middle::mir::Local::from(left);
-        let right_local = rustc_middle::mir::Local::from(right);
-        let left_local_set = dataflow_analyzer.collect_equivalent_locals(self.def_id, left_local);
-        let right_local_set = dataflow_analyzer.collect_equivalent_locals(self.def_id, right_local);
-        // If left == right
-        if right_local_set.contains(&rustc_middle::mir::Local::from(left)) {
-            return true;
-        }
-        // rap_warn!(
-        //     "left_local: {:?}, left set: {:?}, right_local:{:?}, right set: {:?}",
-        //     left_local,
-        //     left_local_set,
-        //     right_local,
-        //     right_local_set
-        // );
-        for left_local_item in left_local_set {
-            let left_var = self.chains.get_var_node(left_local_item.as_usize());
-            if left_var.is_none() {
-                continue;
-            }
-            for cis in &left_var.unwrap().cis.contracts {
-                if let PropertyContract::ValidNum(cis_range) = cis {
-                    let cis_len = &cis_range.range;
-                    match cis_range.bin_op {
-                        BinOp::Le | BinOp::Lt | BinOp::Eq => {
-                            return cis_len.get_var_base().is_some()
-                                && right_local_set.contains(&rustc_middle::mir::Local::from(
-                                    cis_len.get_var_base().unwrap(),
-                                ));
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
         false
     }
 
@@ -328,7 +225,8 @@ impl<'tcx> BodyVisitor<'tcx> {
         true
     }
 
-    // Compound SPs
+    // --------------------- Checking Compound SPs ---------------------
+
     pub fn check_valid_ptr(
         &self,
         arg: usize,
@@ -351,16 +249,8 @@ impl<'tcx> BodyVisitor<'tcx> {
     ) -> bool {
         self.check_deref(arg, length_arg, contract_ty)
             && self.check_init(arg)
-            // && self.check_align(arg)
+            && self.check_align(arg, contract_ty)
             && self.check_alias(arg)
-    }
-
-    pub fn show_error_info(&self, arg: usize) {
-        rap_warn!(
-            "In func {:?}, visitor checker error! Can't get {arg} in chain!",
-            get_cleaned_def_path_name(self.tcx, self.def_id)
-        );
-        display_hashmap(&self.chains.variables, 1);
     }
 
     // -------------------------- helper functions: insert checking results --------------------------
@@ -456,5 +346,13 @@ impl<'tcx> BodyVisitor<'tcx> {
                 .insert(idx, HashSet::from([sp.to_string()]));
             self.check_results.push(new_result);
         }
+    }
+
+    pub fn show_error_info(&self, arg: usize) {
+        rap_warn!(
+            "In func {:?}, visitor checker error! Can't get {arg} in chain!",
+            get_cleaned_def_path_name(self.tcx, self.def_id)
+        );
+        display_hashmap(&self.chains.variables, 1);
     }
 }
