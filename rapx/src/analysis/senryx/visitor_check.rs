@@ -43,18 +43,17 @@ impl<'tcx> BodyVisitor<'tcx> {
     ) {
         let func_name = get_cleaned_def_path_name(self.tcx, *def_id);
 
-        // If the contracts of target API has not been defined in 'std_sps_args.json',
+        // If the target API has contract annotation in signature,
         // this fn-call could be replaced with 'generate_contract_from_annotation_without_field_types(self.tcx, *def_id);'
         let args_with_contracts = generate_contract_from_std_annotation_json(self.tcx, *def_id);
 
-        let mut result_count_flag = 0;
-        for (base, fields, contract) in args_with_contracts {
+        for (idx, (base, fields, contract)) in args_with_contracts.iter().enumerate() {
             rap_debug!("Find contract for {:?}, {base}: {:?}", def_id, contract);
-            if base == 0 {
+            if *base == 0 {
                 rap_warn!("Wrong base index for {:?}, with {:?}", def_id, contract);
                 continue;
             }
-            let arg_tuple = get_arg_place(&args[base].node);
+            let arg_tuple = get_arg_place(&args[*base].node);
             // if this arg is a constant
             if arg_tuple.0 {
                 continue; //TODO: check the constant value
@@ -63,61 +62,12 @@ impl<'tcx> BodyVisitor<'tcx> {
                 self.check_contract(
                     arg_place,
                     args,
-                    contract,
+                    contract.clone(),
                     &generic_mapping,
                     func_name.clone(),
                     fn_span,
-                    result_count_flag,
+                    idx,
                 );
-            }
-            result_count_flag += 1;
-        }
-        // Handle SPs defined via UnsafeApi structure
-        for (idx, sp_set) in fn_result.sps.iter().enumerate() {
-            if idx >= args.len() {
-                break;
-            }
-            let arg_tuple = get_arg_place(&args[idx].node);
-            if arg_tuple.0 {
-                continue;
-            }
-            let arg_place = arg_tuple.1;
-            let func_name_str = func_name.clone();
-
-            for sp in sp_set {
-                let sp_name = sp.sp_name.as_str();
-                let passed = match sp_name {
-                    "NonNull" => self.check_non_null(arg_place),
-                    "AllocatorConsistency" => {
-                        self.check_allocator_consistency(func_name_str.clone(), arg_place)
-                    }
-                    "!ZST" => self.check_non_zst(arg_place),
-                    "Typed" => self.check_typed(arg_place),
-                    "Allocated" => self.check_allocated(arg_place),
-                    "ValidString" => self.check_valid_string(arg_place),
-                    "ValidCStr" => self.check_valid_cstr(arg_place),
-                    "ValidInt" => self.check_valid_num(arg_place),
-                    "Init" => self.check_init(arg_place),
-                    "ValidPtr" => self.check_valid_ptr(arg_place),
-                    "Ref2Ptr" => self.check_ref_to_ptr(arg_place),
-                    _ => true, // Unknown tag, default to passed or ignored
-                };
-
-                if passed {
-                    self.insert_successful_check_result(
-                        func_name_str.clone(),
-                        fn_span,
-                        idx + 1,
-                        sp_name,
-                    );
-                } else {
-                    self.insert_failed_check_result(
-                        func_name_str.clone(),
-                        fn_span,
-                        idx + 1,
-                        sp_name,
-                    );
-                }
             }
         }
     }
@@ -132,53 +82,38 @@ impl<'tcx> BodyVisitor<'tcx> {
         fn_span: Span,
         idx: usize,
     ) -> bool {
-        match contract {
+        let (sp_name, check_result) = match contract {
             PropertyContract::Align(ty) => {
-                let contract_required_ty = reflect_generic(generic_mapping, ty);
-                rap_debug!(
-                    "peel generic ty for {:?}, actual_ty is {:?}",
-                    func_name.clone(),
-                    contract_required_ty
-                );
-                if !self.check_align(arg, contract_required_ty) {
-                    self.insert_checking_result("Align", false, func_name, fn_span, idx);
-                } else {
-                    rap_debug!("Checking Align passed for {func_name} in {:?}!", fn_span);
-                    self.insert_checking_result("Align", true, func_name, fn_span, idx);
-                }
+                let contract_required_ty = reflect_generic(generic_mapping, &func_name, ty);
+                let check_result = self.check_align(arg, contract_required_ty);
+                ("Align", check_result)
             }
             PropertyContract::InBound(ty, contract_len) => {
-                let contract_ty = reflect_generic(generic_mapping, ty);
-                if let CisRangeItem::Var(base, len_fields) = contract_len {
-                    let base_tuple = get_arg_place(&args[base - 1].node);
-                    let length_arg = self
-                        .chains
-                        .find_var_id_with_fields_seq(base_tuple.1, len_fields);
-                    if !self.check_inbound(arg, length_arg, contract_ty) {
-                        self.insert_checking_result("InBound", false, func_name, fn_span, idx);
-                    } else {
-                        rap_info!("Checking InBound passed for {func_name} in {:?}!", fn_span);
-                        self.insert_checking_result("InBound", true, func_name, fn_span, idx);
-                    }
-                } else {
-                    rap_error!("Wrong arg {:?} in Inbound safety check!", contract_len);
-                }
+                let contract_required_ty = reflect_generic(generic_mapping, &func_name, ty);
+                let check_result = self.check_inbound(arg, contract_len, contract_required_ty);
+                ("Inbound", check_result)
             }
             PropertyContract::NonNull => {
-                self.check_non_null(arg);
+                let check_result = self.check_non_null(arg);
+                ("NonNull", check_result)
             }
             PropertyContract::Typed(ty) => {
-                self.check_typed(arg);
+                let check_result = self.check_typed(arg);
+                ("Typed", check_result)
             }
             PropertyContract::ValidPtr(ty, contract_len) => {
-                self.check_valid_ptr(arg);
+                let contract_required_ty = reflect_generic(generic_mapping, &func_name, ty);
+                let check_result = self.check_valid_ptr(arg, contract_len, contract_required_ty);
+                ("ValidPtr", check_result)
             }
-            _ => {}
-        }
+            _ => ("Unknown", false),
+        };
+
+        self.insert_checking_result(sp_name, check_result, func_name, fn_span, idx);
         true
     }
 
-    // ----------------------Sp checking functions--------------------------
+    // ---------------------- Sp checking functions --------------------------
 
     // TODO: Currently can not support unaligned offset checking
     pub fn check_align(&self, arg: usize, contract_required_ty: Ty<'tcx>) -> bool {
@@ -273,16 +208,21 @@ impl<'tcx> BodyVisitor<'tcx> {
         true
     }
 
-    pub fn check_inbound(&self, arg: usize, length_arg: usize, contract_ty: Ty<'tcx>) -> bool {
+    pub fn check_inbound(
+        &self,
+        arg: usize,
+        length_arg: CisRangeItem,
+        contract_ty: Ty<'tcx>,
+    ) -> bool {
         // 1. Check the var's cis.
-        let mem_arg = self.chains.get_point_to_id(arg);
-        let mem_var = self.chains.get_var_node(mem_arg).unwrap();
-        for cis in &mem_var.cis.contracts {
-            if let PropertyContract::InBound(cis_ty, len) = cis {
-                // display_hashmap(&self.chains.variables, 1);
-                return self.check_le_op(&contract_ty, length_arg, cis_ty, len);
-            }
-        }
+        // let mem_arg = self.chains.get_point_to_id(arg);
+        // let mem_var = self.chains.get_var_node(mem_arg).unwrap();
+        // for cis in &mem_var.cis.contracts {
+        //     if let PropertyContract::InBound(cis_ty, len) = cis {
+        //         // display_hashmap(&self.chains.variables, 1);
+        //         // return self.check_le_op(&contract_ty, length_arg, cis_ty, len);
+        //     }
+        // }
         false
     }
 
@@ -389,17 +329,27 @@ impl<'tcx> BodyVisitor<'tcx> {
     }
 
     // Compound SPs
-    pub fn check_valid_ptr(&self, arg: usize) -> bool {
-        !self.check_non_zst(arg) || (self.check_non_zst(arg) && self.check_deref(arg))
+    pub fn check_valid_ptr(
+        &self,
+        arg: usize,
+        length_arg: CisRangeItem,
+        contract_ty: Ty<'tcx>,
+    ) -> bool {
+        !self.check_non_zst(arg)
+            || (self.check_non_zst(arg) && self.check_deref(arg, length_arg, contract_ty))
     }
 
-    pub fn check_deref(&self, arg: usize) -> bool {
-        self.check_allocated(arg)
-        // && self.check_inbounded(arg)
+    pub fn check_deref(&self, arg: usize, length_arg: CisRangeItem, contract_ty: Ty<'tcx>) -> bool {
+        self.check_allocated(arg) && self.check_inbound(arg, length_arg, contract_ty)
     }
 
-    pub fn check_ref_to_ptr(&self, arg: usize) -> bool {
-        self.check_deref(arg)
+    pub fn check_ref_to_ptr(
+        &self,
+        arg: usize,
+        length_arg: CisRangeItem,
+        contract_ty: Ty<'tcx>,
+    ) -> bool {
+        self.check_deref(arg, length_arg, contract_ty)
             && self.check_init(arg)
             // && self.check_align(arg)
             && self.check_alias(arg)
@@ -424,6 +374,9 @@ impl<'tcx> BodyVisitor<'tcx> {
         fn_span: Span,
         idx: usize,
     ) {
+        if sp == "Unknown" {
+            return;
+        }
         if is_passed {
             self.insert_successful_check_result(func_name.clone(), fn_span, idx + 1, sp);
         } else {

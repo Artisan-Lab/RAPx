@@ -1160,18 +1160,25 @@ fn find_generic_in_ty<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>, type_ident: &str) -
 
 pub fn reflect_generic<'tcx>(
     generic_mapping: &FxHashMap<String, Ty<'tcx>>,
+    func_name: &str,
     ty: Ty<'tcx>,
 ) -> Ty<'tcx> {
+    let mut actual_ty = ty;
     match ty.kind() {
         TyKind::Param(param_ty) => {
             let generic_name = param_ty.name.to_string();
-            if let Some(actual_ty) = generic_mapping.get(&generic_name) {
-                return *actual_ty;
+            if let Some(actual_ty_from_map) = generic_mapping.get(&generic_name) {
+                actual_ty = *actual_ty_from_map;
             }
         }
         _ => {}
     }
-    ty
+    rap_debug!(
+        "peel generic ty for {:?}, actual_ty is {:?}",
+        func_name,
+        actual_ty
+    );
+    actual_ty
 }
 
 // src_var = 0: for constructor

@@ -435,7 +435,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         return new_id;
     }
 
-    pub fn find_var_id_with_fields_seq(&mut self, local: usize, fields: Vec<usize>) -> usize {
+    pub fn find_var_id_with_fields_seq(&mut self, local: usize, fields: &Vec<usize>) -> usize {
         let mut cur = local;
         for field in fields.clone() {
             let mut cur_node = self.get_var_node(cur).unwrap();
