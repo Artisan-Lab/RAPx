@@ -9,8 +9,7 @@ use crate::{
         graphs::scc::Scc,
         safedrop::graph::SafeDropGraph,
         senryx::{
-            contracts::property::{CisRangeItem, PropertyContract},
-            symbolic_analysis::{AnaOperand, SymbolicDef, ValueDomain},
+            contracts::property::{CisRangeItem, PropertyContract}, dominated_graph::FunctionSummary, symbolic_analysis::{AnaOperand, SymbolicDef, ValueDomain}
         },
         utils::{draw_dot::render_dot_string, fn_info::*, show_mir::display_mir},
     },
@@ -497,6 +496,8 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
+    // ------------------- APIs for handling call ---------------------
+
     pub fn handle_call(
         &mut self,
         dst_place: &Place<'tcx>,
@@ -507,7 +508,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         fn_span: Span,
         generic_mapping: FxHashMap<String, Ty<'tcx>>,
     ) {
-        // record for symbolic analysis
+        // record call information for symbolic analysis
         let dst_local = self.handle_proj(false, *dst_place);
         let func_name = get_cleaned_def_path_name(self.tcx, *def_id);
         let mut call_arg_indices = Vec::new();
@@ -672,22 +673,69 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
-    pub fn get_args_post_states(&mut self) -> HashMap<usize, AbstractStateItem<'tcx>> {
-        let tcx = self.tcx;
-        let def_id = self.def_id;
-        let final_states = self.abstract_states_mop();
-        let mut result_states = HashMap::new();
-        let fn_sig = tcx.fn_sig(def_id).skip_binder();
-        let num_params = fn_sig.inputs().skip_binder().len();
-        for i in 0..num_params + 1 {
-            if let Some(state) = final_states.state_map.get(&(i)) {
-                result_states.insert(i, state.clone());
-            } else {
-                result_states.insert(i, AbstractStateItem::new_default());
+    // Compute the summary of this function
+    pub fn compute_function_summary(&self) -> FunctionSummary {
+        // _0 is the return local
+        if let Some(domain) = self.value_domains.get(&0) {
+            if let Some(def) = &domain.def {
+                let resolved_def = self.resolve_symbolic_def(def, 0); // 0 is the initial recursion deepth
+                return FunctionSummary::new(resolved_def);
             }
         }
-        result_states
+        FunctionSummary::new(None)
     }
+
+    /// Find the relationship between ret_local and params
+    // For example, _1 = add(_2, _3), this function should give 
+    fn resolve_symbolic_def(&self, def: &SymbolicDef, depth: usize) -> Option<SymbolicDef> {
+        // limitation of recursion deepth
+        if depth > 10 { return None; }
+
+        match def {
+            // If _0 = param or const, return it directly
+            SymbolicDef::Param(_) | SymbolicDef::Constant(_) => Some(def.clone()),
+            // If _0 = local var, find the source of this local var.
+            SymbolicDef::Use(local_idx) | SymbolicDef::Ref(local_idx) => {
+                self.resolve_local(*local_idx, depth + 1)
+            },
+            // The same.
+            SymbolicDef::Cast(src_idx, _ty) => {
+                self.resolve_local(*src_idx, depth + 1)
+            },
+            // Resolve the lhs and rhs local independently, then aggregate them to the result
+            SymbolicDef::Binary(op, lhs_idx, rhs_op) => {
+                let lhs_resolved = self.resolve_local(*lhs_idx, depth + 1)?;
+                let rhs_resolved_op = match rhs_op {
+                    AnaOperand::Const(c) => AnaOperand::Const(*c),
+                    AnaOperand::Local(l) => {
+                        match self.resolve_local(*l, depth + 1) {
+                            Some(SymbolicDef::Constant(c)) => AnaOperand::Const(c),
+                            Some(SymbolicDef::Param(p)) => AnaOperand::Local(p),
+                            _ => return None, 
+                        }
+                    }
+                };
+                match lhs_resolved {
+                    SymbolicDef::Param(p_idx) => {
+                         Some(SymbolicDef::Binary(*op, p_idx, rhs_resolved_op))
+                    },
+                    _ => None
+                }
+            },
+            _ => None
+        }
+    }
+
+    fn resolve_local(&self, local_idx: usize, depth: usize) -> Option<SymbolicDef> {
+        if let Some(domain) = self.value_domains.get(&local_idx) {
+            if let Some(def) = &domain.def {
+                return self.resolve_symbolic_def(def, depth);
+            }
+        }
+        None
+    }
+
+    // ------------------------------------------------
 
     pub fn get_all_paths(&mut self) -> HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>> {
         let mut range_analyzer = RangeAnalyzer::<i64>::new(self.tcx, false);

@@ -1,6 +1,6 @@
 use crate::{
     analysis::{
-        senryx::contracts::property::{CisRangeItem, ContractualInvariantState, PropertyContract},
+        senryx::{contracts::property::{CisRangeItem, ContractualInvariantState, PropertyContract}, symbolic_analysis::SymbolicDef},
         utils::fn_info::{display_hashmap, get_pointee, is_ptr, is_ref, is_slice, reverse_op},
     },
     rap_debug, rap_warn,
@@ -126,6 +126,18 @@ impl<'tcx> InterResultNode<'tcx> {
         }
         // TODO: merge into a range
         self.const_value = std::cmp::max(self.const_value, other.const_value);
+    }
+}
+
+
+#[derive(Clone, Debug)]
+pub struct FunctionSummary {
+    pub return_def: Option<SymbolicDef>, 
+}
+
+impl FunctionSummary {
+    pub fn new(def: Option<SymbolicDef>) -> Self {
+        Self { return_def: def }
     }
 }
 
