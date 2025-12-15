@@ -9,7 +9,9 @@ use crate::{
         graphs::scc::Scc,
         safedrop::graph::SafeDropGraph,
         senryx::{
-            contracts::property::{CisRangeItem, PropertyContract}, dominated_graph::FunctionSummary, symbolic_analysis::{AnaOperand, SymbolicDef, ValueDomain}
+            contracts::property::{CisRangeItem, PropertyContract},
+            dominated_graph::FunctionSummary,
+            symbolic_analysis::{AnaOperand, SymbolicDef, ValueDomain},
         },
         utils::{draw_dot::render_dot_string, fn_info::*, show_mir::display_mir},
     },
@@ -172,7 +174,9 @@ impl<'tcx> BodyVisitor<'tcx> {
         // Iterate all the paths. Paths have been handled by tarjan.
         let tmp_chain = self.chains.clone();
         for (index, (path, constraint)) in paths.iter().enumerate() {
+            // Init three data structures in every path
             self.value_domains.clear();
+            self.path_constraints = Vec::new();
             self.chains = tmp_chain.clone();
             self.set_constraint(constraint);
             self.abstract_states.insert(index, PathInfo::new());
@@ -207,6 +211,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             // Used for debug
             if self.visit_time == 0 {
                 self.display_value_domains();
+                self.display_path_constraints();
                 // let base_name = get_cleaned_def_path_name(self.tcx, self.def_id);
                 // let path_suffix = path
                 //     .iter()
@@ -409,6 +414,11 @@ impl<'tcx> BodyVisitor<'tcx> {
                 self.record_value_def(lpjc_local, SymbolicDef::Ref(rpjc_local));
                 self.chains.point(lpjc_local, rpjc_local);
             }
+            // ThreadLocalRef: x = &thread_local_static
+            Rvalue::ThreadLocalRef(_def_id) => {
+                // todo
+            }
+            // Cast: x = y as T
             Rvalue::Cast(cast_kind, op, ty) => {
                 if let Some(AnaOperand::Local(src_idx)) = self.lift_operand(op) {
                     self.record_value_def(
@@ -463,15 +473,19 @@ impl<'tcx> BodyVisitor<'tcx> {
                     }
                 }
             }
+            // NullaryOp: x = SizeOf(T); This is runtime checks
+            Rvalue::NullaryOp(_null_op) => {
+                // todo
+            }
+            // UnaryOp: x = !y / x = -y
             Rvalue::UnaryOp(un_op, op) => {
                 self.record_value_def(lpjc_local, SymbolicDef::UnOp(*un_op));
             }
-            Rvalue::ShallowInitBox(op, _ty) => match op {
-                Operand::Move(rplace) | Operand::Copy(rplace) => {
-                    let _rpjc_local = self.handle_proj(true, rplace.clone());
-                }
-                _ => {}
-            },
+            // Discriminant: x = discriminant(y); read enum tag
+            Rvalue::Discriminant(_place) => {
+                // todo
+            }
+            // Aggregate: x = (y, z) / x = [y, z] / x = S { f: y }
             Rvalue::Aggregate(box agg_kind, op_vec) => match agg_kind {
                 AggregateKind::Array(_ty) => {}
                 AggregateKind::Adt(_adt_def_id, _, _, _, _) => {
@@ -491,7 +505,22 @@ impl<'tcx> BodyVisitor<'tcx> {
                 }
                 _ => {}
             },
-            Rvalue::Discriminant(_place) => {}
+            Rvalue::ShallowInitBox(op, _ty) => match op {
+                Operand::Move(rplace) | Operand::Copy(rplace) => {
+                    let _rpjc_local = self.handle_proj(true, rplace.clone());
+                }
+                _ => {}
+            },
+            Rvalue::CopyForDeref(p) => {
+                let op = Operand::Copy(p.clone());
+                if let Some(ana_op) = self.lift_operand(&op) {
+                    let def = match ana_op {
+                        AnaOperand::Local(src) => SymbolicDef::Use(src),
+                        AnaOperand::Const(val) => SymbolicDef::Constant(val),
+                    };
+                    self.record_value_def(lpjc_local, def);
+                }
+            }
             _ => {}
         }
     }
@@ -686,10 +715,12 @@ impl<'tcx> BodyVisitor<'tcx> {
     }
 
     /// Find the relationship between ret_local and params
-    // For example, _1 = add(_2, _3), this function should give 
+    // For example, _1 = add(_2, _3), this function should give
     fn resolve_symbolic_def(&self, def: &SymbolicDef, depth: usize) -> Option<SymbolicDef> {
         // limitation of recursion deepth
-        if depth > 10 { return None; }
+        if depth > 10 {
+            return None;
+        }
 
         match def {
             // If _0 = param or const, return it directly
@@ -697,32 +728,28 @@ impl<'tcx> BodyVisitor<'tcx> {
             // If _0 = local var, find the source of this local var.
             SymbolicDef::Use(local_idx) | SymbolicDef::Ref(local_idx) => {
                 self.resolve_local(*local_idx, depth + 1)
-            },
+            }
             // The same.
-            SymbolicDef::Cast(src_idx, _ty) => {
-                self.resolve_local(*src_idx, depth + 1)
-            },
+            SymbolicDef::Cast(src_idx, _ty) => self.resolve_local(*src_idx, depth + 1),
             // Resolve the lhs and rhs local independently, then aggregate them to the result
             SymbolicDef::Binary(op, lhs_idx, rhs_op) => {
                 let lhs_resolved = self.resolve_local(*lhs_idx, depth + 1)?;
                 let rhs_resolved_op = match rhs_op {
                     AnaOperand::Const(c) => AnaOperand::Const(*c),
-                    AnaOperand::Local(l) => {
-                        match self.resolve_local(*l, depth + 1) {
-                            Some(SymbolicDef::Constant(c)) => AnaOperand::Const(c),
-                            Some(SymbolicDef::Param(p)) => AnaOperand::Local(p),
-                            _ => return None, 
-                        }
-                    }
+                    AnaOperand::Local(l) => match self.resolve_local(*l, depth + 1) {
+                        Some(SymbolicDef::Constant(c)) => AnaOperand::Const(c),
+                        Some(SymbolicDef::Param(p)) => AnaOperand::Local(p),
+                        _ => return None,
+                    },
                 };
                 match lhs_resolved {
                     SymbolicDef::Param(p_idx) => {
-                         Some(SymbolicDef::Binary(*op, p_idx, rhs_resolved_op))
-                    },
-                    _ => None
+                        Some(SymbolicDef::Binary(*op, p_idx, rhs_resolved_op))
+                    }
+                    _ => None,
                 }
-            },
-            _ => None
+            }
+            _ => None,
         }
     }
 
@@ -1010,9 +1037,11 @@ impl<'tcx> BodyVisitor<'tcx> {
         for proj in place.projection {
             match proj {
                 ProjectionElem::Deref => {
-                    proj_id = self.chains.get_point_to_id(place.local.as_usize());
-                    if proj_id == place.local.as_usize() {
+                    let point_to = self.chains.get_point_to_id(place.local.as_usize());
+                    if point_to == proj_id {
                         proj_id = self.chains.check_ptr(proj_id);
+                    } else {
+                        proj_id = point_to;
                     }
                 }
                 ProjectionElem::Field(field, ty) => {
@@ -1040,11 +1069,7 @@ impl<'tcx> BodyVisitor<'tcx> {
     fn lift_operand(&mut self, op: &Operand<'tcx>) -> Option<AnaOperand> {
         match op {
             Operand::Copy(place) | Operand::Move(place) => {
-                if place.projection.is_empty() {
-                    Some(AnaOperand::Local(place.local.as_usize()))
-                } else {
-                    Some(AnaOperand::Local(self.handle_proj(true, place.clone())))
-                }
+                Some(AnaOperand::Local(self.handle_proj(true, place.clone())))
             }
             Operand::Constant(box c) => match c.const_ {
                 rustc_middle::mir::Const::Ty(_ty, const_value) => {
@@ -1066,37 +1091,128 @@ impl<'tcx> BodyVisitor<'tcx> {
             },
         }
     }
+
+    // Use value domain to get the source definition local of this ptr.
+    // Return: (src_ptr local, offset size)
+    // Example: p3 = p2.byte_offset(v2), p2 = p1.byte_offset(v1),
+    //          trace_base_ptr(p3) will return (p1, v1+v2)
+    pub fn trace_base_ptr(&self, local: usize) -> Option<(usize, u64)> {
+        let mut curr = local;
+        let mut total_offset = 0;
+        let mut depth = 0;
+
+        loop {
+            if depth > 10 {
+                return None;
+            }
+            depth += 1;
+
+            if let Some(domain) = self.value_domains.get(&curr) {
+                match &domain.def {
+                    Some(SymbolicDef::Binary(BinOp::Offset, base, offset_op)) => {
+                        if let AnaOperand::Const(off) = offset_op {
+                            total_offset += *off as u64;
+                            curr = *base;
+                        } else {
+                            return None;
+                        }
+                    }
+                    Some(SymbolicDef::Use(src)) | Some(SymbolicDef::Cast(src, _)) => {
+                        curr = *src;
+                    }
+                    Some(SymbolicDef::Ref(src)) => {
+                        return Some((*src, total_offset));
+                    }
+                    Some(SymbolicDef::Param(_)) => {
+                        return Some((curr, total_offset));
+                    }
+                    _ => return None,
+                }
+            } else {
+                return None;
+            }
+        }
+    }
 }
 
+// This block is used to display some data structure in body_visitor.
 impl<'tcx> BodyVisitor<'tcx> {
+    // Display the true conditions in all branches.
+    pub fn display_path_constraints(&self) {
+        const TABLE_WIDTH: usize = 86;
+        println!(
+            "\n{:=^width$}",
+            " Path Constraints Report ",
+            width = TABLE_WIDTH
+        );
+
+        if self.path_constraints.is_empty() {
+            println!("  [Empty Path Constraints]");
+            println!("{:=^width$}\n", "", width = TABLE_WIDTH);
+            return;
+        }
+
+        println!("| {:^6} | {:^73} |", "Index", "Constraint Expression");
+        let sep = format!("+{:-^6}+{:-^73}+", "", "");
+        println!("{}", sep);
+
+        for (i, constraint) in self.path_constraints.iter().enumerate() {
+            // 复用现有的 format_symbolic_def 将 SymbolicDef 转为可读字符串
+            let def_raw = self.format_symbolic_def(Some(constraint));
+            let def_str = def_raw.replace('\n', " ").replace('\t', " ");
+
+            println!("| {:<6} | {:<73} |", i, self.safe_truncate(&def_str, 73));
+        }
+
+        println!("{}", sep);
+        println!("{:=^width$}\n", " End Report ", width = TABLE_WIDTH);
+    }
+
+    // Dispaly all variables' definition and values
     pub fn display_value_domains(&self) {
-        println!("\n{:=^80}", " Value Domain Analysis Report ");
+        const TABLE_WIDTH: usize = 86;
+        println!(
+            "\n{:=^width$}",
+            " Value Domain Analysis Report ",
+            width = TABLE_WIDTH
+        );
 
         let mut locals: Vec<&usize> = self.value_domains.keys().collect();
         locals.sort();
 
         if locals.is_empty() {
             println!("  [Empty Value Domains]");
-            println!("{:=^80}\n", "");
+            println!("{:=^width$}\n", "", width = TABLE_WIDTH);
             return;
         }
 
-        // Table: Local(6) | Definition(40) | Constraint(15) | Alignment(12)
-        let header = format!(
-            "| {:^6} | {:^40} | {:^15} | {:^12} |",
-            "Local", "Symbolic Definition", "Constraint", "Align"
-        );
-        let sep = format!("+{:-^6}+{:-^40}+{:-^15}+{:-^12}+", "", "", "", "");
+        let print_row = |c1: &str, c2: &str, c3: &str, c4: &str, is_header: bool| {
+            if is_header {
+                println!("| {:^6} | {:^40} | {:^15} | {:^12} |", c1, c2, c3, c4);
+            } else {
+                println!(
+                    "| {:<6} | {:<40} | {:<15} | {:<12} |",
+                    c1,
+                    self.safe_truncate(c2, 40),
+                    c3,
+                    c4
+                );
+            }
+        };
 
+        let sep = format!("+{:-^6}+{:-^40}+{:-^15}+{:-^12}+", "", "", "", "");
         println!("{}", sep);
-        println!("{}", header);
+        print_row("Local", "Symbolic Definition", "Constraint", "Align", true);
         println!("{}", sep);
 
         for local_idx in locals {
             let domain = &self.value_domains[local_idx];
 
             let local_str = format!("_{}", local_idx);
-            let def_str = self.format_symbolic_def(domain.def.as_ref());
+
+            let def_raw = self.format_symbolic_def(domain.def.as_ref());
+            let def_str = def_raw.replace('\n', " ").replace('\t', " ");
+
             let constraint_str = match domain.value_constraint {
                 Some(v) => format!("== {}", v),
                 None => String::from("-"),
@@ -1106,20 +1222,20 @@ impl<'tcx> BodyVisitor<'tcx> {
                 None => String::from("-"),
             };
 
-            let def_str_display = if def_str.len() > 38 {
-                format!("{}..", &def_str[..36])
-            } else {
-                def_str
-            };
-
-            println!(
-                "| {:<6} | {:<40} | {:<15} | {:<12} |",
-                local_str, def_str_display, constraint_str, align_str
-            );
+            print_row(&local_str, &def_str, &constraint_str, &align_str, false);
         }
 
         println!("{}", sep);
-        println!("{:=^80}\n", " End Report ");
+        println!("{:=^width$}\n", " End Report ", width = TABLE_WIDTH);
+    }
+
+    fn safe_truncate(&self, s: &str, max_width: usize) -> String {
+        let char_count = s.chars().count();
+        if char_count <= max_width {
+            return s.to_string();
+        }
+        let truncated: String = s.chars().take(max_width - 2).collect();
+        format!("{}..", truncated)
     }
 
     fn format_symbolic_def(&self, def: Option<&SymbolicDef>) -> String {

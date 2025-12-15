@@ -78,16 +78,6 @@ pub fn check_visibility(tcx: TyCtxt, func_defid: DefId) -> bool {
     if !tcx.visibility(func_defid).is_public() {
         return false;
     }
-    // if func_defid.is_local() {
-    //     if let Some(local_defid) = func_defid.as_local() {
-    //         let module_moddefid = tcx.parent_module_from_def_id(local_defid);
-    //         let module_defid = module_moddefid.to_def_id();
-    //         if !tcx.visibility(module_defid).is_public() {
-    //             // println!("module def id {:?}",UigUnit::get_cleaned_def_path_name(tcx, module_defid));
-    //             return Self::is_re_exported(tcx, func_defid, module_moddefid.to_local_def_id());
-    //         }
-    //     }
-    // }
     true
 }
 
@@ -747,6 +737,8 @@ pub fn generate_contract_from_std_annotation_json(
         let contract = PropertyContract::new(tcx, def_id, &tag_name, &exprs);
         results.push((local_id, fields, contract));
     }
+
+    // rap_warn!("Get contract {:?}.", results);
     results
 }
 

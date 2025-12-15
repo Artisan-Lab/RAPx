@@ -80,6 +80,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         fn_span: Span,
         idx: usize,
     ) -> bool {
+        rap_debug!("Check contract {:?} for {:?}.", contract, func_name);
         let (sp_name, check_result) = match contract {
             PropertyContract::Align(ty) => {
                 let contract_required_ty = reflect_generic(generic_mapping, &func_name, ty);
@@ -113,7 +114,8 @@ impl<'tcx> BodyVisitor<'tcx> {
 
     // ---------------------- Sp checking functions --------------------------
 
-    // TODO: Currently can not support unaligned offset checking
+    //  ------- Align checking functions -------
+    // General API for align check
     pub fn check_align(&self, arg: usize, contract_required_ty: Ty<'tcx>) -> bool {
         // 1. Check the var's cis.
         let var = self.chains.get_var_node(arg).unwrap();
@@ -129,9 +131,11 @@ impl<'tcx> BodyVisitor<'tcx> {
         let mem_ty = self.visit_ty_and_get_layout(mem.unwrap());
         let cur_ty = self.visit_ty_and_get_layout(var.ty.unwrap());
         let point_to_id = self.chains.get_point_to_id(arg);
-        let var_ty = self.chains.get_var_node(point_to_id);
-        return AlignState::Cast(mem_ty, cur_ty).check() && var_ty.unwrap().ots.align;
+        let var_ty = self.chains.get_var_node(point_to_id).unwrap();
+        return AlignState::Cast(mem_ty, cur_ty).check() && var_ty.ots.align;
     }
+
+    
 
     pub fn check_non_zst(&self, arg: usize) -> bool {
         let obj_ty = self.chains.get_obj_ty_through_chain(arg);

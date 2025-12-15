@@ -29,6 +29,16 @@ pub struct ValueDomain {
     pub align: Option<(u64, u64)>,
 }
 
+impl ValueDomain {
+    pub fn get_constant(&self) -> Option<u128> {
+        if let Some(SymbolicDef::Constant(c)) = self.def {
+            Some(c)
+        } else {
+            self.value_constraint
+        }
+    }
+}
+
 fn get_operand_bv<'a>(
     ctx: &'a Context,
     op: &'a AnaOperand,
@@ -40,6 +50,8 @@ fn get_operand_bv<'a>(
     }
 }
 
+/// Verifies a target property using Z3 SMT solver given variable domains and path constraints.
+/// Returns true if the property holds (UNSAT for negation), false otherwise.
 pub fn verify_with_z3<F>(
     values: HashMap<usize, ValueDomain>,
     path_constraints: Vec<SymbolicDef>,
@@ -54,11 +66,13 @@ where
 
     let mut z3_vars: HashMap<usize, BV> = HashMap::new();
 
+    // Create symbolic bitvector variables for all locals
     for local_index in values.keys() {
         let name = format!("loc_{}", local_index);
         z3_vars.insert(*local_index, BV::new_const(&ctx, name, 64));
     }
 
+    // Encode variable definitions (assignments, operations) as solver constraints
     for (local_idx, domain) in &values {
         let current_var = match z3_vars.get(local_idx) {
             Some(v) => v,
@@ -106,6 +120,7 @@ where
         }
     }
 
+    // Apply path constraints (e.g., branch conditions)
     for constraint in path_constraints {
         match constraint {
             SymbolicDef::Binary(op, lhs_idx, rhs_op) => {
@@ -126,9 +141,11 @@ where
         }
     }
 
+    // Assert negation of the target property
     let target_prop = target_verifier(&ctx, &z3_vars);
     solver.assert(&target_prop.not());
 
+    // UNSAT means no counter-example exists -> property holds
     match solver.check() {
         SatResult::Unsat => true,
         _ => false,

@@ -1,6 +1,9 @@
 use crate::{
     analysis::{
-        senryx::{contracts::property::{CisRangeItem, ContractualInvariantState, PropertyContract}, symbolic_analysis::{AnaOperand, SymbolicDef}},
+        senryx::{
+            contracts::property::{CisRangeItem, ContractualInvariantState, PropertyContract},
+            symbolic_analysis::{AnaOperand, SymbolicDef},
+        },
         utils::fn_info::{display_hashmap, get_pointee, is_ptr, is_ref, is_slice, reverse_op},
     },
     rap_debug, rap_warn,
@@ -129,10 +132,9 @@ impl<'tcx> InterResultNode<'tcx> {
     }
 }
 
-
 #[derive(Clone, Debug)]
 pub struct FunctionSummary {
-    pub return_def: Option<SymbolicDef>, 
+    pub return_def: Option<SymbolicDef>,
 }
 
 impl FunctionSummary {
@@ -175,7 +177,7 @@ impl<'tcx> VariableNode<'tcx> {
             ots,
             const_value: 0,
             cis: ContractualInvariantState::new_default(),
-            offset_from: None
+            offset_from: None,
         }
     }
 
@@ -191,7 +193,7 @@ impl<'tcx> VariableNode<'tcx> {
             ots: States::new(),
             const_value: 0,
             cis: ContractualInvariantState::new_default(),
-            offset_from: None
+            offset_from: None,
         }
     }
 
@@ -207,7 +209,7 @@ impl<'tcx> VariableNode<'tcx> {
             ots,
             const_value: 0,
             cis: ContractualInvariantState::new_default(),
-            offset_from: None
+            offset_from: None,
         }
     }
 }
@@ -837,7 +839,6 @@ fn html_escape(input: &str) -> String {
         .replace("\"", "&quot;")
 }
 
-
 impl<'tcx> DominatedGraph<'tcx> {
     /// Apply function summary to current DG
     /// dest_local: ret_val of the function call
@@ -854,21 +855,21 @@ impl<'tcx> DominatedGraph<'tcx> {
         }
     }
 
-    // Dispatcher of function summary, 
+    // Dispatcher of function summary,
     // 'SymbolicDef' will record the relationship between params and ret_val.
     fn apply_summary_def(&mut self, target_local: usize, def: &SymbolicDef, args: &Vec<usize>) {
         match def {
             SymbolicDef::Param(param_idx) => {
                 if *param_idx > 0 && param_idx - 1 < args.len() {
                     let arg_local = args[param_idx - 1];
-                    self.merge(target_local, arg_local); 
+                    self.merge(target_local, arg_local);
                 }
-            },
+            }
             SymbolicDef::Binary(BinOp::Offset, param_base_idx, rhs_op) => {
                 if *param_base_idx > 0 && param_base_idx - 1 < args.len() {
                     let base_local = args[param_base_idx - 1];
                     let base_point_to = self.get_point_to_id(base_local);
-                    
+
                     self.point(target_local, base_point_to);
 
                     let node = self.get_var_node_mut(target_local).unwrap();
@@ -883,16 +884,17 @@ impl<'tcx> DominatedGraph<'tcx> {
                         }
                     };
 
-                    node.offset_from = Some(SymbolicDef::Binary(
-                        BinOp::Offset, 
-                        base_local, 
-                        real_rhs_op
-                    ));
-                    
-                    rap_warn!("Applied Offset summary: _{} is offset of _{} (arg {})", 
-                        target_local, base_local, param_base_idx);
+                    node.offset_from =
+                        Some(SymbolicDef::Binary(BinOp::Offset, base_local, real_rhs_op));
+
+                    rap_warn!(
+                        "Applied Offset summary: _{} is offset of _{} (arg {})",
+                        target_local,
+                        base_local,
+                        param_base_idx
+                    );
                 }
-            },
+            }
             // todo: support others.
             _ => {}
         }
