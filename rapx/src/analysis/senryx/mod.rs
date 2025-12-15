@@ -3,7 +3,7 @@ pub mod contracts;
 #[allow(unused)]
 pub mod dominated_graph;
 pub mod generic_check;
-pub mod inter_record;
+// pub mod inter_record;
 pub mod matcher;
 pub mod symbolic_analysis;
 #[allow(unused)]
@@ -11,14 +11,13 @@ pub mod visitor;
 #[allow(unused)]
 pub mod visitor_check;
 use dominated_graph::InterResultNode;
-use inter_record::InterAnalysisRecord;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::{Safety, def_id::DefId};
 use rustc_middle::{
     mir::{BasicBlock, Operand, TerminatorKind},
     ty::{self, TyCtxt},
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use visitor::{BodyVisitor, CheckResult};
 
 use crate::analysis::{
@@ -41,16 +40,11 @@ pub enum CheckLevel {
 pub struct SenryxCheck<'tcx> {
     pub tcx: TyCtxt<'tcx>,
     pub threshhold: usize,
-    pub global_recorder: HashMap<DefId, InterAnalysisRecord<'tcx>>,
 }
 
 impl<'tcx> SenryxCheck<'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>, threshhold: usize) -> Self {
-        Self {
-            tcx,
-            threshhold,
-            global_recorder: HashMap::new(),
-        }
+        Self { tcx, threshhold }
     }
 
     pub fn start(&mut self, check_level: CheckLevel, is_verify: bool) {
@@ -187,15 +181,14 @@ impl<'tcx> SenryxCheck<'tcx> {
         def_id: DefId,
         fn_map: &FxHashMap<DefId, AAResult>,
     ) -> Vec<CheckResult> {
-        let mut body_visitor = BodyVisitor::new(self.tcx, def_id, self.global_recorder.clone(), 0);
+        let mut body_visitor = BodyVisitor::new(self.tcx, def_id, 0);
         let target_name = get_cleaned_def_path_name(self.tcx, def_id);
         rap_info!("Begin verification process for: {:?}", target_name);
         if get_type(self.tcx, def_id) == FnKind::Method {
             let cons = get_cons(self.tcx, def_id);
             let mut base_inter_result = InterResultNode::new_default(get_adt_ty(self.tcx, def_id));
             for con in cons {
-                let mut cons_body_visitor =
-                    BodyVisitor::new(self.tcx, con, self.global_recorder.clone(), 0);
+                let mut cons_body_visitor = BodyVisitor::new(self.tcx, con, 0);
                 let cons_fields_result = cons_body_visitor.path_forward_check(fn_map);
                 // cache and merge fields' states
                 let cons_name = get_cleaned_def_path_name(self.tcx, con);

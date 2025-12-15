@@ -26,13 +26,10 @@ use std::{
 };
 use syn::Constraint;
 
-use super::contracts::abstract_state::{
-    AbstractStateItem, AlignState, PathInfo, StateType, VType, Value,
-};
+use super::contracts::abstract_state::{VType, Value};
 use super::dominated_graph::DominatedGraph;
 use super::dominated_graph::InterResultNode;
 use super::generic_check::GenericChecker;
-use super::inter_record::InterAnalysisRecord;
 use super::matcher::UnsafeApi;
 use super::matcher::{get_arg_place, parse_unsafe_api};
 use rustc_data_structures::fx::FxHashMap;
@@ -95,13 +92,11 @@ pub struct BodyVisitor<'tcx> {
     pub def_id: DefId,
     pub safedrop_graph: SafeDropGraph<'tcx>,
     // abstract_states records the path index and variables' ab states in this path
-    pub abstract_states: HashMap<usize, PathInfo<'tcx>>,
     pub unsafe_callee_report: HashMap<String, usize>,
     pub local_ty: HashMap<usize, PlaceTy<'tcx>>,
     pub visit_time: usize,
     pub check_results: Vec<CheckResult>,
     pub generic_map: HashMap<String, HashSet<Ty<'tcx>>>,
-    pub global_recorder: HashMap<DefId, InterAnalysisRecord<'tcx>>,
     pub proj_ty: HashMap<usize, Ty<'tcx>>,
     pub chains: DominatedGraph<'tcx>,
     pub value_domains: HashMap<usize, ValueDomain>,
@@ -109,12 +104,7 @@ pub struct BodyVisitor<'tcx> {
 }
 
 impl<'tcx> BodyVisitor<'tcx> {
-    pub fn new(
-        tcx: TyCtxt<'tcx>,
-        def_id: DefId,
-        global_recorder: HashMap<DefId, InterAnalysisRecord<'tcx>>,
-        visit_time: usize,
-    ) -> Self {
+    pub fn new(tcx: TyCtxt<'tcx>, def_id: DefId, visit_time: usize) -> Self {
         let body = tcx.optimized_mir(def_id);
         let param_env = tcx.param_env(def_id);
         let satisfied_ty_map_for_generic =
@@ -125,13 +115,11 @@ impl<'tcx> BodyVisitor<'tcx> {
             tcx,
             def_id,
             safedrop_graph: SafeDropGraph::new(tcx, def_id, OHAResultMap::default()),
-            abstract_states: HashMap::new(),
             unsafe_callee_report: HashMap::new(),
             local_ty: HashMap::new(),
             visit_time,
             check_results: Vec::new(),
             generic_map: satisfied_ty_map_for_generic,
-            global_recorder,
             proj_ty: HashMap::new(),
             chains,
             value_domains: HashMap::new(),
@@ -179,7 +167,6 @@ impl<'tcx> BodyVisitor<'tcx> {
             self.path_constraints = Vec::new();
             self.chains = tmp_chain.clone();
             self.set_constraint(constraint);
-            self.abstract_states.insert(index, PathInfo::new());
             for (i, block_index) in path.iter().enumerate() {
                 if block_index >= &body.basic_blocks.len() {
                     continue;
@@ -792,27 +779,6 @@ impl<'tcx> BodyVisitor<'tcx> {
         path_constraints
     }
 
-    pub fn abstract_states_mop(&mut self) -> PathInfo<'tcx> {
-        let mut result_state = PathInfo {
-            state_map: HashMap::new(),
-        };
-
-        for (_path_idx, abstract_state) in &self.abstract_states {
-            for (var_index, state_item) in &abstract_state.state_map {
-                if let Some(existing_state_item) = result_state.state_map.get_mut(&var_index) {
-                    existing_state_item
-                        .clone()
-                        .meet_state_item(&state_item.clone());
-                } else {
-                    result_state
-                        .state_map
-                        .insert(*var_index, state_item.clone());
-                }
-            }
-        }
-        result_state
-    }
-
     pub fn update_callee_report_level(&mut self, unsafe_callee: String, report_level: usize) {
         self.unsafe_callee_report
             .entry(unsafe_callee)
@@ -834,21 +800,6 @@ impl<'tcx> BodyVisitor<'tcx> {
                 rap_warn!("Find an unsoundness issue in {:?}!", unsafe_callee);
             }
         }
-    }
-
-    pub fn insert_path_abstate(
-        &mut self,
-        path_index: usize,
-        place: usize,
-        abitem: AbstractStateItem<'tcx>,
-    ) {
-        self.abstract_states
-            .entry(path_index)
-            .or_insert_with(|| PathInfo {
-                state_map: HashMap::new(),
-            })
-            .state_map
-            .insert(place, abitem);
     }
 
     pub fn set_constraint(&mut self, constraint: &Vec<(Place<'tcx>, Place<'tcx>, BinOp)>) {
@@ -964,19 +915,6 @@ impl<'tcx> BodyVisitor<'tcx> {
                 }
             }
         }
-    }
-
-    pub fn get_abstate_by_place_in_path(
-        &self,
-        place: usize,
-        path_index: usize,
-    ) -> AbstractStateItem<'tcx> {
-        if let Some(abstate) = self.abstract_states.get(&path_index) {
-            if let Some(abs) = abstate.state_map.get(&place).cloned() {
-                return abs;
-            }
-        }
-        AbstractStateItem::new_default()
     }
 
     pub fn handle_binary_op(

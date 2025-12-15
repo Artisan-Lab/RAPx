@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use z3::ast::{Ast, BV, Bool};
 use z3::{Config, Context, SatResult, Solver};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SymbolicDef {
     Param(usize),
     Constant(u128),
@@ -16,7 +16,7 @@ pub enum SymbolicDef {
     Ref(usize),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AnaOperand {
     Local(usize),
     Const(u128),

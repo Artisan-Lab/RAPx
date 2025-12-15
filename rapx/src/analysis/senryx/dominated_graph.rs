@@ -1,7 +1,10 @@
 use crate::{
     analysis::{
         senryx::{
-            contracts::property::{CisRangeItem, ContractualInvariantState, PropertyContract},
+            contracts::{
+                abstract_state::AlignState,
+                property::{CisRangeItem, ContractualInvariantState, PropertyContract},
+            },
             symbolic_analysis::{AnaOperand, SymbolicDef},
         },
         utils::fn_info::{display_hashmap, get_pointee, is_ptr, is_ref, is_slice, reverse_op},
@@ -17,22 +20,22 @@ use serde::de;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct States {
+pub struct States<'tcx> {
     pub nonnull: bool,
     pub allocator_consistency: bool,
     pub init: bool,
-    pub align: bool,
+    pub align: AlignState<'tcx>,
     pub valid_string: bool,
     pub valid_cstr: bool,
 }
 
-impl States {
+impl<'tcx> States<'tcx> {
     pub fn new() -> Self {
         Self {
             nonnull: true,
             allocator_consistency: true,
             init: true,
-            align: true,
+            align: AlignState::Unknown,
             valid_string: true,
             valid_cstr: true,
         }
@@ -43,17 +46,17 @@ impl States {
             nonnull: false,
             allocator_consistency: false,
             init: false,
-            align: false,
+            align: AlignState::Unknown,
             valid_string: false,
             valid_cstr: false,
         }
     }
 
-    pub fn merge_states(&mut self, other: &States) {
+    pub fn merge_states(&mut self, other: &States<'tcx>) {
         self.nonnull &= other.nonnull;
         self.allocator_consistency &= other.allocator_consistency;
         self.init &= other.init;
-        self.align &= other.align;
+        self.align.merge(&other.align);
         self.valid_string &= other.valid_string;
         self.valid_cstr &= other.valid_cstr;
     }
@@ -64,7 +67,7 @@ pub struct InterResultNode<'tcx> {
     pub point_to: Option<Box<InterResultNode<'tcx>>>,
     pub fields: HashMap<usize, InterResultNode<'tcx>>,
     pub ty: Option<Ty<'tcx>>,
-    pub states: States,
+    pub states: States<'tcx>,
     pub const_value: usize,
 }
 
@@ -152,7 +155,7 @@ pub struct VariableNode<'tcx> {
     pub field: HashMap<usize, usize>,
     pub ty: Option<Ty<'tcx>>,
     pub is_dropped: bool,
-    pub ots: States,
+    pub ots: States<'tcx>,
     pub const_value: usize,
     pub cis: ContractualInvariantState<'tcx>,
     pub offset_from: Option<SymbolicDef>,
@@ -164,7 +167,7 @@ impl<'tcx> VariableNode<'tcx> {
         points_to: Option<usize>,
         pointed_by: HashSet<usize>,
         ty: Option<Ty<'tcx>>,
-        ots: States,
+        ots: States<'tcx>,
     ) -> Self {
         VariableNode {
             id,
@@ -197,7 +200,7 @@ impl<'tcx> VariableNode<'tcx> {
         }
     }
 
-    pub fn new_with_states(id: usize, ty: Option<Ty<'tcx>>, ots: States) -> Self {
+    pub fn new_with_states(id: usize, ty: Option<Ty<'tcx>>, ots: States<'tcx>) -> Self {
         VariableNode {
             id,
             alias_set: HashSet::from([id]),
@@ -593,7 +596,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         ty: Option<Ty<'tcx>>,
         parent_id: usize,
         child_id: Option<usize>,
-        state: States,
+        state: States<'tcx>,
     ) {
         self.variables.insert(
             dv,
