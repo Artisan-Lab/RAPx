@@ -253,7 +253,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                     for align in &req_aligns {
                         if !base_aligns.contains(align) {
                             continue;
-                        } // 防御性检查
+                        }
 
                         let bv_align = BV::from_u64(ctx, *align as u64, 64);
 
