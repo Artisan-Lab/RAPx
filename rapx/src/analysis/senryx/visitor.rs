@@ -824,7 +824,6 @@ impl<'tcx> BodyVisitor<'tcx> {
                         .or_insert(ValueDomain {
                             def: None,
                             value_constraint: Some(c),
-                            align: None,
                         });
                 }
 
@@ -843,7 +842,6 @@ impl<'tcx> BodyVisitor<'tcx> {
                         .or_insert(ValueDomain {
                             def: None,
                             value_constraint: Some(c),
-                            align: None,
                         });
                 }
             }
@@ -1000,7 +998,6 @@ impl<'tcx> BodyVisitor<'tcx> {
             .or_insert(ValueDomain {
                 def: Some(def),
                 value_constraint: None,
-                align: None,
             });
     }
 
@@ -1124,23 +1121,22 @@ impl<'tcx> BodyVisitor<'tcx> {
             return;
         }
 
-        let print_row = |c1: &str, c2: &str, c3: &str, c4: &str, is_header: bool| {
+        let print_row = |c1: &str, c2: &str, c3: &str, is_header: bool| {
             if is_header {
-                println!("| {:^6} | {:^40} | {:^15} | {:^12} |", c1, c2, c3, c4);
+                println!("| {:^6} | {:^40} | {:^15} |", c1, c2, c3);
             } else {
                 println!(
-                    "| {:<6} | {:<40} | {:<15} | {:<12} |",
+                    "| {:<6} | {:<40} | {:<15} |",
                     c1,
                     self.safe_truncate(c2, 40),
                     c3,
-                    c4
                 );
             }
         };
 
-        let sep = format!("+{:-^6}+{:-^40}+{:-^15}+{:-^12}+", "", "", "", "");
+        let sep = format!("+{:-^6}+{:-^40}+{:-^15}+", "", "", "");
         println!("{}", sep);
-        print_row("Local", "Symbolic Definition", "Constraint", "Align", true);
+        print_row("Local", "Symbolic Definition", "Constraint", true);
         println!("{}", sep);
 
         for local_idx in locals {
@@ -1155,12 +1151,8 @@ impl<'tcx> BodyVisitor<'tcx> {
                 Some(v) => format!("== {}", v),
                 None => String::from("-"),
             };
-            let align_str = match domain.align {
-                Some((a, s)) => format!("a:{}, s:{}", a, s),
-                None => String::from("-"),
-            };
 
-            print_row(&local_str, &def_str, &constraint_str, &align_str, false);
+            print_row(&local_str, &def_str, &constraint_str, false);
         }
 
         println!("{}", sep);

@@ -30,12 +30,12 @@ pub struct States<'tcx> {
 }
 
 impl<'tcx> States<'tcx> {
-    pub fn new() -> Self {
+    pub fn new(ty: Ty<'tcx>) -> Self {
         Self {
             nonnull: true,
             allocator_consistency: true,
             init: true,
-            align: AlignState::Unknown,
+            align: AlignState::Aligned(ty, 0),
             valid_string: true,
             valid_cstr: true,
         }
@@ -77,7 +77,7 @@ impl<'tcx> InterResultNode<'tcx> {
             point_to: None,
             fields: HashMap::new(),
             ty,
-            states: States::new(),
+            states: States::new(ty.unwrap()),
             const_value: 0, // To be modified
         }
     }
@@ -193,7 +193,7 @@ impl<'tcx> VariableNode<'tcx> {
             field: HashMap::new(),
             ty,
             is_dropped: false,
-            ots: States::new(),
+            ots: States::new(ty.unwrap()),
             const_value: 0,
             cis: ContractualInvariantState::new_default(),
             offset_from: None,
@@ -346,7 +346,7 @@ impl<'tcx> DominatedGraph<'tcx> {
                 Some(get_pointee(local_ty)),
                 idx,
                 None,
-                States::new(),
+                States::new(local_ty),
             );
             self.add_bound_for_obj(new_id, local_ty);
         }

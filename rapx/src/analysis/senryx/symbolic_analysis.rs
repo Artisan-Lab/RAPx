@@ -26,7 +26,6 @@ pub enum AnaOperand {
 pub struct ValueDomain {
     pub def: Option<SymbolicDef>,
     pub value_constraint: Option<u128>,
-    pub align: Option<(u64, u64)>,
 }
 
 impl ValueDomain {
