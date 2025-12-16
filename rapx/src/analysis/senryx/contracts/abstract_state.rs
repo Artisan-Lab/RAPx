@@ -3,46 +3,8 @@ use std::{
     hash::Hash,
 };
 
-use crate::analysis::senryx::visitor::PlaceTy;
-
-#[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
-pub enum Value {
-    Usize(usize),
-    Isize(isize),
-    U32(u32),
-    Custom(),
-    None,
-    // ...
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum StateType<'tcx> {
-    AllocatedState(AllocatedState),
-    AlignState(AlignState<'tcx>),
-    // ...
-}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub enum Op {
-    EQ,
-    NE,
-    LT,
-    GT,
-    LE,
-    GE,
-}
-
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub enum AllocatedState {
-    Top,
-    Borrowed,
-    Moved,
-    Alloc,
-    SpecificAlloc,
-    Bottom,
-}
-
 use crate::analysis::senryx::symbolic_analysis::{AnaOperand, SymbolicDef};
+use crate::analysis::senryx::visitor::PlaceTy;
 use rustc_middle::ty::Ty;
 
 /// Tracks pointer alignment status in the abstract domain.
@@ -78,24 +40,4 @@ impl<'tcx> AlignState<'tcx> {
             _ => AlignState::Unknown,
         }
     }
-}
-
-// #[derive(Debug, PartialEq, Eq, Clone, Hash)]
-// pub enum AlignState<'tcx> {
-//     Aligned,
-//     Cast(PlaceTy<'tcx>, PlaceTy<'tcx>),
-//     Unaligned,
-// }
-
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-pub enum InitState {
-    FullyInitialized,
-    PartlyInitialized,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub enum VType<'tcx> {
-    Pointer(PlaceTy<'tcx>),
-    None,
-    // todo
 }

@@ -26,7 +26,6 @@ use std::{
 };
 use syn::Constraint;
 
-use super::contracts::abstract_state::{VType, Value};
 use super::dominated_graph::DominatedGraph;
 use super::dominated_graph::InterResultNode;
 use super::generic_check::GenericChecker;
