@@ -38,7 +38,7 @@ impl<'tcx> States<'tcx> {
             nonnull: true,
             allocator_consistency: true,
             init: true,
-            align: AlignState::Aligned(ty, 0),
+            align: AlignState::Aligned(ty),
             valid_string: true,
             valid_cstr: true,
         }
@@ -352,6 +352,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         if is_ptr(local_ty) {
             // modify ptr node pointed
             self.get_var_node_mut(idx).unwrap().points_to = Some(new_id);
+            self.get_var_node_mut(idx).unwrap().ots = States::new_unknown();
             // insert pointed object node
             self.insert_node(
                 new_id,
@@ -370,7 +371,7 @@ impl<'tcx> DominatedGraph<'tcx> {
                 Some(get_pointee(local_ty)),
                 idx,
                 None,
-                States::new(local_ty),
+                States::new(get_pointee(local_ty)),
             );
             self.add_bound_for_obj(new_id, local_ty);
         }
@@ -546,9 +547,11 @@ impl<'tcx> DominatedGraph<'tcx> {
             // --- Update AlignState based on Type ---
             // Logic: If lv is a Reference (&T), it implies the pointer is constructed
             // from a valid, aligned Rust reference. We mark it as Aligned(T, abi_align).
-            if let Some(lv_ty) = lv_node.ty {
+            if let Some(lv_ty) = lv_node.ty
+                && is_ref(lv_ty)
+            {
                 let pointee_ty = get_pointee(lv_ty);
-                lv_node.ots.align = AlignState::Aligned(pointee_ty, 1);
+                lv_node.ots.align = AlignState::Aligned(pointee_ty);
 
                 rap_debug!(
                     "Graph Point: Refined Ref _{} ({:?}) to Aligned via point()",
@@ -954,13 +957,14 @@ impl<'tcx> DominatedGraph<'tcx> {
             let mut states_vec = Vec::new();
             // 5.1 Extract alignment info
             match &node.ots.align {
-                AlignState::Aligned(ty, a) => {
-                    if *a != 0 {
-                        states_vec.push(format!("Align({:?}, {})", ty, a));
+                AlignState::Aligned(ty) => {
+                    let node_ty = node.ty.unwrap();
+                    if is_ptr(node_ty) || is_ref(node_ty) {
+                        states_vec.push(format!("Align({:?})", ty));
                     }
                 }
                 AlignState::Unaligned(_, _, _) => states_vec.push("Unalign".to_string()),
-                AlignState::Unknown => {} // Skip unknown to save space
+                AlignState::Unknown => states_vec.push("Unknown".to_string()),
             }
             let states_str = if states_vec.is_empty() {
                 "-".to_string()

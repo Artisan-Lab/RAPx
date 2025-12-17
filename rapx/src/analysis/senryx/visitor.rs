@@ -9,7 +9,10 @@ use crate::{
         graphs::scc::Scc,
         safedrop::graph::SafeDropGraph,
         senryx::{
-            contracts::property::{CisRangeItem, PropertyContract},
+            contracts::{
+                abstract_state::AlignState,
+                property::{CisRangeItem, PropertyContract},
+            },
             dominated_graph::FunctionSummary,
             symbolic_analysis::{AnaOperand, SymbolicDef, ValueDomain},
         },
@@ -1175,6 +1178,11 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
 
         if let Some(val) = matched_val {
+            // If the branch is true (1), check if it's an is_aligned check
+            if val == 1 {
+                self.refine_state_by_condition(discr_local_idx);
+            }
+
             let constraint =
                 SymbolicDef::Binary(BinOp::Eq, discr_local_idx, AnaOperand::Const(val));
             self.path_constraints.push(constraint);
@@ -1183,6 +1191,36 @@ impl<'tcx> BodyVisitor<'tcx> {
                 let constraint =
                     SymbolicDef::Binary(BinOp::Ne, discr_local_idx, AnaOperand::Const(val));
                 self.path_constraints.push(constraint);
+            }
+        }
+    }
+
+    /// Refines the alignment state of a variable if the branch condition implies it.
+    /// Specifically checks for `is_aligned()` calls.
+    fn refine_state_by_condition(&mut self, cond_local: usize) {
+        if let Some(domain) = self.value_domains.get(&cond_local) {
+            if let Some(SymbolicDef::Call(func_name, args)) = &domain.def {
+                if func_name.ends_with("is_aligned") {
+                    if let Some(AnaOperand::Local(ptr_local)) = args.get(0) {
+                        // Check if ptr_local is a pointer and update its state
+                        let ptr_ty_opt = self.chains.get_var_node(*ptr_local).and_then(|n| n.ty);
+
+                        if let Some(ptr_ty) = ptr_ty_opt {
+                            if is_ptr(ptr_ty) {
+                                let pointee_ty = get_pointee(ptr_ty);
+                                if let Some(ptr_node) = self.chains.get_var_node_mut(*ptr_local) {
+                                    // Set state to Aligned(T)
+                                    ptr_node.ots.align = AlignState::Aligned(pointee_ty);
+                                    rap_warn!(
+                                        "Refined alignment for _{} to Aligned({:?}) via is_aligned check",
+                                        ptr_local,
+                                        pointee_ty
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

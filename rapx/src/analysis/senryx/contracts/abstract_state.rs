@@ -10,8 +10,7 @@ use rustc_middle::ty::Ty;
 /// Tracks pointer alignment status in the abstract domain.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AlignState<'tcx> {
-    /// Verified aligned to `u64` for type `Ty`.
-    Aligned(Ty<'tcx>, u64),
+    Aligned(Ty<'tcx>),
     /// Misaligned relative to `u64` by offset `SymbolicDef`.
     Unaligned(Ty<'tcx>, u64, SymbolicDef<'tcx>),
     /// Alignment cannot be statically determined (Top).
@@ -26,9 +25,9 @@ impl<'tcx> AlignState<'tcx> {
         }
         match (self, other) {
             // If both are aligned for the same type, keep the weaker alignment.
-            (AlignState::Aligned(t1, a1), AlignState::Aligned(t2, a2)) => {
+            (AlignState::Aligned(t1), AlignState::Aligned(t2)) => {
                 if t1 == t2 {
-                    AlignState::Aligned(*t1, std::cmp::min(*a1, *a2))
+                    AlignState::Aligned(*t1)
                 } else {
                     AlignState::Unknown
                 }

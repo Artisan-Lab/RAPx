@@ -119,238 +119,6 @@ impl<'tcx> BodyVisitor<'tcx> {
 
     // ---------------------- Sp checking functions --------------------------
 
-    //  ------- Begin: Align checking functions -------
-    // Main API for align check
-    pub fn check_align(&self, arg: usize, contract_required_ty: Ty<'tcx>) -> bool {
-        let required_ty_layout = self.visit_ty_and_get_layout(contract_required_ty);
-        if self.check_align_from_cis(arg, &required_ty_layout) {
-            return true;
-        }
-        // check offset
-        if let Some((op, base_local, offset_op, stride_layout)) = self.get_ptr_offset_info(arg) {
-            return self.check_offset_align_with_z3(
-                op,
-                base_local,
-                offset_op,
-                stride_layout,
-                contract_required_ty,
-            );
-        }
-
-        // If no offset or cannot derive, try direct type casting check
-        self.check_align_directly(arg, required_ty_layout)
-    }
-
-    // If this var has contextual invariant state (cis), like:
-    //      #[rapx::proof::Align::(x, usize)]
-    //      pub fn test(x: *const usize) { ... }
-    // CIS will record this information for align check
-    fn check_align_from_cis(&self, arg: usize, required_layout: &PlaceTy<'tcx>) -> bool {
-        if let Some(var) = self.chains.get_var_node(arg) {
-            for cis in &var.cis.contracts {
-                if let PropertyContract::Align(cis_ty) = cis {
-                    let cis_layout = self.visit_ty_and_get_layout(*cis_ty);
-                    if Self::two_types_cast_check(cis_layout, required_layout.clone()) {
-                        return true;
-                    }
-                }
-            }
-        }
-        false
-    }
-
-    // If the arg has offset from its pointed object, this function will return:
-    fn get_ptr_offset_info(&self, arg: usize) -> Option<(BinOp, usize, AnaOperand, PlaceTy<'tcx>)> {
-        if let Some(domain) = self.chains.get_var_node(arg) {
-            if let Some(def) = &domain.offset_from {
-                match def {
-                    SymbolicDef::PtrOffset(op, base, off, place_ty) => {
-                        return Some((*op, *base, off.clone(), place_ty.clone()));
-                    }
-                    _ => {}
-                }
-            }
-        }
-        None
-    }
-
-    // If no offset, check the type of ptr an its pointed object's type directly
-    fn check_align_directly(&self, arg: usize, required_layout: PlaceTy<'tcx>) -> bool {
-        if let Some(mem_ty_raw) = self.chains.get_obj_ty_through_chain(arg) {
-            let mem_layout = self.visit_ty_and_get_layout(mem_ty_raw);
-
-            let var = self.chains.get_var_node(arg).unwrap();
-            let cur_layout = self.visit_ty_and_get_layout(var.ty.unwrap());
-
-            let point_to_id = self.chains.get_point_to_id(arg);
-            let pointed_var = self.chains.get_var_node(point_to_id).unwrap();
-
-            // return AlignState::Cast(mem_layout, cur_layout).check() && pointed_var.ots.align;
-        }
-        false
-    }
-
-    /// If ptr has Offset, use Z3 to solve constraints.
-    /// Assuming `offset_op` is the accumulated offset from `base_local`.
-    fn check_offset_align_with_z3(
-        &self,
-        op: BinOp,
-        base_local: usize,
-        offset_op: AnaOperand,
-        stride_layout: PlaceTy<'tcx>,
-        contract_required_ty: Ty<'tcx>,
-    ) -> bool {
-        // 1. get target type (Req) layout and alignment requirements
-        let req_layout = self.visit_ty_and_get_layout(contract_required_ty);
-        let mut req_aligns = req_layout.possible_aligns();
-
-        // handle generic types: if target is generic and has no alignment constraints, check all common alignments (1~64)
-        if let PlaceTy::GenericTy(..) = req_layout {
-            if req_aligns.is_empty() {
-                req_aligns.extend([1, 2, 4, 8, 16, 32, 64]);
-            }
-        }
-
-        // opt: if only alignment 1 is required, it's always safe
-        if req_aligns.len() == 1 && req_aligns.contains(&1) {
-            return true;
-        }
-
-        // 2. get base node
-        let base_node = if let Some(node) = self.chains.get_var_node(base_local) {
-            node
-        } else {
-            return false;
-        };
-
-        // if base type is unknown, cannot assume base is aligned
-        let base_pointee_ty = if let Some(ty) = base_node.ty {
-            // Note: here we need the pointee type, not the pointer type itself
-            crate::analysis::utils::fn_info::get_pointee(ty)
-        } else {
-            return false;
-        };
-
-        let base_layout = self.visit_ty_and_get_layout(base_pointee_ty);
-        let mut base_aligns = base_layout.possible_aligns();
-
-        // handle generic types: Base is also generic, extend its possible alignments
-        if let PlaceTy::GenericTy(..) = base_layout {
-            if base_aligns.is_empty() {
-                base_aligns.extend([1, 2, 4, 8, 16, 32, 64]);
-            }
-        }
-
-        rap_debug!(
-            "Z3 Align Check: base_{} {:?} (aligns {:?}) {:?} offset (stride {:?}) => req_aligns {:?}",
-            base_local,
-            op,
-            base_aligns,
-            op,
-            stride_layout,
-            req_aligns
-        );
-
-        verify_with_z3(
-            self.value_domains.clone(),
-            self.path_constraints.clone(),
-            |ctx, vars| {
-                let bv_zero = BV::from_u64(ctx, 0, 64);
-
-                // Model Base address
-                let bv_base = if let Some(b) = vars.get(&base_local) {
-                    b.clone()
-                } else {
-                    // if base address is not available, return false
-                    return z3::ast::Bool::from_bool(ctx, false);
-                };
-
-                // Model Index
-                let bv_index = match &offset_op {
-                    AnaOperand::Local(idx) => {
-                        if let Some(v) = vars.get(idx) {
-                            v.clone()
-                        } else {
-                            BV::from_u64(ctx, 0, 64)
-                        }
-                    }
-                    AnaOperand::Const(val) => BV::from_u64(ctx, *val as u64, 64),
-                };
-
-                // Model Stride
-                let possible_strides: Vec<u64> = match &stride_layout {
-                    PlaceTy::Ty(_, size) => vec![*size as u64],
-                    PlaceTy::GenericTy(_, _, layout_set) => {
-                        if layout_set.is_empty() {
-                            // Generic type with no size constraints, check all common strides
-                            vec![1, 2, 4, 8, 16, 32, 64]
-                        } else {
-                            layout_set.iter().map(|(_, size)| *size as u64).collect()
-                        }
-                    }
-                    PlaceTy::Unknown => vec![1],
-                };
-
-                let mut constraints = Vec::new();
-
-                // Coupling check: are Req and Base the same generic parameter?
-                let is_same_generic = match (&req_layout, &base_layout) {
-                    (PlaceTy::GenericTy(n1, _, _), PlaceTy::GenericTy(n2, _, _)) => n1 == n2,
-                    _ => false,
-                };
-
-                // check all Strides
-                for stride in possible_strides {
-                    let bv_stride = BV::from_u64(ctx, stride, 64);
-                    let bv_byte_offset = bv_index.bvmul(&bv_stride);
-
-                    // Model Result Pointer
-                    let result_ptr = match op {
-                        BinOp::Add => bv_base.bvadd(&bv_byte_offset),
-                        BinOp::Sub => bv_base.bvsub(&bv_byte_offset),
-                        _ => bv_base.bvadd(&bv_byte_offset), // 默认 Add
-                    };
-
-                    if is_same_generic {
-                        // Same generic type: if Base satisfies alignment A, result must also satisfy A
-                        for align in &req_aligns {
-                            let bv_align = BV::from_u64(ctx, *align as u64, 64);
-
-                            // Precondition
-                            let base_is_aligned = bv_base.bvurem(&bv_align)._eq(&bv_zero);
-                            // Postcondition
-                            let result_aligned = result_ptr.bvurem(&bv_align)._eq(&bv_zero);
-
-                            constraints.push(base_is_aligned.implies(&result_aligned));
-                        }
-                    } else {
-                        // Different types: Base satisfies its own alignment => Result satisfies target alignment
-                        for b_align in &base_aligns {
-                            for r_align in &req_aligns {
-                                let bv_base_align = BV::from_u64(ctx, *b_align as u64, 64);
-                                let bv_req_align = BV::from_u64(ctx, *r_align as u64, 64);
-
-                                let base_is_aligned = bv_base.bvurem(&bv_base_align)._eq(&bv_zero);
-                                let result_aligned = result_ptr.bvurem(&bv_req_align)._eq(&bv_zero);
-
-                                constraints.push(base_is_aligned.implies(&result_aligned));
-                            }
-                        }
-                    }
-                }
-
-                if constraints.is_empty() {
-                    // No constraints generated, return false
-                    return z3::ast::Bool::from_bool(ctx, false);
-                }
-
-                // Must satisfy all generated constraints (AND)
-                let constraints_refs: Vec<&z3::ast::Bool> = constraints.iter().collect();
-                z3::ast::Bool::and(ctx, &constraints_refs)
-            },
-        )
-    }
-
     /// Taint Analysis: Check if the base pointer comes from a determined/aligned source.
     /// Sources considered determined/aligned:
     /// 1. References (Stack allocation) -> `&x`
@@ -618,8 +386,241 @@ impl<'tcx> BodyVisitor<'tcx> {
     }
 }
 
-// impl block for Align check
+/// Impl block for Align check
+/// Align checking functions
 impl<'tcx> BodyVisitor<'tcx> {
+    // Main API for align check
+    pub fn check_align(&self, arg: usize, contract_required_ty: Ty<'tcx>) -> bool {
+        let required_ty_layout = self.visit_ty_and_get_layout(contract_required_ty);
+        if self.check_align_from_cis(arg, &required_ty_layout) {
+            return true;
+        }
+        // check offset
+        if let Some((op, base_local, offset_op, stride_layout)) = self.get_ptr_offset_info(arg) {
+            return self.check_offset_align_with_z3(
+                op,
+                base_local,
+                offset_op,
+                stride_layout,
+                contract_required_ty,
+            );
+        }
+
+        // If no offset or cannot derive, try direct type casting check
+        self.check_align_directly(arg, required_ty_layout)
+    }
+
+    /// First check for Align.
+    /// If this var has contextual invariant state (cis), like:
+    ///      #[rapx::proof::Align::(x, usize)]
+    ///      pub fn test(x: *const usize) { ... }
+    /// CIS will record 'x: Align(usize)' information for align check
+    fn check_align_from_cis(&self, arg: usize, required_layout: &PlaceTy<'tcx>) -> bool {
+        if let Some(var) = self.chains.get_var_node(arg) {
+            for cis in &var.cis.contracts {
+                if let PropertyContract::Align(cis_ty) = cis {
+                    let cis_layout = self.visit_ty_and_get_layout(*cis_ty);
+                    if Self::two_types_cast_check(cis_layout, required_layout.clone()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Second check for Align.
+    /// If no offset, check the type of ptr an its pointed object's type directly
+    fn check_align_directly(&self, pointer_id: usize, required_ty: PlaceTy<'tcx>) -> bool {
+        if let Some(pointee) = self.chains.get_obj_ty_through_chain(pointer_id) {
+            let pointee_ty = self.visit_ty_and_get_layout(pointee);
+            let pointer = self.chains.get_var_node(pointer_id).unwrap();
+
+            // If the pointer has an explicitly recorded aligned state
+            if pointer.ots.align != AlignState::Unknown {
+                return Self::two_types_cast_check(pointee_ty, required_ty);
+            }
+        }
+        false
+    }
+
+    /// Third check for Align.
+    /// If ptr has Offset, use Z3 to solve constraints.
+    /// Assuming `offset_op` is the accumulated offset from `base_local`.
+    fn check_offset_align_with_z3(
+        &self,
+        op: BinOp,
+        base_local: usize,
+        offset_op: AnaOperand,
+        stride_layout: PlaceTy<'tcx>,
+        contract_required_ty: Ty<'tcx>,
+    ) -> bool {
+        // 1. get target type (Req) layout and alignment requirements
+        let req_layout = self.visit_ty_and_get_layout(contract_required_ty);
+        let mut req_aligns = req_layout.possible_aligns();
+
+        // handle generic types: if target is generic and has no alignment constraints, check all common alignments (1~64)
+        if let PlaceTy::GenericTy(..) = req_layout {
+            if req_aligns.is_empty() {
+                req_aligns.extend([1, 2, 4, 8, 16, 32, 64]);
+            }
+        }
+
+        // opt: if only alignment 1 is required, it's always safe
+        if req_aligns.len() == 1 && req_aligns.contains(&1) {
+            return true;
+        }
+
+        // 2. get base node
+        let base_node = if let Some(node) = self.chains.get_var_node(base_local) {
+            node
+        } else {
+            return false;
+        };
+
+        // if base type is unknown, cannot assume base is aligned
+        let base_pointee_ty = if let Some(ty) = base_node.ty {
+            // Note: here we need the pointee type, not the pointer type itself
+            crate::analysis::utils::fn_info::get_pointee(ty)
+        } else {
+            return false;
+        };
+
+        let base_layout = self.visit_ty_and_get_layout(base_pointee_ty);
+        let mut base_aligns = base_layout.possible_aligns();
+
+        // handle generic types: Base is also generic, extend its possible alignments
+        if let PlaceTy::GenericTy(..) = base_layout {
+            if base_aligns.is_empty() {
+                base_aligns.extend([1, 2, 4, 8, 16, 32, 64]);
+            }
+        }
+
+        rap_warn!(
+            "Z3 Align Check: base_{} {:?} (aligns {:?}) {:?} offset (stride {:?}) => req_aligns {:?}",
+            base_local,
+            op,
+            base_aligns,
+            op,
+            stride_layout,
+            req_aligns
+        );
+
+        verify_with_z3(
+            self.value_domains.clone(),
+            self.path_constraints.clone(),
+            |ctx, vars| {
+                let bv_zero = BV::from_u64(ctx, 0, 64);
+
+                // Model Base address
+                let bv_base = if let Some(b) = vars.get(&base_local) {
+                    b.clone()
+                } else {
+                    // if base address is not available, return false
+                    return z3::ast::Bool::from_bool(ctx, false);
+                };
+
+                // Model Index
+                let bv_index = match &offset_op {
+                    AnaOperand::Local(idx) => {
+                        if let Some(v) = vars.get(idx) {
+                            v.clone()
+                        } else {
+                            BV::from_u64(ctx, 0, 64)
+                        }
+                    }
+                    AnaOperand::Const(val) => BV::from_u64(ctx, *val as u64, 64),
+                };
+
+                // Model Stride
+                let possible_strides: Vec<u64> = match &stride_layout {
+                    PlaceTy::Ty(_, size) => vec![*size as u64],
+                    PlaceTy::GenericTy(_, _, layout_set) => {
+                        if layout_set.is_empty() {
+                            // Generic type with no size constraints, check all common strides
+                            vec![1, 2, 4, 8, 16, 32, 64]
+                        } else {
+                            layout_set.iter().map(|(_, size)| *size as u64).collect()
+                        }
+                    }
+                    PlaceTy::Unknown => vec![1],
+                };
+
+                let mut constraints = Vec::new();
+
+                // Coupling check: are Req and Base the same generic parameter?
+                let is_same_generic = match (&req_layout, &base_layout) {
+                    (PlaceTy::GenericTy(n1, _, _), PlaceTy::GenericTy(n2, _, _)) => n1 == n2,
+                    _ => false,
+                };
+
+                // check all Strides
+                for stride in possible_strides {
+                    let bv_stride = BV::from_u64(ctx, stride, 64);
+                    let bv_byte_offset = bv_index.bvmul(&bv_stride);
+
+                    // Model Result Pointer
+                    let result_ptr = match op {
+                        BinOp::Add => bv_base.bvadd(&bv_byte_offset),
+                        BinOp::Sub => bv_base.bvsub(&bv_byte_offset),
+                        _ => bv_base.bvadd(&bv_byte_offset), // default Add
+                    };
+
+                    if is_same_generic {
+                        // Same generic type: if Base satisfies alignment A, result must also satisfy A
+                        for align in &req_aligns {
+                            let bv_align = BV::from_u64(ctx, *align as u64, 64);
+
+                            // Precondition
+                            let base_is_aligned = bv_base.bvurem(&bv_align)._eq(&bv_zero);
+                            // Postcondition
+                            let result_aligned = result_ptr.bvurem(&bv_align)._eq(&bv_zero);
+
+                            constraints.push(base_is_aligned.implies(&result_aligned));
+                        }
+                    } else {
+                        // Different types: Base satisfies its own alignment => Result satisfies target alignment
+                        for b_align in &base_aligns {
+                            for r_align in &req_aligns {
+                                let bv_base_align = BV::from_u64(ctx, *b_align as u64, 64);
+                                let bv_req_align = BV::from_u64(ctx, *r_align as u64, 64);
+
+                                let base_is_aligned = bv_base.bvurem(&bv_base_align)._eq(&bv_zero);
+                                let result_aligned = result_ptr.bvurem(&bv_req_align)._eq(&bv_zero);
+
+                                constraints.push(base_is_aligned.implies(&result_aligned));
+                            }
+                        }
+                    }
+                }
+
+                if constraints.is_empty() {
+                    // No constraints generated, return false
+                    return z3::ast::Bool::from_bool(ctx, false);
+                }
+
+                // Must satisfy all generated constraints (AND)
+                let constraints_refs: Vec<&z3::ast::Bool> = constraints.iter().collect();
+                z3::ast::Bool::and(ctx, &constraints_refs)
+            },
+        )
+    }
+
+    // If the arg has offset from its pointed object, this function will return:
+    fn get_ptr_offset_info(&self, arg: usize) -> Option<(BinOp, usize, AnaOperand, PlaceTy<'tcx>)> {
+        if let Some(domain) = self.chains.get_var_node(arg) {
+            if let Some(def) = &domain.offset_from {
+                match def {
+                    SymbolicDef::PtrOffset(op, base, off, place_ty) => {
+                        return Some((*op, *base, off.clone(), place_ty.clone()));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        None
+    }
+
     /// Checks if the argument satisfies the alignment requirements of the contract.
     /// Retrieves the pre-computed state from the graph and compares types.
     pub fn check_align_by_pre_computed_state(
@@ -630,7 +631,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         // 1. Retrieve the variable node from the graph
         if let Some(var) = self.chains.get_var_node(arg) {
             // 2. Check if the state is marked as 'Aligned'
-            if let AlignState::Aligned(state_ty, _proven_align) = var.ots.align {
+            if let AlignState::Aligned(state_ty) = var.ots.align {
                 // 3. Compare the state's recorded type with the contract's required type
                 // We assume the pointer is aligned for `state_ty`. We must ensure
                 // `state_ty` alignment implies `contract_required_ty` alignment.
