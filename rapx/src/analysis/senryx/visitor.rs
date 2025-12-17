@@ -201,7 +201,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             // If running detailed (visit_time == 0), show debug reports.
             if self.visit_time == 0 {
                 self.display_value_domains();
-                self.display_path_constraints();
+                self.chains.display_dominated_graph();
                 // let base_name = get_cleaned_def_path_name(self.tcx, self.def_id);
                 // let path_suffix = path
                 //     .iter()

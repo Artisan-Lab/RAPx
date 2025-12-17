@@ -18,7 +18,9 @@ use rustc_middle::ty::TyKind;
 use rustc_middle::ty::{Ty, TyCtxt};
 use serde::de;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt::Write;
 
+/// A collection of state properties for a memory location.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct States<'tcx> {
     pub nonnull: bool,
@@ -30,6 +32,7 @@ pub struct States<'tcx> {
 }
 
 impl<'tcx> States<'tcx> {
+    /// Create a new States instance with default values.
     pub fn new(ty: Ty<'tcx>) -> Self {
         Self {
             nonnull: true,
@@ -41,6 +44,7 @@ impl<'tcx> States<'tcx> {
         }
     }
 
+    /// Create a new States instance with all fields set to false/unknown.
     pub fn new_unknown() -> Self {
         Self {
             nonnull: false,
@@ -52,6 +56,7 @@ impl<'tcx> States<'tcx> {
         }
     }
 
+    /// Merge the states of this instance with another.
     pub fn merge_states(&mut self, other: &States<'tcx>) {
         self.nonnull &= other.nonnull;
         self.allocator_consistency &= other.allocator_consistency;
@@ -62,6 +67,7 @@ impl<'tcx> States<'tcx> {
     }
 }
 
+/// A node in the intermediate result graph.
 #[derive(Debug, Clone)]
 pub struct InterResultNode<'tcx> {
     pub point_to: Option<Box<InterResultNode<'tcx>>>,
@@ -72,6 +78,7 @@ pub struct InterResultNode<'tcx> {
 }
 
 impl<'tcx> InterResultNode<'tcx> {
+    /// Create a new InterResultNode with default values.
     pub fn new_default(ty: Option<Ty<'tcx>>) -> Self {
         Self {
             point_to: None,
@@ -82,6 +89,7 @@ impl<'tcx> InterResultNode<'tcx> {
         }
     }
 
+    /// Construct an InterResultNode from a VariableNode.
     pub fn construct_from_var_node(chain: DominatedGraph<'tcx>, var_id: usize) -> Self {
         let var_node = chain.get_var_node(var_id).unwrap();
         let point_node = if var_node.points_to.is_none() {
@@ -106,6 +114,7 @@ impl<'tcx> InterResultNode<'tcx> {
         }
     }
 
+    /// Merge the current node with another node.
     pub fn merge(&mut self, other: InterResultNode<'tcx>) {
         if self.ty != other.ty {
             return;
@@ -135,17 +144,20 @@ impl<'tcx> InterResultNode<'tcx> {
     }
 }
 
+/// A summary of a function's behavior.
 #[derive(Clone, Debug)]
 pub struct FunctionSummary {
     pub return_def: Option<SymbolicDef>,
 }
 
 impl FunctionSummary {
+    /// Create a new FunctionSummary.
     pub fn new(def: Option<SymbolicDef>) -> Self {
         Self { return_def: def }
     }
 }
 
+/// A node in the dominated graph.
 #[derive(Debug, Clone)]
 pub struct VariableNode<'tcx> {
     pub id: usize,
@@ -162,6 +174,7 @@ pub struct VariableNode<'tcx> {
 }
 
 impl<'tcx> VariableNode<'tcx> {
+    /// Create a new VariableNode.
     pub fn new(
         id: usize,
         points_to: Option<usize>,
@@ -184,6 +197,7 @@ impl<'tcx> VariableNode<'tcx> {
         }
     }
 
+    /// Create a new VariableNode with default values.
     pub fn new_default(id: usize, ty: Option<Ty<'tcx>>) -> Self {
         VariableNode {
             id,
@@ -200,6 +214,7 @@ impl<'tcx> VariableNode<'tcx> {
         }
     }
 
+    /// Create a new VariableNode with specific states.
     pub fn new_with_states(id: usize, ty: Option<Ty<'tcx>>, ots: States<'tcx>) -> Self {
         VariableNode {
             id,
@@ -217,11 +232,16 @@ impl<'tcx> VariableNode<'tcx> {
     }
 }
 
+/// A dominated graph.
 #[derive(Clone)]
 pub struct DominatedGraph<'tcx> {
+    /// The type context.
     pub tcx: TyCtxt<'tcx>,
+    /// The definition ID of the function.
     pub def_id: DefId,
+    /// The number of local variables.
     pub local_len: usize,
+    /// The variables in the graph.
     pub variables: HashMap<usize, VariableNode<'tcx>>,
 }
 
@@ -251,6 +271,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         }
     }
 
+    /// Initialize the self node with an intermediate result.
     pub fn init_self_with_inter(&mut self, inter_result: InterResultNode<'tcx>) {
         let self_node = self.get_var_node(1).unwrap().clone();
         if self_node.ty.unwrap().is_ref() {
@@ -261,6 +282,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         }
     }
 
+    /// Insert intermediate results into the graph.
     pub fn dfs_insert_inter_results(&mut self, inter_result: InterResultNode<'tcx>, local: usize) {
         let new_id = self.generate_node_id();
         let node = self.get_var_node_mut(local).unwrap();
@@ -285,6 +307,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         }
     }
 
+    /// Initialize the arguments of the function.
     pub fn init_arg(&mut self) {
         // init arg nodes' point to nodes.
         let body = self.tcx.optimized_mir(self.def_id);
@@ -317,6 +340,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         }
     }
 
+    /// Insert a contract into the CIS of an argument.
     fn insert_cis_for_arg(&mut self, local: usize, contract: PropertyContract<'tcx>) {
         let node = self.get_var_node_mut(local).unwrap();
         node.cis.add_contract(contract);
@@ -353,6 +377,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         new_id
     }
 
+    /// Add a bound for an object node.
     fn add_bound_for_obj(&mut self, new_id: usize, local_ty: Ty<'tcx>) {
         let new_node = self.get_var_node_mut(new_id).unwrap();
         let new_node_ty = get_pointee(local_ty);
@@ -365,7 +390,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         new_node.cis.add_contract(contract);
     }
 
-    // if current node is ptr or ref, then return the new node pointed by it.
+    /// if current node is ptr or ref, then return the new node pointed by it.
     pub fn check_ptr(&mut self, arg: usize) -> usize {
         if self.get_var_node_mut(arg).unwrap().ty.is_none() {
             display_hashmap(&self.variables, 1);
@@ -377,6 +402,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         arg
     }
 
+    /// Get the type of a local variable by its place.
     pub fn get_local_ty_by_place(&self, arg: usize) -> Option<Ty<'tcx>> {
         let body = self.tcx.optimized_mir(self.def_id);
         let locals = body.local_decls.clone();
@@ -388,6 +414,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         }
     }
 
+    /// Get the type of an object through a chain of pointers.
     pub fn get_obj_ty_through_chain(&self, arg: usize) -> Option<Ty<'tcx>> {
         let var = self.get_var_node(arg).unwrap();
         // If the var is ptr or ref, then find its pointed obj.
@@ -398,6 +425,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         }
     }
 
+    /// Get the ID of the node pointed to by a pointer or reference.
     pub fn get_point_to_id(&self, arg: usize) -> usize {
         let var = self.get_var_node(arg).unwrap();
         if let Some(pointed_idx) = var.points_to {
@@ -407,6 +435,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         }
     }
 
+    /// Check if a node ID corresponds to a local variable.
     pub fn is_local(&self, node_id: usize) -> bool {
         self.local_len > node_id
     }
@@ -452,6 +481,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         return new_id;
     }
 
+    /// Find the variable ID in DG corresponding to a sequence of fields.
     pub fn find_var_id_with_fields_seq(&mut self, local: usize, fields: &Vec<usize>) -> usize {
         let mut cur = local;
         for field in fields.clone() {
@@ -543,14 +573,17 @@ impl<'tcx> DominatedGraph<'tcx> {
         }
     }
 
+    /// Get the ID of a variable node.
     pub fn get_var_nod_id(&self, local_id: usize) -> usize {
         self.get_var_node(local_id).unwrap().id
     }
 
+    /// Get a variable node by its local ID.
     pub fn get_map_idx_node(&self, local_id: usize) -> &VariableNode<'tcx> {
         self.variables.get(&local_id).unwrap()
     }
 
+    /// Get a variable node by its local ID.
     pub fn get_var_node(&self, local_id: usize) -> Option<&VariableNode<'tcx>> {
         for (_idx, var_node) in &self.variables {
             if var_node.alias_set.contains(&local_id) {
@@ -562,6 +595,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         None
     }
 
+    /// Get a mutable reference to a variable node by its local ID.
     pub fn get_var_node_mut(&mut self, local_id: usize) -> Option<&mut VariableNode<'tcx>> {
         let va = self.variables.clone();
         for (_idx, var_node) in &mut self.variables {
@@ -615,6 +649,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         }
     }
 
+    /// Break the connection between two nodes.
     fn break_node_connection(&mut self, lv: usize, rv: usize) {
         let rv_node = self.get_var_node_mut(rv).unwrap();
         rv_node.pointed_by.remove(&lv);
@@ -622,6 +657,14 @@ impl<'tcx> DominatedGraph<'tcx> {
         lv_node.points_to = None;
     }
 
+    /// Initialize the self node with an intermediate result.
+    fn init_self_node(&mut self, self_id: usize, ty: Option<Ty<'tcx>>, state: States<'tcx>) {
+        let node = self.get_var_node_mut(self_id).unwrap();
+        node.ty = ty;
+        node.ots = state;
+    }
+
+    /// Insert intermediate results into the graph.
     fn insert_node(
         &mut self,
         dv: usize,
@@ -636,6 +679,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         );
     }
 
+    /// Delete a node from the graph.
     fn delete_node(&mut self, idx: usize) {
         let node = self.get_var_node(idx).unwrap().clone();
         for pre_idx in &node.pointed_by.clone() {
@@ -649,6 +693,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         self.variables.remove(&idx);
     }
 
+    /// Set the drop flag for a node.
     pub fn set_drop(&mut self, idx: usize) -> bool {
         if let Some(ori_node) = self.get_var_node_mut(idx) {
             if ori_node.is_dropped == true {
@@ -660,12 +705,14 @@ impl<'tcx> DominatedGraph<'tcx> {
         true
     }
 
+    /// Update the constant value of a node.
     pub fn update_value(&mut self, arg: usize, value: usize) {
         let node = self.get_var_node_mut(arg).unwrap();
         node.const_value = value;
         node.ots.init = true;
     }
 
+    /// Insert a partial order constraint between two nodes.
     pub fn insert_patial_op(&mut self, p1: usize, p2: usize, op: &BinOp) {
         let p1_node = self.get_var_node_mut(p1).unwrap();
         p1_node
@@ -676,59 +723,11 @@ impl<'tcx> DominatedGraph<'tcx> {
             .cis
             .add_contract(PropertyContract::new_patial_order(p1, reverse_op(*op)));
     }
-
-    pub fn print_graph(&self) {
-        let mut visited = HashSet::new();
-        let mut subgraphs = Vec::new();
-
-        for &node_id in self.variables.keys() {
-            if !visited.contains(&node_id) {
-                let mut queue = VecDeque::new();
-                let mut subgraph = Vec::new();
-
-                queue.push_back(node_id);
-                visited.insert(node_id);
-
-                while let Some(current_id) = queue.pop_front() {
-                    subgraph.push(current_id);
-
-                    if let Some(node) = self.get_var_node(current_id) {
-                        if let Some(next_id) = node.points_to {
-                            if !visited.contains(&next_id) {
-                                visited.insert(next_id);
-                                queue.push_back(next_id);
-                            }
-                        }
-
-                        for &pointer_id in &node.pointed_by {
-                            if !visited.contains(&pointer_id) {
-                                visited.insert(pointer_id);
-                                queue.push_back(pointer_id);
-                            }
-                        }
-                    }
-                }
-
-                subgraphs.push(subgraph);
-            }
-        }
-
-        for (i, mut subgraph) in subgraphs.into_iter().enumerate() {
-            subgraph.sort_unstable();
-            println!("Connected Subgraph {}: {:?}", i + 1, subgraph);
-
-            for node_id in subgraph {
-                if let Some(node) = self.get_var_node(node_id) {
-                    println!("  Node {} → {:?}", node_id, node.points_to);
-                }
-            }
-            println!();
-        }
-    }
 }
 
-use std::fmt::Write;
+/// Debug implementation for DominatedGraph.
 impl<'tcx> DominatedGraph<'tcx> {
+    /// Generate a DOT graph representation of the dominated graph.
     pub fn to_dot_graph(&self) -> String {
         let mut dot = String::new();
         writeln!(dot, "digraph DominatedGraph {{").unwrap();
@@ -848,6 +847,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         dot
     }
 
+    /// Generate a label for a node in the DOT graph.
     fn generate_node_label(&self, node: &VariableNode<'tcx>) -> String {
         let ty_str = match node.ty {
             Some(t) => format!("{:?}", t),
@@ -864,8 +864,119 @@ impl<'tcx> DominatedGraph<'tcx> {
             node.id, safe_ty, node.const_value,
         )
     }
+
+    /// Debug helper: Visualize the graph structure and states in a table format
+    pub fn display_dominated_graph(&self) {
+        const TABLE_WIDTH: usize = 126;
+        println!(
+            "\n{:=^width$}",
+            " Dominated Graph Report ",
+            width = TABLE_WIDTH
+        );
+
+        let mut sorted_ids: Vec<&usize> = self.variables.keys().collect();
+        sorted_ids.sort();
+
+        if sorted_ids.is_empty() {
+            println!("  [Empty Graph]");
+            println!("{:=^width$}\n", "", width = TABLE_WIDTH);
+            return;
+        }
+
+        // Define table headers and separator
+        // ID: 6, Type: 30, Pt-To: 10, Fields: 15, States: 40
+        let sep = format!(
+            "+{:-^6}+{:-^30}+{:-^10}+{:-^15}+{:-^40}+",
+            "", "", "", "", ""
+        );
+        println!("{}", sep);
+        println!(
+            "| {:^6} | {:^30} | {:^10} | {:^15} | {:^40} |",
+            "ID", "Type", "Pt-To", "Fields", "States"
+        );
+        println!("{}", sep);
+
+        for id in sorted_ids {
+            let node = &self.variables[id];
+
+            // 1. Format Type: Convert Ty to string and handle None
+            let ty_str = node
+                .ty
+                .map(|t| format!("{:?}", t))
+                .unwrap_or_else(|| "None".to_string());
+
+            // 2. Format Points-To: Show target node ID if exists
+            let pt_str = node
+                .points_to
+                .map(|p| format!("_{}", p))
+                .unwrap_or_else(|| "-".to_string());
+
+            // 3. Format Fields: Show "field_idx -> node_id" mapping
+            let fields_str = if node.field.is_empty() {
+                "-".to_string()
+            } else {
+                let mut fs: Vec<String> = node
+                    .field
+                    .iter()
+                    .map(|(k, v)| format!(".{}->_{}", k, v))
+                    .collect();
+                fs.sort(); // Keep deterministic order
+                fs.join(", ")
+            };
+
+            // 4. Format States: concise flags for Init, NonNull, Align, etc.
+            let mut states_vec = Vec::new();
+            // if node.ots.init {
+            //     states_vec.push("Init".to_string());
+            // }
+            // if node.ots.nonnull {
+            //     states_vec.push("NN".to_string());
+            // }
+            // if node.ots.valid_string {
+            //     states_vec.push("Str".to_string());
+            // }
+            // Extract alignment info
+            match &node.ots.align {
+                AlignState::Aligned(_, a) => {
+                    if *a != 0 {
+                        states_vec.push(format!("Align({})", a));
+                    }
+                }
+                AlignState::Unaligned(_, _, _) => states_vec.push("Unalign".to_string()),
+                AlignState::Unknown => {} // Skip unknown to save space
+            }
+            let states_str = if states_vec.is_empty() {
+                "-".to_string()
+            } else {
+                states_vec.join(", ")
+            };
+
+            // Print the row with truncation to keep table alignment
+            println!(
+                "| {:<6} | {:<30} | {:<10} | {:<15} | {:<40} |",
+                id,
+                self.safe_truncate_str(&ty_str, 30),
+                pt_str,
+                self.safe_truncate_str(&fields_str, 15),
+                self.safe_truncate_str(&states_str, 40)
+            );
+        }
+
+        println!("{}", sep);
+        println!("{:=^width$}\n", " End Graph ", width = TABLE_WIDTH);
+    }
+
+    // Helper: Truncate strings to maintain table layout
+    fn safe_truncate_str(&self, s: &str, max_width: usize) -> String {
+        if s.chars().count() <= max_width {
+            return s.to_string();
+        }
+        let truncated: String = s.chars().take(max_width - 2).collect();
+        format!("{}..", truncated)
+    }
 }
 
+/// Escape HTML characters in a string.
 fn html_escape(input: &str) -> String {
     input
         .replace("&", "&amp;")
