@@ -207,18 +207,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             // Used for debug
             // If running detailed (visit_time == 0), show debug reports.
             if self.visit_time == 0 {
-                self.display_value_domains();
-                self.chains.display_dominated_graph();
-                // let base_name = get_cleaned_def_path_name(self.tcx, self.def_id);
-                // let path_suffix = path
-                //     .iter()
-                //     .map(|b| b.to_string())
-                //     .collect::<Vec<String>>()
-                //     .join("_");
-
-                // let name = format!("{}_path_{}", base_name, path_suffix);
-                // let dot_string = self.chains.to_dot_graph();
-                // render_dot_string(name, dot_string);
+                self.display_combined_debug_info();
             }
 
             // merge path analysis results
@@ -1397,6 +1386,156 @@ impl<'tcx> BodyVisitor<'tcx> {
 // === Partition: Debugging & display helpers ===
 // Debugging and display helpers: pretty-printers and formatting utilities for analysis state.
 impl<'tcx> BodyVisitor<'tcx> {
+    /// Display a combined debug table merging DominatedGraph and ValueDomain info.
+    /// Handles different lengths of variables in graph (includes heap nodes) vs domains.
+    pub fn display_combined_debug_info(&self) {
+        const TABLE_WIDTH: usize = 200; // Expanded width for all columns
+        println!(
+            "\n{:=^width$}",
+            " Combined Analysis State Report ",
+            width = TABLE_WIDTH
+        );
+
+        // 1. Collect and Sort All Unique Variable IDs
+        let mut all_ids: HashSet<usize> = self.value_domains.keys().cloned().collect();
+        all_ids.extend(self.chains.variables.keys().cloned());
+        let mut sorted_ids: Vec<usize> = all_ids.into_iter().collect();
+        sorted_ids.sort();
+
+        if sorted_ids.is_empty() {
+            println!("  [Empty Analysis State]");
+            println!("{:=^width$}\n", "", width = TABLE_WIDTH);
+            return;
+        }
+
+        // 2. Define Table Header
+        let sep = format!(
+            "+{:-^6}+{:-^25}+{:-^8}+{:-^15}+{:-^30}+{:-^25}+{:-^40}+{:-^15}+",
+            "", "", "", "", "", "", "", ""
+        );
+        println!("{}", sep);
+        println!(
+            "| {:^6} | {:^25} | {:^8} | {:^15} | {:^30} | {:^25} | {:^40} | {:^15} |",
+            "ID", "Type", "Pt-To", "Fields", "States", "Graph Offset", "Sym Def", "Sym Val"
+        );
+        println!("{}", sep);
+
+        // 3. Iterate and Print Rows
+        for id in sorted_ids {
+            // -- Extract Graph Info (if exists) --
+            let (ty_str, pt_str, fields_str, states_str, g_offset_str) =
+                if let Some(node) = self.chains.variables.get(&id) {
+                    // Type
+                    let t = node
+                        .ty
+                        .map(|t| format!("{:?}", t))
+                        .unwrap_or_else(|| "None".to_string());
+
+                    // Points-To
+                    let p = node
+                        .points_to
+                        .map(|p| format!("_{}", p))
+                        .unwrap_or_else(|| "-".to_string());
+
+                    // Fields
+                    let f = if node.field.is_empty() {
+                        "-".to_string()
+                    } else {
+                        let mut fs: Vec<String> = node
+                            .field
+                            .iter()
+                            .map(|(k, v)| format!(".{}->_{}", k, v))
+                            .collect();
+                        fs.sort();
+                        fs.join(", ")
+                    };
+
+                    // States (Align, etc.)
+                    let mut s_vec = Vec::new();
+                    match &node.ots.align {
+                        AlignState::Aligned(ty) => {
+                            if let Some(node_ty) = node.ty {
+                                if is_ptr(node_ty) || is_ref(node_ty) {
+                                    s_vec.push(format!("Align({:?})", ty));
+                                }
+                            }
+                        }
+                        AlignState::Unaligned(ty) => s_vec.push(format!("Unalign({:?})", ty)),
+                        AlignState::Unknown => {} // Skip unknown to keep clean, or use "Unknown"
+                    }
+                    let s = if s_vec.is_empty() {
+                        "-".to_string()
+                    } else {
+                        s_vec.join(", ")
+                    };
+
+                    // Graph Offset (Simplified Formatting Logic)
+                    let off = if let Some(def) = &node.offset_from {
+                        match def {
+                            SymbolicDef::PtrOffset(op, base, idx, _) => {
+                                let op_str = self.binop_to_symbol(op);
+                                let idx_str = match idx {
+                                    AnaOperand::Local(l) => format!("_{}", l),
+                                    AnaOperand::Const(c) => format!("{}", c),
+                                };
+                                format!("_{} {} {}", base, op_str, idx_str)
+                            }
+                            SymbolicDef::Binary(BinOp::Offset, base, idx) => {
+                                let idx_str = match idx {
+                                    AnaOperand::Local(l) => format!("_{}", l),
+                                    AnaOperand::Const(c) => format!("{}", c),
+                                };
+                                format!("_{} + {}", base, idx_str)
+                            }
+                            _ => format!("{:?}", def),
+                        }
+                    } else {
+                        "-".to_string()
+                    };
+
+                    (t, p, f, s, off)
+                } else {
+                    (
+                        "-".to_string(),
+                        "-".to_string(),
+                        "-".to_string(),
+                        "-".to_string(),
+                        "-".to_string(),
+                    )
+                };
+
+            // -- Extract Value Domain Info (if exists) --
+            let (sym_def_str, sym_val_str) = if let Some(domain) = self.value_domains.get(&id) {
+                let d = self
+                    .format_symbolic_def(domain.def.as_ref())
+                    .replace('\n', " ");
+                let v = match domain.value_constraint {
+                    Some(val) => format!("== {}", val),
+                    None => "-".to_string(),
+                };
+                (d, v)
+            } else {
+                ("-".to_string(), "-".to_string())
+            };
+
+            // -- Print Combined Row --
+            println!(
+                "| {:<6} | {:<25} | {:<8} | {:<15} | {:<30} | {:<25} | {:<40} | {:<15} |",
+                id,
+                self.safe_truncate(&ty_str, 25),
+                pt_str,
+                self.safe_truncate(&fields_str, 15),
+                self.safe_truncate(&states_str, 30),
+                self.safe_truncate(&g_offset_str, 25),
+                self.safe_truncate(&sym_def_str, 40),
+                self.safe_truncate(&sym_val_str, 15)
+            );
+        }
+
+        println!("{}", sep);
+        println!("{:=^width$}\n", " End Report ", width = TABLE_WIDTH);
+    }
+
     /// Pretty-print the collected path constraints for debugging.
     /// Display the true conditions in all branches.
     pub fn display_path_constraints(&self) {
@@ -1548,5 +1687,19 @@ impl<'tcx> BodyVisitor<'tcx> {
             BinOp::Offset => "ptr_offset",
             _ => "",
         }
+    }
+
+    /// Display the path in DOT format.
+    pub fn display_path_dot(&self, path: &[usize]) {
+        let base_name = get_cleaned_def_path_name(self.tcx, self.def_id);
+        let path_suffix = path
+            .iter()
+            .map(|b| b.to_string())
+            .collect::<Vec<String>>()
+            .join("_");
+
+        let name = format!("{}_path_{}", base_name, path_suffix);
+        let dot_string = self.chains.to_dot_graph();
+        render_dot_string(name, dot_string);
     }
 }

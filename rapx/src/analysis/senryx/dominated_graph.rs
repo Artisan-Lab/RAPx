@@ -162,8 +162,8 @@ impl<'tcx> FunctionSummary<'tcx> {
 pub struct VariableNode<'tcx> {
     pub id: usize,
     pub alias_set: HashSet<usize>,
-    points_to: Option<usize>,
-    pointed_by: HashSet<usize>,
+    pub points_to: Option<usize>,
+    pub pointed_by: HashSet<usize>,
     pub field: HashMap<usize, usize>,
     pub ty: Option<Ty<'tcx>>,
     pub is_dropped: bool,

@@ -270,26 +270,41 @@ impl<'tcx> SenryxCheck<'tcx> {
             get_cleaned_def_path_name(tcx, def_id)
         );
         for check_result in &check_results {
+            // Aggregate all failed contracts from all arguments
+            let mut all_failed = HashSet::new();
+            for set in check_result.failed_contracts.values() {
+                for sp in set {
+                    all_failed.insert(sp);
+                }
+            }
+
+            // Aggregate all passed contracts from all arguments
+            let mut all_passed = HashSet::new();
+            for set in check_result.passed_contracts.values() {
+                for sp in set {
+                    all_passed.insert(sp);
+                }
+            }
+
+            // Print the API name with conditional coloring
             cond_print!(
-                !check_result.failed_contracts.is_empty(),
+                !all_failed.is_empty(),
                 "  Use unsafe api {:?}.",
                 check_result.func_name
             );
-            for failed_contract in &check_result.failed_contracts {
-                cond_print!(
-                    true,
-                    "      Argument {}'s failed Sps: {:?}",
-                    failed_contract.0,
-                    failed_contract.1
-                );
+
+            // Print aggregated Failed set
+            if !all_failed.is_empty() {
+                let mut failed_sorted: Vec<&String> = all_failed.into_iter().collect();
+                failed_sorted.sort();
+                cond_print!(true, "      Failed: {:?}", failed_sorted);
             }
-            for passed_contract in &check_result.passed_contracts {
-                cond_print!(
-                    false,
-                    "      Argument {}'s passed Sps: {:?}",
-                    passed_contract.0,
-                    passed_contract.1
-                );
+
+            // Print aggregated Passed set
+            if !all_passed.is_empty() {
+                let mut passed_sorted: Vec<&String> = all_passed.into_iter().collect();
+                passed_sorted.sort();
+                cond_print!(false, "      Passed: {:?}", passed_sorted);
             }
         }
     }
