@@ -215,7 +215,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             // Used for debug
             // If running detailed (visit_time == 0), show debug reports.
             if self.visit_time == 0 {
-                self.display_combined_debug_info();
+                // self.display_combined_debug_info();
             }
 
             // merge path analysis results
