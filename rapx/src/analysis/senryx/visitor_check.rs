@@ -17,8 +17,8 @@ use crate::{
         },
         utils::fn_info::{
             display_hashmap, generate_contract_from_annotation_without_field_types,
-            generate_contract_from_std_annotation_json, get_cleaned_def_path_name,
-            is_strict_ty_convert, reflect_generic,
+            generate_contract_from_std_annotation_json, get_cleaned_def_path_name, get_pointee,
+            is_ptr, is_ref, is_strict_ty_convert, reflect_generic,
         },
     },
     rap_debug, rap_error, rap_info, rap_warn,
@@ -437,7 +437,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             let pointer = self.chains.get_var_node(pointer_id).unwrap();
 
             // If the pointer has an explicitly recorded aligned state
-            if pointer.ots.align != AlignState::Unknown {
+            if let AlignState::Aligned(_) = pointer.ots.align {
                 return Self::two_types_cast_check(pointee_ty, required_ty);
             }
         }
@@ -619,6 +619,39 @@ impl<'tcx> BodyVisitor<'tcx> {
             }
         }
         None
+    }
+
+    /// Updates the alignment state of the given local variable.
+    /// is_aligned = true  -> Aligned
+    /// is_aligned = false -> Unaligned
+    pub fn update_align_state(&mut self, ptr_local: usize, is_aligned: bool) {
+        // Get type info
+        let ptr_ty_opt = self.chains.get_var_node(ptr_local).and_then(|n| n.ty);
+
+        if let Some(ptr_ty) = ptr_ty_opt {
+            if is_ptr(ptr_ty) || is_ref(ptr_ty) {
+                let pointee_ty = get_pointee(ptr_ty);
+
+                if let Some(ptr_node) = self.chains.get_var_node_mut(ptr_local) {
+                    if is_aligned {
+                        ptr_node.ots.align = AlignState::Aligned(pointee_ty);
+                        rap_debug!(
+                            "Refine State: _{} (source) marked as Aligned({:?}) via condition (True).",
+                            ptr_local,
+                            pointee_ty
+                        );
+                    } else {
+                        ptr_node.ots.align = AlignState::Unaligned(pointee_ty);
+
+                        rap_debug!(
+                            "Refine State: _{} (source) marked as Unaligned({:?}) via condition (False).",
+                            ptr_local,
+                            pointee_ty
+                        );
+                    }
+                }
+            }
+        }
     }
 
     /// Checks if the argument satisfies the alignment requirements of the contract.

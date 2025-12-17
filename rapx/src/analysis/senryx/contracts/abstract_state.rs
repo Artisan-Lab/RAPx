@@ -12,7 +12,7 @@ use rustc_middle::ty::Ty;
 pub enum AlignState<'tcx> {
     Aligned(Ty<'tcx>),
     /// Misaligned relative to `u64` by offset `SymbolicDef`.
-    Unaligned(Ty<'tcx>, u64, SymbolicDef<'tcx>),
+    Unaligned(Ty<'tcx>),
     /// Alignment cannot be statically determined (Top).
     Unknown,
 }
@@ -33,9 +33,7 @@ impl<'tcx> AlignState<'tcx> {
                 }
             }
             // Merging unaligned states is complex; default to Unknown for checking soundness.
-            (AlignState::Unaligned(t1, a1, off1), AlignState::Unaligned(t2, a2, off2)) => {
-                AlignState::Unknown
-            }
+            (AlignState::Unaligned(t1), AlignState::Unaligned(t2)) => AlignState::Unknown,
             _ => AlignState::Unknown,
         }
     }

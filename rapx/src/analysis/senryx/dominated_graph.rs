@@ -963,7 +963,7 @@ impl<'tcx> DominatedGraph<'tcx> {
                         states_vec.push(format!("Align({:?})", ty));
                     }
                 }
-                AlignState::Unaligned(_, _, _) => states_vec.push("Unalign".to_string()),
+                AlignState::Unaligned(ty) => states_vec.push(format!("Unalign({:?})", ty)),
                 AlignState::Unknown => states_vec.push("Unknown".to_string()),
             }
             let states_str = if states_vec.is_empty() {

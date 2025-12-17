@@ -934,6 +934,142 @@ impl<'tcx> BodyVisitor<'tcx> {
         self.apply_function_summary(dst_local, &summary, &arg_indices);
     }
 
+    // -------------------------------------------------------------------------
+    //  Condition & State Refinement Logic (Updated)
+    // -------------------------------------------------------------------------
+
+    /// Handle SwitchInt: Convert branch selections into constraints AND refine abstract states.
+    fn handle_switch_int(
+        &mut self,
+        discr: &Operand<'tcx>,
+        targets: &mir::SwitchTargets,
+        next_bb: usize,
+    ) {
+        let discr_op = match self.lift_operand(discr) {
+            Some(op) => op,
+            None => return,
+        };
+
+        let discr_local_idx = match discr_op {
+            AnaOperand::Local(idx) => idx,
+            _ => return,
+        };
+
+        let mut matched_val = None;
+        for (val, target_bb) in targets.iter() {
+            if target_bb.as_usize() == next_bb {
+                matched_val = Some(val);
+                break;
+            }
+        }
+
+        if let Some(val) = matched_val {
+            // Explicit match found.
+            // If val == 1 (True), refine to Aligned. If val == 0 (False), refine to Unaligned.
+            self.refine_state_by_condition(discr_local_idx, val);
+
+            let constraint =
+                SymbolicDef::Binary(BinOp::Eq, discr_local_idx, AnaOperand::Const(val));
+            self.path_constraints.push(constraint);
+        } else if targets.otherwise().as_usize() == next_bb {
+            // "Otherwise" branch taken.
+            // Check what values were explicitly skipped to infer the current value.
+            let mut explicit_has_zero = false;
+            let mut explicit_has_one = false;
+
+            for (val, _) in targets.iter() {
+                if val == 0 {
+                    explicit_has_zero = true;
+                }
+                if val == 1 {
+                    explicit_has_one = true;
+                }
+
+                // Add Ne constraints for skipped targets
+                let constraint =
+                    SymbolicDef::Binary(BinOp::Ne, discr_local_idx, AnaOperand::Const(val));
+                self.path_constraints.push(constraint);
+            }
+
+            // Inference logic for Boolean checks:
+            if explicit_has_zero && !explicit_has_one {
+                // If 0 (False) was explicit and skipped, then we are likely in 1 (True)
+                self.refine_state_by_condition(discr_local_idx, 1);
+            } else if explicit_has_one && !explicit_has_zero {
+                // If 1 (True) was explicit and skipped, then we are likely in 0 (False)
+                // This enables setting "Unaligned" state in the else branch of "if is_aligned()"
+                self.refine_state_by_condition(discr_local_idx, 0);
+            }
+        }
+    }
+
+    /// Entry point for refining states based on a condition variable's value.
+    fn refine_state_by_condition(&mut self, cond_local: usize, matched_val: u128) {
+        let domain = match self.value_domains.get(&cond_local).cloned() {
+            Some(d) => d,
+            None => return,
+        };
+
+        if let Some(SymbolicDef::Call(func_name, args)) = &domain.def {
+            self.apply_condition_refinement(func_name, args, matched_val);
+        }
+    }
+
+    /// Dispatcher: Applies specific state updates based on function name and return value.
+    fn apply_condition_refinement(
+        &mut self,
+        func_name: &str,
+        args: &Vec<AnaOperand>,
+        matched_val: u128,
+    ) {
+        // Handle is_aligned check
+        if func_name.ends_with("is_aligned") || func_name.contains("is_aligned") {
+            if let Some(AnaOperand::Local(ptr_local)) = args.get(0) {
+                // Determine target state: 1 -> Aligned, 0 -> Unaligned
+                let is_aligned_state = if matched_val == 1 {
+                    Some(true)
+                } else if matched_val == 0 {
+                    Some(false)
+                } else {
+                    None
+                };
+
+                if let Some(aligned) = is_aligned_state {
+                    // 1. Update the variable directly involved in the check (Current Node)
+                    // This covers cases where the checked variable is used immediately in the block.
+                    self.update_align_state(*ptr_local, aligned);
+
+                    // 2. Trace back to the source (Root Node) and update it
+                    // This covers cases where new copies are created from the source (e.g. _5 = copy _1).
+                    let root_local = self.find_source_var(*ptr_local);
+                    if root_local != *ptr_local {
+                        self.update_align_state(root_local, aligned);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Helper: Trace back through Use/Cast/Copy to find the definitive source local.
+    pub fn find_source_var(&self, start_local: usize) -> usize {
+        let mut curr = start_local;
+        let mut depth = 0;
+        while depth < 20 {
+            if let Some(domain) = self.value_domains.get(&curr) {
+                match &domain.def {
+                    Some(SymbolicDef::Use(src)) | Some(SymbolicDef::Cast(src, _)) => {
+                        curr = *src;
+                    }
+                    _ => return curr,
+                }
+            } else {
+                return curr;
+            }
+            depth += 1;
+        }
+        curr
+    }
+
     /// Apply function summary to update Visitor state and Graph
     pub fn apply_function_summary(
         &mut self,
@@ -1147,81 +1283,6 @@ impl<'tcx> BodyVisitor<'tcx> {
                 let _second_place = get_arg_place(second_op);
             }
             _ => {}
-        }
-    }
-
-    /// Convert SwitchInt branch selections into symbolic path constraints on the discriminator.
-    fn handle_switch_int(
-        &mut self,
-        discr: &Operand<'tcx>,
-        targets: &mir::SwitchTargets,
-        next_bb: usize,
-    ) {
-        // Convert switch-int branch selection into symbolic equality/inequality constraints
-        // on the discriminator local for path-sensitive analysis.
-        let discr_op = match self.lift_operand(discr) {
-            Some(op) => op,
-            None => return,
-        };
-
-        let discr_local_idx = match discr_op {
-            AnaOperand::Local(idx) => idx,
-            _ => return,
-        };
-
-        let mut matched_val = None;
-        for (val, target_bb) in targets.iter() {
-            if target_bb.as_usize() == next_bb {
-                matched_val = Some(val);
-                break;
-            }
-        }
-
-        if let Some(val) = matched_val {
-            // If the branch is true (1), check if it's an is_aligned check
-            if val == 1 {
-                self.refine_state_by_condition(discr_local_idx);
-            }
-
-            let constraint =
-                SymbolicDef::Binary(BinOp::Eq, discr_local_idx, AnaOperand::Const(val));
-            self.path_constraints.push(constraint);
-        } else if targets.otherwise().as_usize() == next_bb {
-            for (val, _) in targets.iter() {
-                let constraint =
-                    SymbolicDef::Binary(BinOp::Ne, discr_local_idx, AnaOperand::Const(val));
-                self.path_constraints.push(constraint);
-            }
-        }
-    }
-
-    /// Refines the alignment state of a variable if the branch condition implies it.
-    /// Specifically checks for `is_aligned()` calls.
-    fn refine_state_by_condition(&mut self, cond_local: usize) {
-        if let Some(domain) = self.value_domains.get(&cond_local) {
-            if let Some(SymbolicDef::Call(func_name, args)) = &domain.def {
-                if func_name.ends_with("is_aligned") {
-                    if let Some(AnaOperand::Local(ptr_local)) = args.get(0) {
-                        // Check if ptr_local is a pointer and update its state
-                        let ptr_ty_opt = self.chains.get_var_node(*ptr_local).and_then(|n| n.ty);
-
-                        if let Some(ptr_ty) = ptr_ty_opt {
-                            if is_ptr(ptr_ty) {
-                                let pointee_ty = get_pointee(ptr_ty);
-                                if let Some(ptr_node) = self.chains.get_var_node_mut(*ptr_local) {
-                                    // Set state to Aligned(T)
-                                    ptr_node.ots.align = AlignState::Aligned(pointee_ty);
-                                    rap_warn!(
-                                        "Refined alignment for _{} to Aligned({:?}) via is_aligned check",
-                                        ptr_local,
-                                        pointee_ty
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 
