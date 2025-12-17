@@ -242,7 +242,10 @@ impl<'tcx> SenryxCheck<'tcx> {
                 let cons_fields_result = cons_body_visitor.path_forward_check(fn_map);
                 // cache and merge fields' states
                 let cons_name = get_cleaned_def_path_name(self.tcx, con);
-                println!("cons {cons_name} state results {:?}", cons_fields_result.clone());
+                println!(
+                    "cons {cons_name} state results {:?}",
+                    cons_fields_result.clone()
+                );
                 base_inter_result.merge(cons_fields_result);
             }
 

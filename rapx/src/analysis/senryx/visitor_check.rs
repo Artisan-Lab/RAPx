@@ -496,7 +496,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             }
         }
 
-        rap_warn!(
+        rap_debug!(
             "Z3 Align Check: base_{} {:?} (aligns {:?}) {:?} offset (stride {:?}) => req_aligns {:?}",
             base_local,
             op,
@@ -671,7 +671,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                 let state_layout = self.visit_ty_and_get_layout(state_ty);
                 let req_layout = self.visit_ty_and_get_layout(contract_required_ty);
 
-                rap_warn!(
+                rap_debug!(
                     "Check Align: arg_{} StateTy: {:?} vs ReqTy: {:?}",
                     arg,
                     state_layout,
@@ -681,10 +681,10 @@ impl<'tcx> BodyVisitor<'tcx> {
                 // True if Src alignment requirements >= Dest alignment requirements
                 return Self::two_types_cast_check(state_layout, req_layout);
             } else {
-                rap_warn!("Check Align: arg_{} is Unaligned or Unknown", arg);
+                rap_debug!("Check Align: arg_{} is Unaligned or Unknown", arg);
             }
         } else {
-            rap_warn!("Check Align: arg_{} node not found", arg);
+            rap_debug!("Check Align: arg_{} node not found", arg);
         }
         false
     }
@@ -736,7 +736,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             );
 
             if is_proven {
-                rap_warn!(
+                rap_debug!(
                     "Refine Align: Successfully refined base_{} to align {}",
                     base_local,
                     candidate

@@ -59,7 +59,7 @@ where
     let mut z3_vars: HashMap<usize, BV> = HashMap::new();
 
     // Debug Header
-    rap_warn!("\n=== Z3 Constraint Generation Start ===");
+    rap_debug!("\n=== Z3 Constraint Generation Start ===");
 
     // Create symbolic bitvector variables for all locals
     for local_index in values.keys() {
@@ -78,7 +78,7 @@ where
             match def {
                 SymbolicDef::Cast(src_idx, _ty) => {
                     if let Some(src_var) = z3_vars.get(src_idx) {
-                        rap_warn!("  [Def] _{} == _{} (Cast)", local_idx, src_idx);
+                        rap_debug!("  [Def] _{} == _{} (Cast)", local_idx, src_idx);
                         solver.assert(&current_var._eq(src_var));
                     }
                 }
@@ -88,7 +88,7 @@ where
                     {
                         let op_str = binop_to_str(op);
                         let rhs_str = operand_to_str(rhs_op);
-                        rap_warn!(
+                        rap_debug!(
                             "  [Def] _{} == _{} {} {}",
                             local_idx,
                             lhs_idx,
@@ -127,7 +127,7 @@ where
                                 .bvuge(&rhs)
                                 .ite(&BV::from_u64(&ctx, 1, 64), &BV::from_u64(&ctx, 0, 64)),
                             _ => {
-                                rap_warn!("    [Warning] Z3: Unsupported Binary Op: {:?}", op);
+                                rap_debug!("    [Warning] Z3: Unsupported Binary Op: {:?}", op);
                                 continue;
                             }
                         };
@@ -136,7 +136,7 @@ where
                 }
                 SymbolicDef::Use(src_idx) => {
                     if let Some(src_var) = z3_vars.get(src_idx) {
-                        rap_warn!("  [Def] _{} == _{}", local_idx, src_idx);
+                        rap_debug!("  [Def] _{} == _{}", local_idx, src_idx);
                         solver.assert(&current_var._eq(src_var));
                     }
                 }
@@ -156,7 +156,7 @@ where
                             };
                             let idx_str = operand_to_str(idx);
 
-                            rap_warn!(
+                            rap_debug!(
                                 "  [Def] _{} == _{} {} ({} * {} bytes)",
                                 local_idx,
                                 base,
@@ -173,7 +173,7 @@ where
                             solver.assert(&current_var._eq(&res));
                         }
                     } else {
-                        rap_warn!(
+                        rap_debug!(
                             "  [Def] _{} := PtrOffset(...) (Skipped: Generic/Unknown Stride)",
                             local_idx
                         );
@@ -183,7 +183,7 @@ where
             }
         }
         if let Some(val) = domain.value_constraint {
-            rap_warn!("  [Val] _{} == {}", local_idx, val);
+            rap_debug!("  [Val] _{} == {}", local_idx, val);
             let z3_val = BV::from_u64(&ctx, val as u64, 64);
             solver.assert(&current_var._eq(&z3_val));
         }
@@ -199,7 +199,7 @@ where
                 ) {
                     let op_str = binop_to_str(&op);
                     let rhs_str = operand_to_str(&rhs_op);
-                    rap_warn!("  [Path] _{} {} {}", lhs_idx, op_str, rhs_str);
+                    rap_debug!("  [Path] _{} {} {}", lhs_idx, op_str, rhs_str);
 
                     match op {
                         BinOp::Eq => solver.assert(&lhs._eq(&rhs)),
@@ -217,14 +217,14 @@ where
     }
 
     // Assert negation of the target property
-    rap_warn!("  [Target] Asserting negation of target property...");
+    rap_debug!("  [Target] Asserting negation of target property...");
     let target_prop = target_verifier(&ctx, &z3_vars);
     solver.assert(&target_prop.not());
 
     // Check satisfiability
     let result = solver.check();
 
-    rap_warn!("=== Z3 Verify Finished ===");
+    rap_debug!("=== Z3 Verify Finished ===");
     debug_z3_solver_state(&solver, result, &z3_vars);
 
     // UNSAT means no counter-example exists -> property holds
@@ -242,34 +242,34 @@ fn debug_z3_solver_state<'ctx>(
 ) {
     match result {
         SatResult::Unsat => {
-            rap_info!("[Z3 Result] UNSAT (Verification Passed)");
+            rap_debug!("[Z3 Result] UNSAT (Verification Passed)");
         }
         SatResult::Sat => {
-            rap_info!("[Z3 Result] SAT (Verification Failed) - Counter-example found:");
+            rap_debug!("[Z3 Result] SAT (Verification Failed) - Counter-example found:");
 
             if let Some(model) = solver.get_model() {
                 // Extract and log specific values for variables in the model
                 let mut sorted_vars: Vec<_> = z3_vars.iter().collect();
                 sorted_vars.sort_by_key(|k| k.0);
 
-                rap_info!("  --- Counter-example Values ---");
+                rap_debug!("  --- Counter-example Values ---");
                 for (idx, bv) in sorted_vars {
                     if let Some(interp) = model.eval(bv, true) {
                         let val_str = interp
                             .as_u64()
                             .map(|v| v.to_string())
                             .unwrap_or_else(|| interp.to_string());
-                        rap_info!("  _{}: {}", idx, val_str);
+                        rap_debug!("  _{}: {}", idx, val_str);
                     }
                 }
-                rap_info!("  ------------------------------");
+                rap_debug!("  ------------------------------");
             }
         }
         SatResult::Unknown => {
             let reason = solver
                 .get_reason_unknown()
                 .unwrap_or_else(|| "Unknown".to_string());
-            rap_info!("[Z3 Result] UNKNOWN. Reason: {}", reason);
+            rap_debug!("[Z3 Result] UNKNOWN. Reason: {}", reason);
         }
     }
 }

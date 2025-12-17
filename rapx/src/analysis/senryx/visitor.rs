@@ -98,7 +98,6 @@ impl<'tcx> Hash for PlaceTy<'tcx> {
     fn hash<H: std::hash::Hasher>(&self, _state: &mut H) {}
 }
 
-
 /// Visitor that traverses MIR body and builds symbolic and pointer chains.
 /// Holds analysis state such as type mappings, value domains and constraints.
 pub struct BodyVisitor<'tcx> {
@@ -930,7 +929,6 @@ impl<'tcx> BodyVisitor<'tcx> {
         // Apply the function summary to the destination local.
         self.apply_function_summary(dst_local, &summary, &arg_indices);
     }
-
 
     /// Handle SwitchInt: Convert branch selections into constraints AND refine abstract states.
     /// Convert a SwitchInt terminator into path constraints and refine state when possible.

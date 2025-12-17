@@ -1,8 +1,8 @@
 use chrono::Local;
-use rustc_middle::mir::BasicBlock;
 use fern::colors::{Color, ColoredLevelConfig};
 use fern::{self, Dispatch};
 use log::LevelFilter;
+use rustc_middle::mir::BasicBlock;
 use rustc_span::source_map::get_source_map;
 use rustc_span::{FileNameDisplayPreference, Pos, Span};
 use std::ops::Range;
@@ -151,7 +151,7 @@ pub fn get_variable_name<'tcx>(
 }
 
 pub fn get_basic_block_span<'tcx>(body: &rustc_middle::mir::Body<'tcx>, bb_index: usize) -> Span {
-     if bb_index >= body.basic_blocks.len() {
+    if bb_index >= body.basic_blocks.len() {
         return body.span;
     }
 

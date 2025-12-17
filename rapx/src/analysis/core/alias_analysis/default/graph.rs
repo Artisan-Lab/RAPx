@@ -305,7 +305,7 @@ impl<'tcx> MopGraph<'tcx> {
                                 cur_bb.terminator = Term::Drop(terminator.clone());
                             } else {
                                 cur_bb.terminator = Term::Call(terminator.clone());
-                            } 
+                            }
                         }
                     } else {
                         cur_bb.terminator = Term::Call(terminator.clone());

@@ -1029,7 +1029,7 @@ impl<'tcx> DominatedGraph<'tcx> {
         if let Some(node) = self.get_var_node_mut(target_local) {
             node.offset_from = Some(offset_def);
 
-            rap_warn!(
+            rap_debug!(
                 "Graph Update: _{} is offset of _{} (via update_from_offset_def)",
                 target_local,
                 base_local
