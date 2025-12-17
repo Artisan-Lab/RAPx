@@ -74,6 +74,10 @@ pub enum PlaceTy<'tcx> {
 }
 
 impl<'tcx> PlaceTy<'tcx> {
+    /// Return the set of possible ABI alignments for this place/type.
+    /// - For concrete types returns a single-element set with the ABI alignment.
+    /// - For generic type parameters returns all candidate alignments collected from
+    ///   the generic instantiation set.
     pub fn possible_aligns(&self) -> HashSet<usize> {
         match self {
             PlaceTy::Ty(align, _size) => {
@@ -88,8 +92,12 @@ impl<'tcx> PlaceTy<'tcx> {
 }
 
 impl<'tcx> Hash for PlaceTy<'tcx> {
+    /// Custom hash implementation placeholder for `PlaceTy`.
+    /// Currently a no-op because `PlaceTy` is used primarily as a key in internal
+    /// analysis maps where exact hashing is not required. This keeps behavior stable.
     fn hash<H: std::hash::Hasher>(&self, _state: &mut H) {}
 }
+
 
 /// Visitor that traverses MIR body and builds symbolic and pointer chains.
 /// Holds analysis state such as type mappings, value domains and constraints.
@@ -923,11 +931,13 @@ impl<'tcx> BodyVisitor<'tcx> {
         self.apply_function_summary(dst_local, &summary, &arg_indices);
     }
 
-    // -------------------------------------------------------------------------
-    //  Condition & State Refinement Logic (Updated)
-    // -------------------------------------------------------------------------
 
     /// Handle SwitchInt: Convert branch selections into constraints AND refine abstract states.
+    /// Convert a SwitchInt terminator into path constraints and refine state when possible.
+    ///
+    /// The function maps the branch target taken into a concrete equality/inequality
+    /// constraint on the discriminator local and attempts to refine abstract states
+    /// (e.g. alignment) when the condition corresponds to recognized helper calls.
     fn handle_switch_int(
         &mut self,
         discr: &Operand<'tcx>,
@@ -953,10 +963,11 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
 
         if let Some(val) = matched_val {
-            // Explicit match found.
-            // If val == 1 (True), refine to Aligned. If val == 0 (False), refine to Unaligned.
+            // Explicit match found. Try to refine abstract state according to the boolean value.
+            // Example: if discr corresponds to `is_aligned()`, matched_val==1 means true.
             self.refine_state_by_condition(discr_local_idx, val);
 
+            // Record equality constraint for the taken branch (discr == val).
             let constraint =
                 SymbolicDef::Binary(BinOp::Eq, discr_local_idx, AnaOperand::Const(val));
             self.path_constraints.push(constraint);
@@ -981,12 +992,14 @@ impl<'tcx> BodyVisitor<'tcx> {
             }
 
             // Inference logic for Boolean checks:
+            // If only one boolean value was enumerated in explicit targets, infer the other
+            // value for the otherwise branch and attempt refinement accordingly.
             if explicit_has_zero && !explicit_has_one {
-                // If 0 (False) was explicit and skipped, then we are likely in 1 (True)
+                // Only 0 was explicit and skipped -> infer true
                 self.refine_state_by_condition(discr_local_idx, 1);
             } else if explicit_has_one && !explicit_has_zero {
-                // If 1 (True) was explicit and skipped, then we are likely in 0 (False)
-                // This enables setting "Unaligned" state in the else branch of "if is_aligned()"
+                // Only 1 was explicit and skipped -> infer false
+                // This lets us mark the else-branch as unaligned when appropriate.
                 self.refine_state_by_condition(discr_local_idx, 0);
             }
         }
@@ -994,11 +1007,13 @@ impl<'tcx> BodyVisitor<'tcx> {
 
     /// Entry point for refining states based on a condition variable's value.
     fn refine_state_by_condition(&mut self, cond_local: usize, matched_val: u128) {
+        // Clone the value domain entry to avoid holding a borrow while we mutate state.
         let domain = match self.value_domains.get(&cond_local).cloned() {
             Some(d) => d,
             None => return,
         };
 
+        // If this discriminant corresponds to a call, dispatch to the specific refinement logic.
         if let Some(SymbolicDef::Call(func_name, args)) = &domain.def {
             self.apply_condition_refinement(func_name, args, matched_val);
         }
@@ -1625,6 +1640,7 @@ impl<'tcx> BodyVisitor<'tcx> {
     }
 
     /// Truncate a string to max_width preserving character boundaries.
+    /// Returns a shortened string with ".." appended when truncation occurs.
     fn safe_truncate(&self, s: &str, max_width: usize) -> String {
         let char_count = s.chars().count();
         if char_count <= max_width {
