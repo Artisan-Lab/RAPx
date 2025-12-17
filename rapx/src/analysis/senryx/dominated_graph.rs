@@ -146,13 +146,13 @@ impl<'tcx> InterResultNode<'tcx> {
 
 /// A summary of a function's behavior.
 #[derive(Clone, Debug)]
-pub struct FunctionSummary {
-    pub return_def: Option<SymbolicDef>,
+pub struct FunctionSummary<'tcx> {
+    pub return_def: Option<SymbolicDef<'tcx>>,
 }
 
-impl FunctionSummary {
+impl<'tcx> FunctionSummary<'tcx> {
     /// Create a new FunctionSummary.
-    pub fn new(def: Option<SymbolicDef>) -> Self {
+    pub fn new(def: Option<SymbolicDef<'tcx>>) -> Self {
         Self { return_def: def }
     }
 }
@@ -170,7 +170,7 @@ pub struct VariableNode<'tcx> {
     pub ots: States<'tcx>,
     pub const_value: usize,
     pub cis: ContractualInvariantState<'tcx>,
-    pub offset_from: Option<SymbolicDef>,
+    pub offset_from: Option<SymbolicDef<'tcx>>,
 }
 
 impl<'tcx> VariableNode<'tcx> {
@@ -241,7 +241,7 @@ pub struct DominatedGraph<'tcx> {
     pub def_id: DefId,
     /// The number of local variables.
     pub local_len: usize,
-    /// The variables in the graph.
+    /// The variables in the graph. Map from local variable index to VariableNode.
     pub variables: HashMap<usize, VariableNode<'tcx>>,
 }
 
@@ -639,11 +639,8 @@ impl<'tcx> DominatedGraph<'tcx> {
         lv_node.ots = rv_node.ots;
         lv_node.cis = rv_node.cis;
         lv_node.is_dropped = rv_node.is_dropped;
+        lv_node.offset_from = rv_node.offset_from;
         let lv_id = lv_node.id;
-        // if is_ptr(rv_node.ty.unwrap()) && is_ptr(lv_ty) {
-        //     // println!("++++{lv}--{rv}");
-        //     self.merge(lv, rv);
-        // }
         if rv_node.points_to.is_some() {
             self.point(lv_id, rv_node.points_to.unwrap());
         }
@@ -867,7 +864,7 @@ impl<'tcx> DominatedGraph<'tcx> {
 
     /// Debug helper: Visualize the graph structure and states in a table format
     pub fn display_dominated_graph(&self) {
-        const TABLE_WIDTH: usize = 126;
+        const TABLE_WIDTH: usize = 145; // 增加宽度以容纳 Offset 列
         println!(
             "\n{:=^width$}",
             " Dominated Graph Report ",
@@ -884,15 +881,15 @@ impl<'tcx> DominatedGraph<'tcx> {
         }
 
         // Define table headers and separator
-        // ID: 6, Type: 30, Pt-To: 10, Fields: 15, States: 40
+        // ID: 6, Type: 25, Pt-To: 8, Fields: 15, Offset: 25, States: 40
         let sep = format!(
-            "+{:-^6}+{:-^30}+{:-^10}+{:-^15}+{:-^40}+",
-            "", "", "", "", ""
+            "+{:-^6}+{:-^25}+{:-^8}+{:-^15}+{:-^25}+{:-^40}+",
+            "", "", "", "", "", ""
         );
         println!("{}", sep);
         println!(
-            "| {:^6} | {:^30} | {:^10} | {:^15} | {:^40} |",
-            "ID", "Type", "Pt-To", "Fields", "States"
+            "| {:^6} | {:^25} | {:^8} | {:^15} | {:^25} | {:^40} |",
+            "ID", "Type", "Pt-To", "Fields", "Offset", "States"
         );
         println!("{}", sep);
 
@@ -924,22 +921,42 @@ impl<'tcx> DominatedGraph<'tcx> {
                 fs.join(", ")
             };
 
-            // 4. Format States: concise flags for Init, NonNull, Align, etc.
+            // 4. Format Offset: Show offset source info nicely
+            let offset_str = if let Some(def) = &node.offset_from {
+                match def {
+                    // PtrOffset: "_base +/- index"
+                    SymbolicDef::PtrOffset(op, base, idx, _) => {
+                        let op_str = match op {
+                            BinOp::Add => "+",
+                            BinOp::Sub => "-",
+                            _ => "?",
+                        };
+                        let idx_str = match idx {
+                            AnaOperand::Local(l) => format!("_{}", l),
+                            AnaOperand::Const(c) => format!("{}", c),
+                        };
+                        format!("_{} {} {}", base, op_str, idx_str)
+                    }
+                    SymbolicDef::Binary(BinOp::Offset, base, idx) => {
+                        let idx_str = match idx {
+                            AnaOperand::Local(l) => format!("_{}", l),
+                            AnaOperand::Const(c) => format!("{}", c),
+                        };
+                        format!("_{} + {}", base, idx_str)
+                    }
+                    _ => format!("{:?}", def),
+                }
+            } else {
+                "-".to_string()
+            };
+
+            // 5. Format States: concise flags for Init, NonNull, Align, etc.
             let mut states_vec = Vec::new();
-            // if node.ots.init {
-            //     states_vec.push("Init".to_string());
-            // }
-            // if node.ots.nonnull {
-            //     states_vec.push("NN".to_string());
-            // }
-            // if node.ots.valid_string {
-            //     states_vec.push("Str".to_string());
-            // }
-            // Extract alignment info
+            // 5.1 Extract alignment info
             match &node.ots.align {
-                AlignState::Aligned(_, a) => {
+                AlignState::Aligned(ty, a) => {
                     if *a != 0 {
-                        states_vec.push(format!("Align({})", a));
+                        states_vec.push(format!("Align({:?}, {})", ty, a));
                     }
                 }
                 AlignState::Unaligned(_, _, _) => states_vec.push("Unalign".to_string()),
@@ -953,11 +970,12 @@ impl<'tcx> DominatedGraph<'tcx> {
 
             // Print the row with truncation to keep table alignment
             println!(
-                "| {:<6} | {:<30} | {:<10} | {:<15} | {:<40} |",
+                "| {:<6} | {:<25} | {:<8} | {:<15} | {:<25} | {:<40} |",
                 id,
-                self.safe_truncate_str(&ty_str, 30),
+                self.safe_truncate_str(&ty_str, 25),
                 pt_str,
                 self.safe_truncate_str(&fields_str, 15),
+                self.safe_truncate_str(&offset_str, 25),
                 self.safe_truncate_str(&states_str, 40)
             );
         }
@@ -986,63 +1004,32 @@ fn html_escape(input: &str) -> String {
 }
 
 impl<'tcx> DominatedGraph<'tcx> {
-    /// Apply function summary to current DG
-    /// dest_local: ret_val of the function call
-    /// summary: summary of callee
-    /// args: args of ftunction call
-    pub fn apply_function_summary(
+    /// Public method called by BodyVisitor to update graph topology
+    /// when a PtrOffset definition is applied.
+    pub fn update_from_offset_def(
         &mut self,
-        dest_local: usize,
-        summary: &FunctionSummary,
-        args: &Vec<usize>,
+        // Parameters for the offset definition
+        target_local: usize,
+        // Base local variable being offset
+        base_local: usize,
+        // The symbolic definition of the offset
+        offset_def: SymbolicDef<'tcx>,
     ) {
-        if let Some(def) = &summary.return_def {
-            self.apply_summary_def(dest_local, def, args);
-        }
-    }
+        // 1. Update Pointing: target points to whatever base points to
+        // Because offset pointer usually stays within the same object allocation
+        let base_point_to = self.get_point_to_id(base_local);
+        self.point(target_local, base_point_to);
 
-    // Dispatcher of function summary,
-    // 'SymbolicDef' will record the relationship between params and ret_val.
-    fn apply_summary_def(&mut self, target_local: usize, def: &SymbolicDef, args: &Vec<usize>) {
-        match def {
-            SymbolicDef::Param(param_idx) => {
-                if *param_idx > 0 && param_idx - 1 < args.len() {
-                    let arg_local = args[param_idx - 1];
-                    self.merge(target_local, arg_local);
-                }
-            }
-            SymbolicDef::Binary(BinOp::Offset, param_base_idx, rhs_op) => {
-                if *param_base_idx > 0 && param_base_idx - 1 < args.len() {
-                    let base_local = args[param_base_idx - 1];
-                    let base_point_to = self.get_point_to_id(base_local);
+        // 2. Record the offset relationship on the node
+        // This is crucial for backtracking the base pointer during checks
+        if let Some(node) = self.get_var_node_mut(target_local) {
+            node.offset_from = Some(offset_def);
 
-                    self.point(target_local, base_point_to);
-
-                    let node = self.get_var_node_mut(target_local).unwrap();
-                    let real_rhs_op = match rhs_op {
-                        AnaOperand::Const(c) => AnaOperand::Const(*c),
-                        AnaOperand::Local(param_idx) => {
-                            if *param_idx > 0 && param_idx - 1 < args.len() {
-                                AnaOperand::Local(args[param_idx - 1])
-                            } else {
-                                AnaOperand::Const(0)
-                            }
-                        }
-                    };
-
-                    node.offset_from =
-                        Some(SymbolicDef::Binary(BinOp::Offset, base_local, real_rhs_op));
-
-                    rap_warn!(
-                        "Applied Offset summary: _{} is offset of _{} (arg {})",
-                        target_local,
-                        base_local,
-                        param_base_idx
-                    );
-                }
-            }
-            // todo: support others.
-            _ => {}
+            rap_warn!(
+                "Graph Update: _{} is offset of _{} (via update_from_offset_def)",
+                target_local,
+                base_local
+            );
         }
     }
 }

@@ -100,5 +100,11 @@
         "tag": "ValidNum",
         "args": []
     }
+  ],
+  "core::slice::from_raw_parts_mut": [
+    {
+      "tag": "Align",
+      "args": ["0", "T"]
+    }
   ]
 }

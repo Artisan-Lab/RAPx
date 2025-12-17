@@ -4,8 +4,10 @@ use std::collections::HashMap;
 use z3::ast::{Ast, BV, Bool};
 use z3::{Config, Context, SatResult, Solver};
 
+use crate::analysis::senryx::visitor::PlaceTy;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SymbolicDef {
+pub enum SymbolicDef<'tcx> {
     Param(usize),
     Constant(u128),
     Use(usize),
@@ -14,6 +16,8 @@ pub enum SymbolicDef {
     UnOp(UnOp),
     Call(String, Vec<AnaOperand>),
     Ref(usize),
+    /// Pointer offset operation
+    PtrOffset(BinOp, usize, AnaOperand, PlaceTy<'tcx>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,12 +27,12 @@ pub enum AnaOperand {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct ValueDomain {
-    pub def: Option<SymbolicDef>,
+pub struct ValueDomain<'tcx> {
+    pub def: Option<SymbolicDef<'tcx>>,
     pub value_constraint: Option<u128>,
 }
 
-impl ValueDomain {
+impl<'tcx> ValueDomain<'tcx> {
     pub fn get_constant(&self) -> Option<u128> {
         if let Some(SymbolicDef::Constant(c)) = self.def {
             Some(c)

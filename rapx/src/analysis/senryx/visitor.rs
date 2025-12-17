@@ -100,8 +100,8 @@ pub struct BodyVisitor<'tcx> {
     pub generic_map: HashMap<String, HashSet<Ty<'tcx>>>,
     pub proj_ty: HashMap<usize, Ty<'tcx>>,
     pub chains: DominatedGraph<'tcx>,
-    pub value_domains: HashMap<usize, ValueDomain>,
-    pub path_constraints: Vec<SymbolicDef>,
+    pub value_domains: HashMap<usize, ValueDomain<'tcx>>,
+    pub path_constraints: Vec<SymbolicDef<'tcx>>,
 }
 
 // === Partition: Initialization & state ===
@@ -165,6 +165,10 @@ impl<'tcx> BodyVisitor<'tcx> {
         for (index, (path, constraint)) in paths.iter().enumerate() {
             // Init three data structures in every path
             self.value_domains.clear();
+            for (arg_index, _) in body.args_iter().enumerate() {
+                let local = arg_index + 1;
+                self.record_value_def(local, SymbolicDef::Param(local));
+            }
             self.path_constraints = Vec::new();
             self.chains = tmp_chain.clone();
             self.set_constraint(constraint);
@@ -371,6 +375,18 @@ impl<'tcx> BodyVisitor<'tcx> {
                 if let (Some(ana_op1), Some(ana_op2)) =
                     (self.lift_operand(op1), self.lift_operand(op2))
                 {
+                    // Handle pointer offset operations specially
+                    if *bin_op == BinOp::Offset {
+                        if let AnaOperand::Local(base) = ana_op1 {
+                            let base_ty = self.get_ptr_pointee_layout(base);
+                            self.record_value_def(
+                                lpjc_local,
+                                SymbolicDef::PtrOffset(*bin_op, base, ana_op2, base_ty),
+                            );
+                            return;
+                        }
+                    }
+                    // Handle other binary operations
                     let def = match (ana_op1.clone(), ana_op2) {
                         (AnaOperand::Local(l), rhs) => Some(SymbolicDef::Binary(*bin_op, l, rhs)),
                         (AnaOperand::Const(_), AnaOperand::Local(l)) => match bin_op {
@@ -452,6 +468,19 @@ impl<'tcx> BodyVisitor<'tcx> {
             }
             _ => {}
         }
+    }
+
+    /// Get the layout of the pointee type of a pointer or reference.
+    pub fn get_ptr_pointee_layout(&self, ptr_local: usize) -> PlaceTy<'tcx> {
+        if let Some(node) = self.chains.get_var_node(ptr_local) {
+            if let Some(ty) = node.ty {
+                if is_ptr(ty) || is_ref(ty) {
+                    let pointee = get_pointee(ty);
+                    return self.visit_ty_and_get_layout(pointee);
+                }
+            }
+        }
+        PlaceTy::Unknown
     }
 }
 
@@ -611,6 +640,8 @@ impl<'tcx> BodyVisitor<'tcx> {
             );
         }
 
+        self.handle_offset_call(dst_place, def_id, args);
+
         self.set_bound(def_id, dst_place, args);
 
         // merge alias results
@@ -750,7 +781,7 @@ impl<'tcx> BodyVisitor<'tcx> {
 
     /// Compute a compact FunctionSummary for this function based on the return local (_0).
     /// If the return resolves to a param or const expression, include it in the summary.
-    pub fn compute_function_summary(&self) -> FunctionSummary {
+    pub fn compute_function_summary(&self) -> FunctionSummary<'tcx> {
         if let Some(domain) = self.value_domains.get(&0) {
             if let Some(def) = &domain.def {
                 let resolved_def = self.resolve_symbolic_def(def, 0); // 0 is the initial recursion deepth
@@ -762,7 +793,11 @@ impl<'tcx> BodyVisitor<'tcx> {
 
     /// Resolve a SymbolicDef into a simplified form referencing params or constants.
     /// For example, given `_1 = add(_2, _3)`, attempt to express the result in terms of params.
-    fn resolve_symbolic_def(&self, def: &SymbolicDef, depth: usize) -> Option<SymbolicDef> {
+    fn resolve_symbolic_def(
+        &self,
+        def: &SymbolicDef<'tcx>,
+        depth: usize,
+    ) -> Option<SymbolicDef<'tcx>> {
         // Limit recursion depth to avoid infinite loops in symbolic resolution.
         if depth > 10 {
             return None;
@@ -800,13 +835,177 @@ impl<'tcx> BodyVisitor<'tcx> {
     }
 
     /// Resolve a local's symbolic definition by consulting the value_domains map.
-    fn resolve_local(&self, local_idx: usize, depth: usize) -> Option<SymbolicDef> {
+    fn resolve_local(&self, local_idx: usize, depth: usize) -> Option<SymbolicDef<'tcx>> {
         if let Some(domain) = self.value_domains.get(&local_idx) {
             if let Some(def) = &domain.def {
                 return self.resolve_symbolic_def(def, depth);
             }
         }
         None
+    }
+
+    /// Handle calls to pointer offset functions (e.g., `ptr::add`, `ptr::sub`).
+    pub fn handle_offset_call(
+        &mut self,
+        dst_place: &Place<'tcx>,
+        def_id: &DefId,
+        args: &Box<[Spanned<Operand<'tcx>>]>,
+    ) {
+        let func_name = get_cleaned_def_path_name(self.tcx, *def_id);
+
+        let is_ptr_op = func_name.contains("ptr") || func_name.contains("slice");
+        if !is_ptr_op {
+            return;
+        }
+
+        let is_byte_sub =
+            func_name.ends_with("::byte_sub") || func_name.ends_with("::wrapping_byte_sub"); // specific check for byte ops
+
+        let is_sub =
+            is_byte_sub || func_name.ends_with("::sub") || func_name.ends_with("::wrapping_sub");
+
+        let is_byte_add =
+            func_name.ends_with("::byte_add") || func_name.ends_with("::wrapping_byte_add");
+
+        let is_add =
+            is_byte_add || func_name.ends_with("::add") || func_name.ends_with("::wrapping_add");
+
+        let is_byte_offset =
+            func_name.ends_with("::byte_offset") || func_name.ends_with("::wrapping_byte_offset");
+
+        let is_offset = is_byte_offset
+            || func_name.ends_with("::offset")
+            || func_name.ends_with("::wrapping_offset");
+
+        if !is_sub && !is_add && !is_offset {
+            return;
+        }
+        if args.len() < 2 {
+            return;
+        }
+
+        let dst_local = self.handle_proj(false, *dst_place);
+
+        let bin_op = if is_sub {
+            BinOp::Sub
+        } else if is_add {
+            BinOp::Add
+        } else {
+            BinOp::Offset
+        };
+
+        let mut arg_indices = Vec::new();
+        for arg in args.iter() {
+            if let Some(ana_op) = self.lift_operand(&arg.node) {
+                match ana_op {
+                    AnaOperand::Local(l) => arg_indices.push(l),
+                    AnaOperand::Const(_) => arg_indices.push(0),
+                }
+            } else {
+                arg_indices.push(0);
+            }
+        }
+        let base_op = &args[0].node;
+        let base_local = if let Some(AnaOperand::Local(l)) = self.lift_operand(base_op) {
+            l
+        } else {
+            return;
+        };
+
+        // judge whether it's a byte-level operation
+        let is_byte_op = is_byte_sub || is_byte_add || is_byte_offset;
+
+        let place_ty = if is_byte_op {
+            // if it's a byte operation, force stride to 1 (Align 1, Size 1)
+            PlaceTy::Ty(1, 1)
+        } else {
+            // otherwise, use the pointer's pointee type's Layout (stride = sizeof(T))
+            self.get_ptr_pointee_layout(base_local)
+        };
+
+        // Create a symbolic definition for the pointer offset operation.
+        let summary_def = SymbolicDef::PtrOffset(bin_op, 1, AnaOperand::Local(2), place_ty);
+        let summary = FunctionSummary::new(Some(summary_def));
+
+        // Apply the function summary to the destination local.
+        self.apply_function_summary(dst_local, &summary, &arg_indices);
+    }
+
+    /// Apply function summary to update Visitor state and Graph
+    pub fn apply_function_summary(
+        &mut self,
+        dst_local: usize,
+        summary: &FunctionSummary<'tcx>,
+        args: &Vec<usize>, // Caller's local indices for arguments
+    ) {
+        if let Some(def) = &summary.return_def {
+            // 1. Resolve the definition to current context
+            if let Some(resolved_def) = self.resolve_summary_def(def, args) {
+                // 2. Record value definition in Visitor (essential for Z3 checks)
+                // This ensures self.value_domains has the PtrOffset info
+                self.record_value_def(dst_local, resolved_def.clone());
+
+                // 3. Update DominatedGraph based on the resolved definition type
+                match resolved_def {
+                    SymbolicDef::PtrOffset(_, base_local, _, _) => {
+                        // Update graph topology and node info
+                        self.chains
+                            .update_from_offset_def(dst_local, base_local, resolved_def);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// Resolve a definition from Function Summary (using Param indices)
+    /// into a concrete SymbolicDef (using Caller's Locals).
+    fn resolve_summary_def(
+        &self,
+        def: &SymbolicDef<'tcx>,
+        args: &Vec<usize>,
+    ) -> Option<SymbolicDef<'tcx>> {
+        match def {
+            // Param(i) -> Use(Arg_i)
+            SymbolicDef::Param(idx) => {
+                // Assuming 1-based index in Summary Params
+                if *idx > 0 && idx - 1 < args.len() {
+                    Some(SymbolicDef::Use(args[idx - 1]))
+                } else {
+                    None
+                }
+            }
+            // PtrOffset(Param_Base, Param_Offset) -> PtrOffset(Local_Base, Local_Offset)
+            SymbolicDef::PtrOffset(op, base_param_idx, offset_op, ty) => {
+                if *base_param_idx > 0 && base_param_idx - 1 < args.len() {
+                    let base_local = args[base_param_idx - 1];
+
+                    // Resolve offset operand
+                    let real_offset = match offset_op {
+                        AnaOperand::Local(idx) => {
+                            if *idx > 0 && idx - 1 < args.len() {
+                                AnaOperand::Local(args[idx - 1])
+                            } else {
+                                AnaOperand::Const(0) // Fallback or Error handling
+                            }
+                        }
+                        AnaOperand::Const(c) => AnaOperand::Const(*c),
+                    };
+
+                    Some(SymbolicDef::PtrOffset(
+                        *op,
+                        base_local,
+                        real_offset,
+                        ty.clone(),
+                    ))
+                } else {
+                    None
+                }
+            }
+            // Handle other variants if necessary (e.g., Constant)
+            SymbolicDef::Constant(c) => Some(SymbolicDef::Constant(*c)),
+            _ => None,
+        }
     }
 
     // ------------------------------------------------
@@ -1014,7 +1213,7 @@ impl<'tcx> BodyVisitor<'tcx> {
     }
 
     /// Record or overwrite the symbolic definition for a local in value_domains.
-    fn record_value_def(&mut self, local_idx: usize, def: SymbolicDef) {
+    fn record_value_def(&mut self, local_idx: usize, def: SymbolicDef<'tcx>) {
         self.value_domains
             .entry(local_idx)
             .and_modify(|d| d.def = Some(def.clone()))
@@ -1120,7 +1319,6 @@ impl<'tcx> BodyVisitor<'tcx> {
         println!("{}", sep);
 
         for (i, constraint) in self.path_constraints.iter().enumerate() {
-            // 复用现有的 format_symbolic_def 将 SymbolicDef 转为可读字符串
             let def_raw = self.format_symbolic_def(Some(constraint));
             let def_str = def_raw.replace('\n', " ").replace('\t', " ");
 
@@ -1199,7 +1397,7 @@ impl<'tcx> BodyVisitor<'tcx> {
     }
 
     /// Convert a SymbolicDef into a short human-readable string for display.
-    fn format_symbolic_def(&self, def: Option<&SymbolicDef>) -> String {
+    fn format_symbolic_def(&self, def: Option<&SymbolicDef<'tcx>>) -> String {
         match def {
             None => String::from("Top (Unknown)"),
             Some(d) => match d {
@@ -1220,6 +1418,10 @@ impl<'tcx> BodyVisitor<'tcx> {
                 SymbolicDef::Call(func_name, args) => {
                     let args_str: Vec<String> = args.iter().map(|a| format!("_{:?}", a)).collect();
                     format!("{}({})", func_name, args_str.join(", "))
+                }
+                SymbolicDef::PtrOffset(binop, ptr, offset, size) => {
+                    let op_str = self.binop_to_symbol(&binop);
+                    format!("ptr_offset({}, _{}, {:?}, {:?})", op_str, ptr, offset, size)
                 }
             },
         }

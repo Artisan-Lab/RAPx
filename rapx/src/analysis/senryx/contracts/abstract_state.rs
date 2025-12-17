@@ -13,7 +13,7 @@ pub enum AlignState<'tcx> {
     /// Verified aligned to `u64` for type `Ty`.
     Aligned(Ty<'tcx>, u64),
     /// Misaligned relative to `u64` by offset `SymbolicDef`.
-    Unaligned(Ty<'tcx>, u64, SymbolicDef),
+    Unaligned(Ty<'tcx>, u64, SymbolicDef<'tcx>),
     /// Alignment cannot be statically determined (Top).
     Unknown,
 }
