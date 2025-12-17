@@ -1,5 +1,5 @@
 
-/// Will pass because alignment of ptr must be 2
+/// Pass because alignment of ptr must be 2
 /// and offset is 2, so the pointer is still aligned.
 fn test<T>(data: &[T], offset:usize) {
     let ptr = data.as_ptr(); 
@@ -12,7 +12,7 @@ fn test<T>(data: &[T], offset:usize) {
     }
 }
 
-/// Will fail because alignment of ptr could be 2, 4, 8...
+/// Fail because alignment of ptr could be 2, 4, 8...
 /// and offset is 2, so the pointer could be unaligned.
 fn test2<T>(data: &[T], offset:usize) {
     let ptr = data.as_ptr(); 
