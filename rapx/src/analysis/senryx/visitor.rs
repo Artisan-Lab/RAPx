@@ -42,7 +42,7 @@ use rustc_middle::{
 };
 use rustc_span::{Span, source_map::Spanned};
 
-//TODO: modify contracts vec to contract-bool pairs (we can also use path index to record path info)
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct CheckResult {
     pub func_name: String,
     pub func_span: Span,
@@ -51,6 +51,8 @@ pub struct CheckResult {
 }
 
 impl CheckResult {
+    /// Create a new CheckResult for a function.
+    /// func_name: cleaned function path, func_span: source span of the function.
     pub fn new(func_name: &str, func_span: Span) -> Self {
         Self {
             func_name: func_name.to_string(),
@@ -86,12 +88,12 @@ impl<'tcx> Hash for PlaceTy<'tcx> {
     fn hash<H: std::hash::Hasher>(&self, _state: &mut H) {}
 }
 
+/// Visitor that traverses MIR body and builds symbolic and pointer chains.
+/// Holds analysis state such as type mappings, value domains and constraints.
 pub struct BodyVisitor<'tcx> {
     pub tcx: TyCtxt<'tcx>,
     pub def_id: DefId,
     pub safedrop_graph: SafeDropGraph<'tcx>,
-    // abstract_states records the path index and variables' ab states in this path
-    pub unsafe_callee_report: HashMap<String, usize>,
     pub local_ty: HashMap<usize, PlaceTy<'tcx>>,
     pub visit_time: usize,
     pub check_results: Vec<CheckResult>,
@@ -102,7 +104,12 @@ pub struct BodyVisitor<'tcx> {
     pub path_constraints: Vec<SymbolicDef>,
 }
 
+// === Partition: Initialization & state ===
+// Initialization and visitor state: constructors, field maps and helpers used globally
+// by subsequent analysis phases.
 impl<'tcx> BodyVisitor<'tcx> {
+    /// Construct a new BodyVisitor for `def_id`.
+    /// Initializes helper structures and generic type map.
     pub fn new(tcx: TyCtxt<'tcx>, def_id: DefId, visit_time: usize) -> Self {
         let body = tcx.optimized_mir(def_id);
         let param_env = tcx.param_env(def_id);
@@ -114,7 +121,6 @@ impl<'tcx> BodyVisitor<'tcx> {
             tcx,
             def_id,
             safedrop_graph: SafeDropGraph::new(tcx, def_id, OHAResultMap::default()),
-            unsafe_callee_report: HashMap::new(),
             local_ty: HashMap::new(),
             visit_time,
             check_results: Vec::new(),
@@ -123,20 +129,16 @@ impl<'tcx> BodyVisitor<'tcx> {
             chains,
             value_domains: HashMap::new(),
             path_constraints: Vec::new(),
-            // paths: HashSet::new(),
         }
     }
+}
 
-    pub fn get_ty_by_place(&self, p: usize) -> Ty<'tcx> {
-        let body = self.tcx.optimized_mir(self.def_id);
-        let locals = body.local_decls.clone();
-        return locals[Local::from(p)].ty;
-    }
-
-    pub fn update_fields_states(&mut self, inter_result: InterResultNode<'tcx>) {
-        self.chains.init_self_with_inter(inter_result);
-    }
-
+/// === Partition: Path-sensitive analysis driver ===
+/// Compute and iterate control-flow paths and merge results.
+impl<'tcx> BodyVisitor<'tcx> {
+    /// Perform path-sensitive forward analysis.
+    /// Uses Tarjan-produced paths and performs per-path symbolic and pointer analysis.
+    /// Returns an InterResultNode merging all path results.
     pub fn path_forward_check(
         &mut self,
         fn_map: &FxHashMap<DefId, AAResult>,
@@ -181,6 +183,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                 let tem_basic_blocks = self.safedrop_graph.mop_graph.blocks[*block_index]
                     .dominated_scc_bbs
                     .clone();
+                // also analyze basic blocks that belong to dominated SCCs
                 if tem_basic_blocks.len() > 0 {
                     for sub_block in &tem_basic_blocks {
                         self.path_analyze_block(
@@ -195,6 +198,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             }
 
             // Used for debug
+            // If running detailed (visit_time == 0), show debug reports.
             if self.visit_time == 0 {
                 self.display_value_domains();
                 self.display_path_constraints();
@@ -219,6 +223,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         inter_return_value
     }
 
+    /// Analyze one basic block: process statements then its terminator for the current path.
     pub fn path_analyze_block(
         &mut self,
         block: &BasicBlockData<'tcx>,
@@ -239,7 +244,42 @@ impl<'tcx> BodyVisitor<'tcx> {
         );
     }
 
+    /// Retrieve all paths and optional range-based constraints for this function.
+    /// Falls back to safedrop graph paths if range analysis did not produce constraints.
+    pub fn get_all_paths(&mut self) -> HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>> {
+        let mut range_analyzer = RangeAnalyzer::<i64>::new(self.tcx, false);
+        let path_constraints_option =
+            range_analyzer.start_path_constraints_analysis_for_defid(self.def_id); // if def_id does not exist, this will break down
+        let mut path_constraints: HashMap<Vec<usize>, Vec<(_, _, _)>> =
+            if path_constraints_option.is_none() {
+                let mut results = HashMap::new();
+                let paths: Vec<Vec<usize>> = self.safedrop_graph.mop_graph.get_paths();
+                for path in paths {
+                    results.insert(path, Vec::new());
+                }
+                results
+            } else {
+                path_constraints_option.unwrap()
+            };
+        self.safedrop_graph.mop_graph.find_scc();
+        // If this is the top-level analysis, keep only paths that contain unsafe calls.
+        if self.visit_time == 0 {
+            let contains_unsafe_blocks = get_all_std_unsafe_callees_block_id(self.tcx, self.def_id);
+            path_constraints.retain(|path, cons| {
+                path.iter()
+                    .any(|block_id| contains_unsafe_blocks.contains(block_id))
+            });
+        }
+        path_constraints
+    }
+}
+
+// === Partition: Statement and Rvalue handlers ===
+// Assignment and rvalue processing, symbolic defs and chains.
+impl<'tcx> BodyVisitor<'tcx> {
+    /// Dispatch analysis for a single MIR statement (assignments, intrinsics, etc.).
     pub fn path_analyze_statement(&mut self, statement: &Statement<'tcx>, _path_index: usize) {
+        // Examine MIR statements and dispatch to specific handlers.
         match statement.kind {
             StatementKind::Assign(box (ref lplace, ref rvalue)) => {
                 self.path_analyze_assign(lplace, rvalue, _path_index);
@@ -259,10 +299,167 @@ impl<'tcx> BodyVisitor<'tcx> {
             _ => {}
         }
     }
+
+    /// Handle assignment rvalues: record symbolic defs and update pointer/alias chains.
+    pub fn path_analyze_assign(
+        &mut self,
+        lplace: &Place<'tcx>,
+        rvalue: &Rvalue<'tcx>,
+        path_index: usize,
+    ) {
+        let lpjc_local = self.handle_proj(false, lplace.clone());
+        match rvalue {
+            Rvalue::Use(op) => {
+                if let Some(ana_op) = self.lift_operand(op) {
+                    let def = match ana_op {
+                        AnaOperand::Local(src) => SymbolicDef::Use(src),
+                        AnaOperand::Const(val) => SymbolicDef::Constant(val),
+                    };
+                    self.record_value_def(lpjc_local, def);
+                }
+                match op {
+                    Operand::Move(rplace) => {
+                        let rpjc_local = self.handle_proj(true, rplace.clone());
+                        self.chains.merge(lpjc_local, rpjc_local);
+                    }
+                    Operand::Copy(rplace) => {
+                        let rpjc_local = self.handle_proj(true, rplace.clone());
+                        self.chains.copy_node(lpjc_local, rpjc_local);
+                    }
+                    _ => {}
+                }
+            }
+            Rvalue::Repeat(op, _const) => match op {
+                Operand::Move(rplace) | Operand::Copy(rplace) => {
+                    let _rpjc_local = self.handle_proj(true, rplace.clone());
+                }
+                _ => {}
+            },
+            Rvalue::Ref(_, _, rplace) | Rvalue::RawPtr(_, rplace) => {
+                // Recording that the left-hand side is a reference to right-hand side.
+                let rpjc_local = self.handle_proj(true, rplace.clone());
+                self.record_value_def(lpjc_local, SymbolicDef::Ref(rpjc_local));
+                self.chains.point(lpjc_local, rpjc_local);
+            }
+            // ThreadLocalRef: x = &thread_local_static
+            Rvalue::ThreadLocalRef(_def_id) => {
+                // todo
+            }
+            // Cast: x = y as T
+            Rvalue::Cast(cast_kind, op, ty) => {
+                if let Some(AnaOperand::Local(src_idx)) = self.lift_operand(op) {
+                    self.record_value_def(
+                        lpjc_local,
+                        SymbolicDef::Cast(src_idx, format!("{:?}", cast_kind)),
+                    );
+                }
+                match op {
+                    Operand::Move(rplace) | Operand::Copy(rplace) => {
+                        let rpjc_local = self.handle_proj(true, rplace.clone());
+                        let r_point_to = self.chains.get_point_to_id(rpjc_local);
+                        if r_point_to == rpjc_local {
+                            self.chains.merge(lpjc_local, rpjc_local);
+                        } else {
+                            self.chains.point(lpjc_local, r_point_to);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Rvalue::BinaryOp(bin_op, box (op1, op2)) => {
+                // Binary operator: try to form a symbolic binary definition when possible.
+                if let (Some(ana_op1), Some(ana_op2)) =
+                    (self.lift_operand(op1), self.lift_operand(op2))
+                {
+                    let def = match (ana_op1.clone(), ana_op2) {
+                        (AnaOperand::Local(l), rhs) => Some(SymbolicDef::Binary(*bin_op, l, rhs)),
+                        (AnaOperand::Const(_), AnaOperand::Local(l)) => match bin_op {
+                            BinOp::Add
+                            | BinOp::Mul
+                            | BinOp::BitAnd
+                            | BinOp::BitOr
+                            | BinOp::BitXor
+                            | BinOp::Eq
+                            | BinOp::Ne => Some(SymbolicDef::Binary(*bin_op, l, ana_op1)),
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+
+                    if let Some(d) = def {
+                        self.record_value_def(lpjc_local, d);
+                    } else if let (AnaOperand::Const(c), AnaOperand::Local(l)) = (
+                        self.lift_operand(op1).unwrap(),
+                        self.lift_operand(op2).unwrap(),
+                    ) {
+                        if matches!(bin_op, BinOp::Add | BinOp::Mul | BinOp::Eq) {
+                            self.record_value_def(
+                                lpjc_local,
+                                SymbolicDef::Binary(*bin_op, l, AnaOperand::Const(c)),
+                            );
+                        }
+                    }
+                }
+            }
+            // NullaryOp: x = SizeOf(T); This is runtime checks
+            Rvalue::NullaryOp(_null_op) => {
+                // todo
+            }
+            // UnaryOp: x = !y / x = -y
+            Rvalue::UnaryOp(un_op, op) => {
+                // Unary op: record unary operation on LHS (operand value not stored here).
+                self.record_value_def(lpjc_local, SymbolicDef::UnOp(*un_op));
+            }
+            // Discriminant: x = discriminant(y); read enum tag
+            Rvalue::Discriminant(_place) => {
+                // todo
+            }
+            // Aggregate: x = (y, z) / x = [y, z] / x = S { f: y }
+            Rvalue::Aggregate(box agg_kind, op_vec) => match agg_kind {
+                AggregateKind::Array(_ty) => {}
+                AggregateKind::Adt(_adt_def_id, _, _, _, _) => {
+                    for (idx, op) in op_vec.into_iter().enumerate() {
+                        let (is_const, val) = get_arg_place(op);
+                        if is_const {
+                            self.chains.insert_field_node(
+                                lpjc_local,
+                                idx,
+                                Some(Ty::new_uint(self.tcx, rustc_middle::ty::UintTy::Usize)),
+                            );
+                        } else {
+                            let node = self.chains.get_var_node_mut(lpjc_local).unwrap();
+                            node.field.insert(idx, val);
+                        }
+                    }
+                }
+                _ => {}
+            },
+            Rvalue::ShallowInitBox(op, _ty) => match op {
+                Operand::Move(rplace) | Operand::Copy(rplace) => {
+                    let _rpjc_local = self.handle_proj(true, rplace.clone());
+                }
+                _ => {}
+            },
+            Rvalue::CopyForDeref(p) => {
+                let op = Operand::Copy(p.clone());
+                if let Some(ana_op) = self.lift_operand(&op) {
+                    let def = match ana_op {
+                        AnaOperand::Local(src) => SymbolicDef::Use(src),
+                        AnaOperand::Const(val) => SymbolicDef::Constant(val),
+                    };
+                    self.record_value_def(lpjc_local, def);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
-/// Implementation for teminator
+/// === Partition: Terminator handling ===
+/// Terminator handling: calls, drops and branch-switch translation into constraints.
 impl<'tcx> BodyVisitor<'tcx> {
+    /// Analyze a MIR terminator (calls, drops, switches, etc.) for a path.
+    /// Updates chains/value domains based on call, drop and switch semantics.
     pub fn path_analyze_terminator(
         &mut self,
         terminator: &Terminator<'tcx>,
@@ -310,8 +507,10 @@ impl<'tcx> BodyVisitor<'tcx> {
                 drop: _,
                 async_fut: _,
             } => {
+                // Handle explicit drop: mark variable as dropped in chain graph.
                 let drop_local = self.handle_proj(false, *place);
                 if !self.chains.set_drop(drop_local) {
+                    // double-drop detected; optionally warn for debugging.
                     // rap_warn!(
                     //     "In path {:?}, double drop {drop_local} in block {bb_index}",
                     //     self.paths[path_index]
@@ -325,6 +524,18 @@ impl<'tcx> BodyVisitor<'tcx> {
             }
             _ => {}
         }
+    }
+
+    /// Return the MIR type of a local given its numeric `p` index.
+    pub fn get_ty_by_place(&self, p: usize) -> Ty<'tcx> {
+        let body = self.tcx.optimized_mir(self.def_id);
+        let locals = body.local_decls.clone();
+        return locals[Local::from(p)].ty;
+    }
+
+    /// Update field state graph from an inter-procedural result node.
+    pub fn update_fields_states(&mut self, inter_result: InterResultNode<'tcx>) {
+        self.chains.init_self_with_inter(inter_result);
     }
 
     /// Get the generic name to an actual type mapping when used for a def_id.
@@ -357,162 +568,8 @@ impl<'tcx> BodyVisitor<'tcx> {
             self.get_generic_mapping(raw_list, &parent_def_id, generic_mapping);
         }
     }
-}
 
-/// Implementation for statements
-impl<'tcx> BodyVisitor<'tcx> {
-    pub fn path_analyze_assign(
-        &mut self,
-        lplace: &Place<'tcx>,
-        rvalue: &Rvalue<'tcx>,
-        path_index: usize,
-    ) {
-        let lpjc_local = self.handle_proj(false, lplace.clone());
-        match rvalue {
-            Rvalue::Use(op) => {
-                if let Some(ana_op) = self.lift_operand(op) {
-                    let def = match ana_op {
-                        AnaOperand::Local(src) => SymbolicDef::Use(src),
-                        AnaOperand::Const(val) => SymbolicDef::Constant(val),
-                    };
-                    self.record_value_def(lpjc_local, def);
-                }
-                match op {
-                    Operand::Move(rplace) => {
-                        let rpjc_local = self.handle_proj(true, rplace.clone());
-                        self.chains.merge(lpjc_local, rpjc_local);
-                    }
-                    Operand::Copy(rplace) => {
-                        let rpjc_local = self.handle_proj(true, rplace.clone());
-                        self.chains.copy_node(lpjc_local, rpjc_local);
-                    }
-                    _ => {}
-                }
-            }
-            Rvalue::Repeat(op, _const) => match op {
-                Operand::Move(rplace) | Operand::Copy(rplace) => {
-                    let _rpjc_local = self.handle_proj(true, rplace.clone());
-                }
-                _ => {}
-            },
-            Rvalue::Ref(_, _, rplace) | Rvalue::RawPtr(_, rplace) => {
-                let rpjc_local = self.handle_proj(true, rplace.clone());
-                self.record_value_def(lpjc_local, SymbolicDef::Ref(rpjc_local));
-                self.chains.point(lpjc_local, rpjc_local);
-            }
-            // ThreadLocalRef: x = &thread_local_static
-            Rvalue::ThreadLocalRef(_def_id) => {
-                // todo
-            }
-            // Cast: x = y as T
-            Rvalue::Cast(cast_kind, op, ty) => {
-                if let Some(AnaOperand::Local(src_idx)) = self.lift_operand(op) {
-                    self.record_value_def(
-                        lpjc_local,
-                        SymbolicDef::Cast(src_idx, format!("{:?}", cast_kind)),
-                    );
-                }
-                match op {
-                    Operand::Move(rplace) | Operand::Copy(rplace) => {
-                        let rpjc_local = self.handle_proj(true, rplace.clone());
-                        let r_point_to = self.chains.get_point_to_id(rpjc_local);
-                        if r_point_to == rpjc_local {
-                            self.chains.merge(lpjc_local, rpjc_local);
-                        } else {
-                            self.chains.point(lpjc_local, r_point_to);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            Rvalue::BinaryOp(bin_op, box (op1, op2)) => {
-                if let (Some(ana_op1), Some(ana_op2)) =
-                    (self.lift_operand(op1), self.lift_operand(op2))
-                {
-                    let def = match (ana_op1.clone(), ana_op2) {
-                        (AnaOperand::Local(l), rhs) => Some(SymbolicDef::Binary(*bin_op, l, rhs)),
-                        (AnaOperand::Const(_), AnaOperand::Local(l)) => match bin_op {
-                            BinOp::Add
-                            | BinOp::Mul
-                            | BinOp::BitAnd
-                            | BinOp::BitOr
-                            | BinOp::BitXor
-                            | BinOp::Eq
-                            | BinOp::Ne => Some(SymbolicDef::Binary(*bin_op, l, ana_op1)),
-                            _ => None,
-                        },
-                        _ => None,
-                    };
-
-                    if let Some(d) = def {
-                        self.record_value_def(lpjc_local, d);
-                    } else if let (AnaOperand::Const(c), AnaOperand::Local(l)) = (
-                        self.lift_operand(op1).unwrap(),
-                        self.lift_operand(op2).unwrap(),
-                    ) {
-                        if matches!(bin_op, BinOp::Add | BinOp::Mul | BinOp::Eq) {
-                            self.record_value_def(
-                                lpjc_local,
-                                SymbolicDef::Binary(*bin_op, l, AnaOperand::Const(c)),
-                            );
-                        }
-                    }
-                }
-            }
-            // NullaryOp: x = SizeOf(T); This is runtime checks
-            Rvalue::NullaryOp(_null_op) => {
-                // todo
-            }
-            // UnaryOp: x = !y / x = -y
-            Rvalue::UnaryOp(un_op, op) => {
-                self.record_value_def(lpjc_local, SymbolicDef::UnOp(*un_op));
-            }
-            // Discriminant: x = discriminant(y); read enum tag
-            Rvalue::Discriminant(_place) => {
-                // todo
-            }
-            // Aggregate: x = (y, z) / x = [y, z] / x = S { f: y }
-            Rvalue::Aggregate(box agg_kind, op_vec) => match agg_kind {
-                AggregateKind::Array(_ty) => {}
-                AggregateKind::Adt(_adt_def_id, _, _, _, _) => {
-                    for (idx, op) in op_vec.into_iter().enumerate() {
-                        let (is_const, val) = get_arg_place(op);
-                        if is_const {
-                            self.chains.insert_field_node(
-                                lpjc_local,
-                                idx,
-                                Some(Ty::new_uint(self.tcx, rustc_middle::ty::UintTy::Usize)),
-                            );
-                        } else {
-                            let node = self.chains.get_var_node_mut(lpjc_local).unwrap();
-                            node.field.insert(idx, val);
-                        }
-                    }
-                }
-                _ => {}
-            },
-            Rvalue::ShallowInitBox(op, _ty) => match op {
-                Operand::Move(rplace) | Operand::Copy(rplace) => {
-                    let _rpjc_local = self.handle_proj(true, rplace.clone());
-                }
-                _ => {}
-            },
-            Rvalue::CopyForDeref(p) => {
-                let op = Operand::Copy(p.clone());
-                if let Some(ana_op) = self.lift_operand(&op) {
-                    let def = match ana_op {
-                        AnaOperand::Local(src) => SymbolicDef::Use(src),
-                        AnaOperand::Const(val) => SymbolicDef::Constant(val),
-                    };
-                    self.record_value_def(lpjc_local, def);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    // ------------------- APIs for handling call ---------------------
-
+    /// Handle a function call: record symbolic Call, check unsafe contracts, and merge aliases.
     pub fn handle_call(
         &mut self,
         dst_place: &Place<'tcx>,
@@ -523,7 +580,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         fn_span: Span,
         generic_mapping: FxHashMap<String, Ty<'tcx>>,
     ) {
-        // record call information for symbolic analysis
+        // Record call as a symbolic definition for the destination local.
         let dst_local = self.handle_proj(false, *dst_place);
         let func_name = get_cleaned_def_path_name(self.tcx, *def_id);
         let mut call_arg_indices = Vec::new();
@@ -560,6 +617,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         self.handle_ret_alias(dst_place, def_id, fn_map, args);
     }
 
+    /// For certain library calls (e.g. `slice::len`), bind computed values into object contracts.
     fn set_bound(
         &mut self,
         def_id: &DefId,
@@ -580,7 +638,8 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
-    // Use the alias analysis to support quick merge inter analysis results.
+    /// Merge function-level alias results into internal chains and value domains.
+    /// Uses cached alias analysis (AAResult) to connect return/arg relationships.
     pub fn handle_ret_alias(
         &mut self,
         dst_place: &Place<'tcx>,
@@ -589,8 +648,6 @@ impl<'tcx> BodyVisitor<'tcx> {
         args: &Box<[Spanned<Operand>]>,
     ) {
         let d_local = self.handle_proj(false, dst_place.clone());
-        // Find alias relationship in cache.
-        // If one of the op is ptr, then alias the pointed node with another.
         if let Some(retalias) = fn_map.get(def_id) {
             for alias_set in retalias.aliases() {
                 let (l, r) = (alias_set.lhs_no, alias_set.rhs_no);
@@ -632,7 +689,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                     self.chains
                         .find_var_id_with_fields_seq(r_place.1, &r_fields),
                 );
-                // If this var is ptr or ref, then get the next level node.
+                // If this var is a pointer/ref, prefer the pointed node when merging.
                 let fst_to = self.chains.get_point_to_id(fst_var);
                 let snd_to = self.chains.get_point_to_id(snd_var);
                 let is_fst_point = fst_to != fst_var;
@@ -647,7 +704,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                 );
                 match (is_fst_ptr, is_snd_ptr) {
                     (false, true) => {
-                        // If this ptr didn't point to anywhere, then point to fst var
+                        // left is value, right is pointer: point right to left or merge appropriately.
                         if is_snd_point {
                             self.chains.point(snd_var, fst_var);
                         } else {
@@ -655,9 +712,11 @@ impl<'tcx> BodyVisitor<'tcx> {
                         }
                     }
                     (false, false) => {
+                        // both are values: merge value nodes.
                         self.chains.merge(fst_var, snd_var);
                     }
                     (true, true) => {
+                        // both are pointers: prefer merging what they point-to if available.
                         if is_fst_point && is_snd_point {
                             self.chains.merge(fst_to, snd_to);
                         } else if !is_fst_point && is_snd_point {
@@ -669,6 +728,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                         }
                     }
                     (true, false) => {
+                        // left is pointer, right is value: point left to right or merge.
                         if is_fst_point {
                             self.chains.point(fst_var, snd_var);
                         } else {
@@ -688,9 +748,9 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
-    // Compute the summary of this function
+    /// Compute a compact FunctionSummary for this function based on the return local (_0).
+    /// If the return resolves to a param or const expression, include it in the summary.
     pub fn compute_function_summary(&self) -> FunctionSummary {
-        // _0 is the return local
         if let Some(domain) = self.value_domains.get(&0) {
             if let Some(def) = &domain.def {
                 let resolved_def = self.resolve_symbolic_def(def, 0); // 0 is the initial recursion deepth
@@ -700,24 +760,23 @@ impl<'tcx> BodyVisitor<'tcx> {
         FunctionSummary::new(None)
     }
 
-    /// Find the relationship between ret_local and params
-    // For example, _1 = add(_2, _3), this function should give
+    /// Resolve a SymbolicDef into a simplified form referencing params or constants.
+    /// For example, given `_1 = add(_2, _3)`, attempt to express the result in terms of params.
     fn resolve_symbolic_def(&self, def: &SymbolicDef, depth: usize) -> Option<SymbolicDef> {
-        // limitation of recursion deepth
+        // Limit recursion depth to avoid infinite loops in symbolic resolution.
         if depth > 10 {
             return None;
         }
 
         match def {
-            // If _0 = param or const, return it directly
+            // Base cases: parameters and constants are already resolved.
             SymbolicDef::Param(_) | SymbolicDef::Constant(_) => Some(def.clone()),
-            // If _0 = local var, find the source of this local var.
+            // If this is a use/ref/cast, follow to the referenced local and resolve it.
             SymbolicDef::Use(local_idx) | SymbolicDef::Ref(local_idx) => {
                 self.resolve_local(*local_idx, depth + 1)
             }
-            // The same.
             SymbolicDef::Cast(src_idx, _ty) => self.resolve_local(*src_idx, depth + 1),
-            // Resolve the lhs and rhs local independently, then aggregate them to the result
+            // For binary ops, resolve LHS and RHS then rebuild a param-based result when possible.
             SymbolicDef::Binary(op, lhs_idx, rhs_op) => {
                 let lhs_resolved = self.resolve_local(*lhs_idx, depth + 1)?;
                 let rhs_resolved_op = match rhs_op {
@@ -729,6 +788,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                     },
                 };
                 match lhs_resolved {
+                    // Only return a symbolic binary if LHS resolves to a parameter.
                     SymbolicDef::Param(p_idx) => {
                         Some(SymbolicDef::Binary(*op, p_idx, rhs_resolved_op))
                     }
@@ -739,6 +799,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
+    /// Resolve a local's symbolic definition by consulting the value_domains map.
     fn resolve_local(&self, local_idx: usize, depth: usize) -> Option<SymbolicDef> {
         if let Some(domain) = self.value_domains.get(&local_idx) {
             if let Some(def) = &domain.def {
@@ -750,57 +811,8 @@ impl<'tcx> BodyVisitor<'tcx> {
 
     // ------------------------------------------------
 
-    pub fn get_all_paths(&mut self) -> HashMap<Vec<usize>, Vec<(Place<'tcx>, Place<'tcx>, BinOp)>> {
-        let mut range_analyzer = RangeAnalyzer::<i64>::new(self.tcx, false);
-        let path_constraints_option =
-            range_analyzer.start_path_constraints_analysis_for_defid(self.def_id); // if def_id does not exist, this will break down
-        let mut path_constraints: HashMap<Vec<usize>, Vec<(_, _, _)>> =
-            if path_constraints_option.is_none() {
-                let mut results = HashMap::new();
-                let paths: Vec<Vec<usize>> = self.safedrop_graph.mop_graph.get_paths();
-                for path in paths {
-                    results.insert(path, Vec::new());
-                }
-                results
-            } else {
-                path_constraints_option.unwrap()
-            };
-        self.safedrop_graph.mop_graph.find_scc();
-        // If it's the first level analysis, then filter the paths not containing unsafe
-        if self.visit_time == 0 {
-            let contains_unsafe_blocks = get_all_std_unsafe_callees_block_id(self.tcx, self.def_id);
-            path_constraints.retain(|path, cons| {
-                path.iter()
-                    .any(|block_id| contains_unsafe_blocks.contains(block_id))
-            });
-        }
-        // display_hashmap(&path_constraints, 1);
-        path_constraints
-    }
-
-    pub fn update_callee_report_level(&mut self, unsafe_callee: String, report_level: usize) {
-        self.unsafe_callee_report
-            .entry(unsafe_callee)
-            .and_modify(|e| {
-                if report_level < *e {
-                    *e = report_level;
-                }
-            })
-            .or_insert(report_level);
-    }
-
-    // level: 0 bug_level, 1-3 unsound_level
-    // TODO: add more information about the result
-    pub fn output_results(&self, threshold: usize) {
-        for (unsafe_callee, report_level) in &self.unsafe_callee_report {
-            if *report_level == 0 {
-                rap_warn!("Find one bug in {:?}!", unsafe_callee);
-            } else if *report_level <= threshold {
-                rap_warn!("Find an unsoundness issue in {:?}!", unsafe_callee);
-            }
-        }
-    }
-
+    /// Apply path constraints into chains and propagate simple constant equalities
+    /// into value_domains for later symbolic checks.
     pub fn set_constraint(&mut self, constraint: &Vec<(Place<'tcx>, Place<'tcx>, BinOp)>) {
         for (p1, p2, op) in constraint {
             let p1_num = self.handle_proj(false, p1.clone());
@@ -808,6 +820,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             self.chains.insert_patial_op(p1_num, p2_num, op);
 
             if let BinOp::Eq = op {
+                // If RHS is a known constant, record it as p1's value_constraint.
                 let maybe_const = self.value_domains.get(&p2_num).and_then(|d| {
                     if let Some(SymbolicDef::Constant(c)) = d.def {
                         Some(c)
@@ -826,6 +839,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                         });
                 }
 
+                // Also propagate constant from p1 to p2 when available.
                 let maybe_const_p1 = self.value_domains.get(&p1_num).and_then(|d| {
                     if let Some(SymbolicDef::Constant(c)) = d.def {
                         Some(c)
@@ -847,6 +861,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
+    /// Return layout information (align, size) or Unknown for a place via chain-derived type.
     pub fn get_layout_by_place_usize(&self, place: usize) -> PlaceTy<'tcx> {
         if let Some(ty) = self.chains.get_obj_ty_through_chain(place) {
             return self.visit_ty_and_get_layout(ty);
@@ -855,6 +870,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
+    /// Determine layout info (align,size) for a type. For generics, collect possible concrete layouts.
     pub fn visit_ty_and_get_layout(&self, ty: Ty<'tcx>) -> PlaceTy<'tcx> {
         match ty.kind() {
             TyKind::RawPtr(ty, _)
@@ -914,6 +930,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
+    /// Handle special binary operations (e.g., pointer offset) and extract operand places.
     pub fn handle_binary_op(
         &mut self,
         first_op: &Operand,
@@ -921,6 +938,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         second_op: &Operand,
         path_index: usize,
     ) {
+        // Currently collects arg places for Offset.
         match bin_op {
             BinOp::Offset => {
                 let _first_place = get_arg_place(first_op);
@@ -930,12 +948,15 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
+    /// Convert SwitchInt branch selections into symbolic path constraints on the discriminator.
     fn handle_switch_int(
         &mut self,
         discr: &Operand<'tcx>,
         targets: &mir::SwitchTargets,
         next_bb: usize,
     ) {
+        // Convert switch-int branch selection into symbolic equality/inequality constraints
+        // on the discriminator local for path-sensitive analysis.
         let discr_op = match self.lift_operand(discr) {
             Some(op) => op,
             None => return,
@@ -967,6 +988,8 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
+    /// Convert a MIR Place (with projections) into an internal numeric node id.
+    /// Handles deref and field projections by consulting/creating chain nodes.
     pub fn handle_proj(&mut self, is_right: bool, place: Place<'tcx>) -> usize {
         let mut proj_id = place.local.as_usize();
         for proj in place.projection {
@@ -990,6 +1013,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         proj_id
     }
 
+    /// Record or overwrite the symbolic definition for a local in value_domains.
     fn record_value_def(&mut self, local_idx: usize, def: SymbolicDef) {
         self.value_domains
             .entry(local_idx)
@@ -1000,6 +1024,7 @@ impl<'tcx> BodyVisitor<'tcx> {
             });
     }
 
+    /// Convert a MIR Operand into an AnaOperand (local node id or constant) when possible.
     fn lift_operand(&mut self, op: &Operand<'tcx>) -> Option<AnaOperand> {
         match op {
             Operand::Copy(place) | Operand::Move(place) => {
@@ -1026,11 +1051,13 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
-    // Use value domain to get the source definition local of this ptr.
-    // Return: (src_ptr local, offset size)
-    // Example: p3 = p2.byte_offset(v2), p2 = p1.byte_offset(v1),
-    //          trace_base_ptr(p3) will return (p1, v1+v2)
+    /// Trace a pointer value back to its base local and accumulate byte offsets.
+    /// Returns (base_local, total_offset) when traceable.
+    ///
+    /// Example: p3 = p2.byte_offset(v2), p2 = p1.byte_offset(v1)
+    /// returns (p1, v1 + v2) for trace_base_ptr(p3).
     pub fn trace_base_ptr(&self, local: usize) -> Option<(usize, u64)> {
+        // Walk symbolic definitions backwards to find the base pointer and accumulated offset.
         let mut curr = local;
         let mut total_offset = 0;
         let mut depth = 0;
@@ -1069,9 +1096,11 @@ impl<'tcx> BodyVisitor<'tcx> {
     }
 }
 
-// This block is used to display some data structure in body_visitor.
+// === Partition: Debugging & display helpers ===
+// Debugging and display helpers: pretty-printers and formatting utilities for analysis state.
 impl<'tcx> BodyVisitor<'tcx> {
-    // Display the true conditions in all branches.
+    /// Pretty-print the collected path constraints for debugging.
+    /// Display the true conditions in all branches.
     pub fn display_path_constraints(&self) {
         const TABLE_WIDTH: usize = 86;
         println!(
@@ -1102,7 +1131,8 @@ impl<'tcx> BodyVisitor<'tcx> {
         println!("{:=^width$}\n", " End Report ", width = TABLE_WIDTH);
     }
 
-    // Dispaly all variables' definition and values
+    /// Display all variables' symbolic definitions and value constraints.
+    /// Pretty-print value domains (symbolic definitions and constraints) for debug.
     pub fn display_value_domains(&self) {
         const TABLE_WIDTH: usize = 86;
         println!(
@@ -1158,6 +1188,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         println!("{:=^width$}\n", " End Report ", width = TABLE_WIDTH);
     }
 
+    /// Truncate a string to max_width preserving character boundaries.
     fn safe_truncate(&self, s: &str, max_width: usize) -> String {
         let char_count = s.chars().count();
         if char_count <= max_width {
@@ -1167,6 +1198,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         format!("{}..", truncated)
     }
 
+    /// Convert a SymbolicDef into a short human-readable string for display.
     fn format_symbolic_def(&self, def: Option<&SymbolicDef>) -> String {
         match def {
             None => String::from("Top (Unknown)"),
@@ -1176,7 +1208,7 @@ impl<'tcx> BodyVisitor<'tcx> {
                 SymbolicDef::Use(idx) => format!("Copy(_{})", idx),
                 SymbolicDef::Ref(idx) => format!("&_{}", idx),
                 SymbolicDef::Cast(idx, ty_str) => format!("_{} as {}", idx, ty_str),
-                SymbolicDef::UnOp(op) => format!("{:?}(op)", op), // 建议修改 UnOp 定义以包含操作数
+                SymbolicDef::UnOp(op) => format!("{:?}(op)", op), // unary op placeholder
                 SymbolicDef::Binary(op, lhs, rhs) => {
                     let op_str = self.binop_to_symbol(op);
                     let rhs_str = match rhs {
@@ -1193,6 +1225,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         }
     }
 
+    /// Map MIR BinOp to a human-friendly operator string.
     fn binop_to_symbol(&self, op: &BinOp) -> &'static str {
         match op {
             BinOp::Add => "+",

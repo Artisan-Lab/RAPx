@@ -38,17 +38,6 @@ impl ValueDomain {
     }
 }
 
-fn get_operand_bv<'a>(
-    ctx: &'a Context,
-    op: &'a AnaOperand,
-    z3_vars: &'a HashMap<usize, BV>,
-) -> Option<BV<'a>> {
-    match op {
-        AnaOperand::Local(idx) => z3_vars.get(idx).cloned(),
-        AnaOperand::Const(val) => Some(BV::from_u64(ctx, *val as u64, 64)),
-    }
-}
-
 /// Verifies a target property using Z3 SMT solver given variable domains and path constraints.
 /// Returns true if the property holds (UNSAT for negation), false otherwise.
 pub fn verify_with_z3<F>(
@@ -144,9 +133,70 @@ where
     let target_prop = target_verifier(&ctx, &z3_vars);
     solver.assert(&target_prop.not());
 
+    // Check satisfiability
+    let result = solver.check();
+
+    // Debug output: Inspect solver state and model if needed
+    debug_z3_solver_state(&solver, result, &z3_vars);
+
     // UNSAT means no counter-example exists -> property holds
-    match solver.check() {
+    match result {
         SatResult::Unsat => true,
         _ => false,
+    }
+}
+
+// Helper function to handle Z3 solver debug outputs
+fn debug_z3_solver_state<'ctx>(
+    solver: &Solver<'ctx>,
+    result: SatResult,
+    z3_vars: &HashMap<usize, BV<'ctx>>,
+) {
+    // Log the raw SMT-LIB constraints for inspection
+    rap_info!("[Z3 Verify] Constraints:\n{}", solver);
+
+    match result {
+        SatResult::Unsat => {
+            rap_info!("[Z3 Verify] Result: UNSAT (Verification Passed)");
+        }
+        SatResult::Sat => {
+            rap_info!("[Z3 Verify] Result: SAT (Verification Failed)");
+
+            // Attempt to retrieve and display the counter-example model
+            if let Some(model) = solver.get_model() {
+                rap_info!("[Z3 Verify] Model:\n{}", model);
+
+                // Extract and log specific values for variables in the model
+                let mut sorted_vars: Vec<_> = z3_vars.iter().collect();
+                sorted_vars.sort_by_key(|k| k.0);
+
+                for (idx, bv) in sorted_vars {
+                    if let Some(interp) = model.eval(bv, true) {
+                        let val_str = interp
+                            .as_u64()
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|| interp.to_string());
+                        rap_info!("  loc_{}: {}", idx, val_str);
+                    }
+                }
+            }
+        }
+        SatResult::Unknown => {
+            let reason = solver
+                .get_reason_unknown()
+                .unwrap_or_else(|| "Unknown".to_string());
+            rap_info!("[Z3 Verify] Result: UNKNOWN. Reason: {}", reason);
+        }
+    }
+}
+
+fn get_operand_bv<'a>(
+    ctx: &'a Context,
+    op: &'a AnaOperand,
+    z3_vars: &'a HashMap<usize, BV>,
+) -> Option<BV<'a>> {
+    match op {
+        AnaOperand::Local(idx) => z3_vars.get(idx).cloned(),
+        AnaOperand::Const(val) => Some(BV::from_u64(ctx, *val as u64, 64)),
     }
 }
