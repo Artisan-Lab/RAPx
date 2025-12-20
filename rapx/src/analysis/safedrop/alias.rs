@@ -15,7 +15,9 @@ impl<'tcx> SafeDropGraph<'tcx> {
     /* alias analysis for a single block */
     pub fn alias_bb(&mut self, bb_index: usize) {
         for constant in self.mop_graph.blocks[bb_index].const_value.clone() {
-            self.mop_graph.constants.insert(constant.local, constant.value);
+            self.mop_graph
+                .constants
+                .insert(constant.local, constant.value);
         }
         let cur_block = self.mop_graph.blocks[bb_index].clone();
         for assign in cur_block.assignments {
@@ -34,11 +36,12 @@ impl<'tcx> SafeDropGraph<'tcx> {
             self.fill_birth(lv_idx, self.mop_graph.blocks[bb_index].scc.enter as isize);
             if self.mop_graph.values[lv_idx].local != self.mop_graph.values[rv_idx].local {
                 rap_debug!(
-                    "merge alias: lv_idx/local:{}/{}, rv_idx/local:{}/{}",
+                    "[alias_bb] merge alias: lv_idx/local:{}/{}, rv_idx/local:{}/{}, assign_type={:?}",
                     lv_idx,
                     self.mop_graph.values[lv_idx].local,
                     rv_idx,
-                    self.mop_graph.values[rv_idx].local
+                    self.mop_graph.values[rv_idx].local,
+                    assign.atype
                 );
                 self.merge_alias(lv_idx, rv_idx, 0);
                 rap_debug!(
@@ -208,12 +211,6 @@ impl<'tcx> SafeDropGraph<'tcx> {
 
     //instruction to assign alias for a variable.
     pub fn merge_alias(&mut self, lv: usize, rv: usize, depth: usize) {
-        // if self.mop_graph.values[lv].alias.len() > 1 {
-        //     let mut alias_clone = self.mop_graph.values[rv].alias.clone();
-        //     self.mop_graph.values[lv].alias.append(&mut alias_clone);
-        // } else {
-        //     self.mop_graph.values[lv].alias = self.mop_graph.values[rv].alias.clone();
-        // }
         if lv >= self.mop_graph.values.len() || rv >= self.mop_graph.values.len() {
             return;
         }

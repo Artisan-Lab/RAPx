@@ -6,7 +6,10 @@ use crate::{
 };
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_middle::{
-    mir::{BasicBlock, Const, Operand, Rvalue, StatementKind, TerminatorKind, UnwindAction},
+    mir::{
+        AggregateKind, BasicBlock, Const, Operand, Rvalue, StatementKind, TerminatorKind,
+        UnwindAction,
+    },
     ty::{self, TyCtxt, TypingEnv},
 };
 use rustc_span::{Span, def_id::DefId};
@@ -208,24 +211,85 @@ impl<'tcx> MopGraph<'tcx> {
                                 }
                                 Operand::Constant(_) => {}
                             },
-                            Rvalue::Aggregate(_, operands) => {
-                                for operand in operands {
-                                    match operand {
-                                        Operand::Copy(rv_place) | Operand::Move(rv_place) => {
-                                            let rv_local = rv_place.local.as_usize();
-                                            if values[lv_local].may_drop
-                                                && values[rv_local].may_drop
-                                            {
-                                                let assign = Assignment::new(
-                                                    lv_place,
-                                                    rv_place,
-                                                    AssignType::Copy,
-                                                    span,
-                                                );
-                                                cur_bb.assignments.push(assign);
+                            Rvalue::Aggregate(kind, operands) => {
+                                match kind.as_ref() {
+                                    // For tuple aggregation such as _10 = (move _11, move _12)
+                                    // we create `_10.0 = move _11` and `_10.1 = move _12` to achieve field sensitivity
+                                    // and prevent transitive alias: (_10, _11) + (_10, _12) => (_11, _12)
+                                    AggregateKind::Tuple => {
+                                        let lv_ty = lv_place.ty(&body.local_decls, tcx).ty;
+                                        for (field_idx, operand) in operands.iter_enumerated() {
+                                            match operand {
+                                                Operand::Copy(rv_place)
+                                                | Operand::Move(rv_place) => {
+                                                    let rv_local = rv_place.local.as_usize();
+                                                    if values[lv_local].may_drop
+                                                        && values[rv_local].may_drop
+                                                    {
+                                                        // Get field type from tuple or array
+                                                        let field_ty = match lv_ty.kind() {
+                                                            ty::Tuple(fields) => {
+                                                                fields[field_idx.as_usize()]
+                                                            }
+                                                            _ => {
+                                                                continue;
+                                                            }
+                                                        };
+
+                                                        // Create lv.field_idx Place using tcx.mk_place_field
+                                                        let lv_field_place = tcx.mk_place_field(
+                                                            lv_place, field_idx, field_ty,
+                                                        );
+
+                                                        let assign = Assignment::new(
+                                                            lv_field_place,
+                                                            *rv_place,
+                                                            if matches!(operand, Operand::Move(_)) {
+                                                                AssignType::Move
+                                                            } else {
+                                                                AssignType::Copy
+                                                            },
+                                                            span,
+                                                        );
+                                                        cur_bb.assignments.push(assign);
+                                                        rap_debug!(
+                                                            "Aggregate field assignment: {:?}.{} = {:?}",
+                                                            lv_place,
+                                                            field_idx.as_usize(),
+                                                            rv_place
+                                                        );
+                                                    }
+                                                }
+                                                Operand::Constant(_) => {
+                                                    // Constants don't need alias analysis
+                                                }
                                             }
                                         }
-                                        Operand::Constant(_) => {}
+                                    }
+                                    // TODO: Support alias for array
+                                    AggregateKind::Array(_) => {}
+                                    // For other aggregate types, simply create an assignment for each aggregated operand
+                                    _ => {
+                                        for operand in operands {
+                                            match operand {
+                                                Operand::Copy(rv_place)
+                                                | Operand::Move(rv_place) => {
+                                                    let rv_local = rv_place.local.as_usize();
+                                                    if values[lv_local].may_drop
+                                                        && values[rv_local].may_drop
+                                                    {
+                                                        let assign = Assignment::new(
+                                                            lv_place,
+                                                            rv_place,
+                                                            AssignType::Copy,
+                                                            span,
+                                                        );
+                                                        cur_bb.assignments.push(assign);
+                                                    }
+                                                }
+                                                Operand::Constant(_) => {}
+                                            }
+                                        }
                                     }
                                 }
                             }

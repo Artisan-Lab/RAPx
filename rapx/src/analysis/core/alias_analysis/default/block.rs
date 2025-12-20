@@ -12,7 +12,7 @@ pub struct Block<'tcx> {
     pub assignments: Vec<Assignment<'tcx>>,
     pub const_value: Vec<ConstValue>,
     // Used in scc handling: to clear the assignments of the enter node.
-    pub assigned_locals: FxHashSet<usize>, 
+    pub assigned_locals: FxHashSet<usize>,
     pub terminator: Term<'tcx>,
     /// All nodes belongs to a SCC.
     /// This field could be a single node SCC.
