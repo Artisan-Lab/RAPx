@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "dangling_false_case"
+name = "false_tuple_transitive"
 version = "0.1.0"

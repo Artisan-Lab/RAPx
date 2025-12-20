@@ -115,15 +115,24 @@ fn test_false_scc1() {
     let output = running_tests_with_arg("uaf/false_scc1", "-F");
     assert_eq!(output.contains("detected"), false);
 }
+
+#[test]
+fn test_false_tuple_transitive() {
+    let output = running_tests_with_arg("uaf/false_tuple_transitive", "-F");
+    assert_eq!(output.contains("detected"), false);
+}
+
 #[test]
 fn test_false_arc() {
     let output = running_tests_with_arg("uaf/false_arc", "-F");
     assert_eq!(output.contains("detected"), false);
 }
+
 #[test]
 fn test_false_clone1() {
+    #[allow(unused)]
     let output = running_tests_with_arg("uaf/false_clone1", "-F");
-    //assert_eq!(output.contains("detected"), false);
+    // assert_eq!(output.contains("detected"), false);
 }
 
 #[test]
