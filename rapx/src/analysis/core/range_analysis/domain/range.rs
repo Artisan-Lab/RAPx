@@ -12,7 +12,7 @@ use rustc_middle::mir::{BinOp, UnOp};
 use std::ops::{Add, Mul, Sub};
 
 use crate::{
-    analysis::core::range_analysis::{Range, RangeType},
+    analysis::core::range_analysis::{Range, RangeType, domain::SymbolicExpr::IntervalTypeTrait},
     rap_trace,
 };
 
@@ -277,24 +277,10 @@ impl Meet {
 
         let old_interval = op.get_intersect().get_range().clone();
         let new_interval = op.eval(vars);
-
         let old_lower = old_interval.get_lower();
         let old_upper = old_interval.get_upper();
         let new_lower = new_interval.get_lower();
         let new_upper = new_interval.get_upper();
-
-        // let nlconstant = get_first_less_from_vector(constant_vector, new_lower);
-        // let nuconstant = get_first_greater_from_vector(constant_vector, new_upper);
-        // let nlconstant = constant_vector
-        //     .iter()
-        //     .find(|&&c| c <= new_lower)
-        //     .cloned()
-        //     .unwrap_or(T::min_value());
-        // let nuconstant = constant_vector
-        //     .iter()
-        //     .find(|&&c| c >= new_upper)
-        //     .cloned()
-        //     .unwrap_or(T::max_value());
         let nlconstant = new_lower.clone();
         let nuconstant = new_upper.clone();
         let updated = if old_interval.is_unknown() {
@@ -310,7 +296,6 @@ impl Meet {
         };
 
         op.set_intersect(updated.clone());
-
         let sink = op.get_sink();
         let new_sink_interval = op.get_intersect().get_range().clone();
         vars.get_mut(sink)
@@ -322,7 +307,6 @@ impl Meet {
             old_interval.range,
             new_sink_interval
         );
-
         old_interval.range != new_sink_interval.range
     }
     pub fn narrow<'tcx, T: IntervalArithmetic + ConstConvert>(

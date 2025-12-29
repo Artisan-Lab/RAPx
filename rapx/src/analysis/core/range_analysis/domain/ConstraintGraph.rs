@@ -174,7 +174,6 @@ where
     pub fn to_dot(&self) -> String {
         let mut dot = String::new();
         writeln!(&mut dot, "digraph ConstraintGraph {{").unwrap();
-
         writeln!(&mut dot, "    layout=neato;").unwrap();
         writeln!(&mut dot, "    overlap=false;").unwrap();
         writeln!(&mut dot, "    splines=true;").unwrap();
@@ -393,10 +392,14 @@ where
         }
     }
     fn print_symbexpr(&self) {
-        for (&key, value) in &self.vars {
+        let mut vars: Vec<_> = self.vars.iter().collect();
+
+        vars.sort_by_key(|(local, _)| local.local.index());
+
+        for (&local, value) in vars {
             rap_info!(
                 "Var: {:?}. [ {:?} , {:?} ]",
-                key,
+                local,
                 value.interval.get_lower_expr(),
                 value.interval.get_upper_expr()
             );
@@ -524,18 +527,61 @@ where
 
         node_ref
     }
-    pub fn add_varnode_sym(
+    pub fn use_add_varnode_sym(
         &mut self,
         v: &'tcx Place<'tcx>,
         rvalue: &'tcx Rvalue<'tcx>,
     ) -> &mut VarNode<'tcx, T> {
+        if !self.vars.contains_key(v) {
+            let mut place_ctx: Vec<&Place<'tcx>> = self.vars.keys().map(|p| *p).collect();
+            let node = VarNode::new_symb(v, SymbExpr::from_rvalue(rvalue, place_ctx.clone()));
+            rap_debug!("use node:{:?}", node);
+
+            self.vars.insert(v, node);
+            self.usemap.entry(v).or_insert(HashSet::new());
+
+            if !(v.projection.is_empty() || self.defmap.contains_key(v)) {
+                let matches: Vec<_> = self
+                    .defmap
+                    .iter()
+                    .filter(|(p, _)| p.local == v.local && p.projection.is_empty())
+                    .map(|(p, &def_op)| (*p, def_op))
+                    .collect();
+
+                for (base_place, def_op) in matches {
+                    let mut v_op = self.oprs[def_op].clone();
+                    v_op.set_sink(v);
+
+                    for source in v_op.get_sources() {
+                        self.usemap
+                            .entry(source)
+                            .or_insert(HashSet::new())
+                            .insert(self.oprs.len());
+                    }
+
+                    self.oprs.push(v_op);
+                    self.defmap.insert(v, self.oprs.len() - 1);
+                }
+            }
+        }
+
+        self.vars.get_mut(v).unwrap()
+    }
+
+    pub fn def_add_varnode_sym(
+        &mut self,
+        v: &'tcx Place<'tcx>,
+        rvalue: &'tcx Rvalue<'tcx>,
+    ) -> &mut VarNode<'tcx, T> {
+        let mut place_ctx: Vec<&Place<'tcx>> = self.vars.keys().map(|p| *p).collect();
+
         let local_decls = &self.body.local_decls;
-        let node = VarNode::new_symb(v, SymbExpr::from_rvalue(rvalue));
-        rap_debug!("add_varnode_sym node:{:?}", node);
+        let node = VarNode::new_symb(v, SymbExpr::from_rvalue(rvalue, place_ctx.clone()));
+        rap_debug!("def node:{:?}", node);
         let node_ref: &mut VarNode<'tcx, T> = self
             .vars
             .entry(v)
-            // .and_modify(|old| *old = node.clone())
+            .and_modify(|old| *old = node.clone())
             .or_insert(node);
         self.usemap.entry(v).or_insert(HashSet::new());
 
@@ -569,10 +615,27 @@ where
                 self.defmap.insert(v, self.oprs.len() - 1);
             }
         }
-
         node_ref
     }
+    pub fn resolve_all_symexpr(&mut self) {
+        let lookup_context = self.vars.clone();
+        let mut nodes: Vec<&mut VarNode<'tcx, T>> = self.vars.values_mut().collect();
+        nodes.sort_by(|a, b| a.v.local.as_usize().cmp(&b.v.local.as_usize()));
+        for node in nodes {
+            if let IntervalType::Basic(basic) = &mut node.interval {
+                rap_debug!("======{}=====", node.v.local.as_usize());
+                rap_debug!("Before resolve: lower_expr: {}\n", basic.lower);
+                basic.lower.resolve_lower_bound(&lookup_context);
+                basic.lower.simplify();
+                rap_debug!("After resolve: lower_expr: {}\n", basic.lower);
+                rap_debug!("Before resolve: upper_expr: {}\n", basic.upper);
+                basic.upper.resolve_upper_bound(&lookup_context);
+                basic.upper.simplify();
 
+                rap_debug!("After resolve: upper_expr: {}\n", basic.upper);
+            }
+        }
+    }
     pub fn postprocess_defmap(&mut self) {
         for place in self.vars.keys() {
             if !place.projection.is_empty() {
@@ -612,7 +675,7 @@ where
         self.arg_count = body.arg_count;
         self.build_value_maps(body);
         for block in body.basic_blocks.indices() {
-            let block_data = &body[block];
+            let block_data: &BasicBlockData<'tcx> = &body[block];
             // Traverse statements
 
             for statement in block_data.statements.iter() {
@@ -621,6 +684,7 @@ where
             self.build_terminator(block, block_data.terminator.as_ref().unwrap());
         }
         // self.postprocess_defmap();
+        self.resolve_all_symexpr();
         self.print_vars();
         self.print_defmap();
         self.print_usemap();
@@ -903,6 +967,7 @@ where
             node.init(is_undefined);
         }
     }
+
     pub fn build_symbolic_intersect_map(&mut self) {
         for i in 0..self.oprs.len() {
             if let BasicOpKind::Essa(essaop) = &self.oprs[i] {
@@ -1024,8 +1089,10 @@ where
                 }
                 Rvalue::Aggregate(kind, operends) => match **kind {
                     AggregateKind::Adt(def_id, _, _, _, _) => match def_id {
-                        _ if def_id == self.essa => self.add_essa_op(sink, inst, operends, block),
-                        _ if def_id == self.ssa => self.add_ssa_op(sink, inst, operends),
+                        _ if def_id == self.essa => {
+                            self.add_essa_op(sink, inst, rvalue, operends, block)
+                        }
+                        _ if def_id == self.ssa => self.add_ssa_op(sink, inst, rvalue, operends),
                         _ => match self.unique_adt_handler(def_id) {
                             1 => {
                                 self.add_aggregate_op(sink, inst, rvalue, operends, 1);
@@ -1173,11 +1240,13 @@ where
         &mut self,
         sink: &'tcx Place<'tcx>,
         inst: &'tcx Statement<'tcx>,
+        rvalue: &'tcx Rvalue<'tcx>,
+
         operands: &'tcx IndexVec<FieldIdx, Operand<'tcx>>,
     ) {
         rap_trace!("ssa_op{:?}\n", inst);
 
-        let sink_node = self.add_varnode(sink);
+        let sink_node: &mut VarNode<'_, T> = self.def_add_varnode_sym(sink, rvalue);
         rap_trace!("addsink_in_ssa_op{:?}\n", sink_node);
 
         let BI: BasicInterval<T> = BasicInterval::new(Range::default(T::min_value()));
@@ -1186,13 +1255,13 @@ where
         for i in 0..operands.len() {
             let source = match &operands[FieldIdx::from_usize(i)] {
                 Operand::Copy(place) | Operand::Move(place) => {
-                    self.add_varnode(place);
+                    self.use_add_varnode_sym(place, rvalue);
                     Some(place)
                 }
                 _ => None,
             };
             if let Some(source) = source {
-                self.add_varnode(source);
+                self.use_add_varnode_sym(source, rvalue);
                 phiop.add_source(source);
                 rap_trace!("addvar_in_ssa_op{:?}\n", source);
                 self.usemap.entry(source).or_default().insert(bop_index);
@@ -1217,31 +1286,30 @@ where
 
         let BI: BasicInterval<T> = BasicInterval::new(Range::default(T::min_value()));
         let mut source: Option<&'tcx Place<'tcx>> = None;
+        rap_debug!("wtf {:?}\n", self.vars);
 
         match op {
             Operand::Copy(place) | Operand::Move(place) => {
                 if sink.local == RETURN_PLACE && sink.projection.is_empty() {
                     self.rerurn_places.insert(place);
-                    let sink_node = self.add_varnode_sym(sink, rvalue);
+                    // self.add_varnode_sym(place, rvalue);
+
+                    let sink_node = self.def_add_varnode_sym(sink, rvalue);
 
                     rap_debug!("add_return_place{:?}\n", place);
                 } else {
-                    self.add_varnode_sym(place, rvalue);
-                    source = Some(place);
-                    if let Some(source) = source {
-                        rap_trace!("addvar_in_use_op{:?}\n", source);
-                        let sink_node = self.add_varnode_sym(sink, rvalue);
-                        let useop =
-                            UseOp::new(IntervalType::Basic(BI), sink, inst, Some(source), None);
-                        // Insert the operation in the graph.
-                        let bop_index = self.oprs.len();
+                    self.use_add_varnode_sym(place, rvalue);
+                    rap_trace!("addvar_in_use_op{:?}\n", place);
+                    let sink_node = self.def_add_varnode_sym(sink, rvalue);
+                    let useop = UseOp::new(IntervalType::Basic(BI), sink, inst, Some(place), None);
+                    // Insert the operation in the graph.
+                    let bop_index = self.oprs.len();
 
-                        self.oprs.push(BasicOpKind::Use(useop));
-                        // Insert this definition in defmap
-                        self.usemap.entry(source).or_default().insert(bop_index);
+                    self.oprs.push(BasicOpKind::Use(useop));
+                    // Insert this definition in defmap
+                    self.usemap.entry(place).or_default().insert(bop_index);
 
-                        self.defmap.insert(sink, bop_index);
-                    }
+                    self.defmap.insert(sink, bop_index);
                 }
             }
             Operand::Constant(constant) => {
@@ -1258,7 +1326,7 @@ where
                 // Insert this definition in defmap
 
                 self.defmap.insert(sink, bop_index);
-                let sink_node = self.add_varnode_sym(sink, rvalue);
+                let sink_node = self.def_add_varnode_sym(sink, rvalue);
 
                 if let Some(value) = Self::convert_const(&c.const_) {
                     sink_node.set_range(Range::new(
@@ -1277,13 +1345,13 @@ where
     fn add_essa_op(
         &mut self,
         sink: &'tcx Place<'tcx>,
-
         inst: &'tcx Statement<'tcx>,
+        rvalue: &'tcx Rvalue<'tcx>,
         operands: &'tcx IndexVec<FieldIdx, Operand<'tcx>>,
         block: BasicBlock,
     ) {
         // rap_trace!("essa_op{:?}\n", inst);
-        let sink_node = self.add_varnode(sink);
+        let sink_node = self.def_add_varnode_sym(sink, rvalue);
         // rap_trace!("addsink_in_essa_op {:?}\n", sink_node);
 
         // let BI: BasicInterval<T> = BasicInterval::new(Range::default(T::min_value()));
@@ -1291,7 +1359,7 @@ where
         let loc_2: usize = 1;
         let source1 = match &operands[FieldIdx::from_usize(loc_1)] {
             Operand::Copy(place) | Operand::Move(place) => {
-                self.add_varnode(place);
+                self.use_add_varnode_sym(place, rvalue);
                 Some(place)
             }
             _ => None,
@@ -1342,7 +1410,7 @@ where
             }
             let source2 = match op {
                 Operand::Copy(place) | Operand::Move(place) => {
-                    self.add_varnode(place);
+                    self.use_add_varnode_sym(place, rvalue);
                     Some(place)
                 }
                 _ => None,
@@ -1391,10 +1459,10 @@ where
                 Operand::Copy(place) | Operand::Move(place) => {
                     if sink.local == RETURN_PLACE && sink.projection.is_empty() {
                         self.rerurn_places.insert(place);
-                        self.add_varnode(sink);
+                        self.def_add_varnode_sym(sink, rvalue);
                         rap_debug!("add_return_place {:?}\n", place);
                     } else {
-                        self.add_varnode(place);
+                        self.use_add_varnode_sym(place, rvalue);
                         rap_trace!("addvar_in_aggregate_op {:?}\n", place);
                         agg_operands.push(AggregateOperand::Place(place));
                     }
@@ -1403,7 +1471,7 @@ where
                     rap_trace!("add_constant_aggregate_op {:?}\n", c);
                     agg_operands.push(AggregateOperand::Const(c.const_));
 
-                    let sink_node = self.add_varnode(sink);
+                    let sink_node = self.def_add_varnode_sym(sink, rvalue);
                     if let Some(value) = Self::convert_const(&c.const_) {
                         sink_node.set_range(Range::new(
                             value.clone(),
@@ -1441,7 +1509,7 @@ where
 
         self.defmap.insert(sink, bop_index);
 
-        self.add_varnode(sink);
+        self.def_add_varnode_sym(sink, rvalue);
     }
 
     fn add_unary_op(
@@ -1454,7 +1522,7 @@ where
     ) {
         rap_trace!("unary_op{:?}\n", inst);
 
-        let sink_node = self.add_varnode_sym(sink, rvalue);
+        let sink_node = self.def_add_varnode_sym(sink, rvalue);
         rap_trace!("addsink_in_unary_op{:?}\n", sink_node);
 
         let BI: BasicInterval<T> = BasicInterval::new(Range::default(T::min_value()));
@@ -1469,7 +1537,7 @@ where
         };
 
         rap_trace!("addvar_in_unary_op{:?}\n", source.unwrap());
-        self.add_varnode(&source.unwrap());
+        self.use_add_varnode_sym(&source.unwrap(), rvalue);
 
         let unaryop = UnaryOp::new(IntervalType::Basic(BI), sink, inst, source.unwrap(), op);
         // Insert the operation in the graph.
@@ -1491,14 +1559,14 @@ where
         bin_op: BinOp,
     ) {
         rap_trace!("binary_op{:?}\n", inst);
-        let sink_node = self.add_varnode_sym(sink, rvalue);
+        let sink_node = self.def_add_varnode_sym(sink, rvalue);
         rap_trace!("addsink_in_binary_op{:?}\n", sink_node);
         let bop_index = self.oprs.len();
         let BI: BasicInterval<T> = BasicInterval::new(Range::default(T::min_value()));
 
         let source1_place = match op1 {
             Operand::Copy(place) | Operand::Move(place) => {
-                self.add_varnode(place);
+                self.use_add_varnode_sym(place, rvalue);
                 rap_trace!("addvar_in_binary_op{:?}\n", place);
 
                 Some(place)
@@ -1508,7 +1576,7 @@ where
 
         match op2 {
             Operand::Copy(place) | Operand::Move(place) => {
-                self.add_varnode(place);
+                self.use_add_varnode_sym(place, rvalue);
                 rap_trace!("addvar_in_binary_op{:?}\n", place);
 
                 let source2_place = Some(place);
@@ -1570,9 +1638,9 @@ where
 
         let BI: BasicInterval<T> = BasicInterval::new(Range::default(T::min_value()));
 
-        let source_node = self.add_varnode(place);
+        let source_node = self.use_add_varnode_sym(place, rvalue);
 
-        let sink_node = self.add_varnode_sym(sink, rvalue);
+        let sink_node = self.def_add_varnode_sym(sink, rvalue);
 
         let refop = RefOp::new(IntervalType::Basic(BI), sink, inst, place, borrowkind);
         let bop_index = self.oprs.len();

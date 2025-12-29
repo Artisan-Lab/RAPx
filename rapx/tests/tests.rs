@@ -401,3 +401,23 @@ fn test_callgraph_dynamic_dispatch() {
         );
     }
 }
+
+#[test]
+fn test_symbolic_interval() {
+    let output = running_tests_with_arg("range/range_symbolic", "-range");
+
+    let expected_ranges = vec![
+        "Var: (_5.0: i32). [ Binary(AddWithOverflow, Place(_1), Constant(Val(Scalar(0x00000001), i32))) , Binary(AddWithOverflow, Place(_1), Constant(Val(Scalar(0x00000001), i32))) ]",
+        "Var: _6. [ Place(_1) , Place(_1) ]"   ,
+        "Var: _8. [ Constant(Val(Scalar(0x00000001), i32)) , Constant(Val(Scalar(0x00000001), i32)) ]",
+    ];
+
+    for expected in expected_ranges {
+        assert!(
+            output.contains(expected),
+            "Missing expected symbolic interval: '{}'\nFull output:\n{}",
+            expected,
+            output
+        );
+    }
+}
