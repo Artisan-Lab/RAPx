@@ -143,7 +143,7 @@ where
             final_vars: FxHashMap::default(),
             ssa_places_mapping: FxHashMap::default(),
             fn_constraintgraph_mapping: FxHashMap::default(),
-            callgraph: CallGraph::new(),
+            callgraph: CallGraph::new(tcx),
             body_map: FxHashMap::default(),
             cg_map: FxHashMap::default(),
             vars_map: FxHashMap::default(),
@@ -232,12 +232,8 @@ where
 
         let callers_by_callee_id = self.callgraph.get_callers_map();
 
-        for (&node_id_usize, node) in &self.callgraph.functions {
-            let def_id = node.get_def_id();
-
-            if !callers_by_callee_id.contains_key(&node_id_usize)
-                && self.cg_map.contains_key(&def_id)
-            {
+        for &def_id in &self.callgraph.functions {
+            if !callers_by_callee_id.contains_key(&def_id) && self.cg_map.contains_key(&def_id) {
                 call_chain_starts.push(def_id);
             }
         }

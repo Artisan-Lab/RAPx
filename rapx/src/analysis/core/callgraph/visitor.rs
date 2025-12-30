@@ -1,5 +1,4 @@
 use super::default::CallGraph;
-use regex::Regex;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
 use rustc_middle::ty::{FnDef, Instance, InstanceKind, TyCtxt, TypingEnv};
@@ -27,73 +26,76 @@ impl<'b, 'tcx> CallGraphVisitor<'b, 'tcx> {
         }
     }
 
-    pub fn add_in_call_graph(
+    fn add_fn_call(&mut self, callee_def_id: DefId, terminator: &'tcx mir::Terminator<'tcx>) {
+        self.call_graph_info.register_fn(callee_def_id);
+        self.call_graph_info.add_funciton_call(
+            self.def_id.clone(),
+            callee_def_id,
+            Some(terminator),
+        );
+    }
+
+    fn handle_fn_call(
         &mut self,
-        caller_def_path: &String,
         callee_def_id: DefId,
-        callee_def_path: &String,
+        is_virtual: bool,
         terminator: &'tcx mir::Terminator<'tcx>,
     ) {
-        if let Some(caller_id) = self.call_graph_info.get_node_by_path(caller_def_path) {
-            if let Some(callee_id) = self.call_graph_info.get_node_by_path(callee_def_path) {
-                self.call_graph_info
-                    .add_funciton_call_edge(caller_id, callee_id, Some(terminator));
-            } else {
-                self.call_graph_info
-                    .add_node(callee_def_id, callee_def_path);
-                if let Some(callee_id) = self.call_graph_info.get_node_by_path(callee_def_path) {
-                    self.call_graph_info.add_funciton_call_edge(
-                        caller_id,
-                        callee_id,
-                        Some(terminator),
-                    );
+        if is_virtual {
+            // Handle dynamic dispatch for trait objects
+            self.handle_virtual_call(callee_def_id, terminator);
+        } else {
+            self.add_fn_call(callee_def_id, terminator);
+        }
+    }
+
+    fn handle_virtual_call(
+        &mut self,
+        stub_def_id: DefId, // Callee is the dynamic call stub, i.e. the fn definition in trait
+        terminator: &'tcx mir::Terminator<'tcx>,
+    ) {
+        // Step 1: Add an edge from caller to the virtual function (stub);
+        // If the DefId exists, we assume that stub has been analyzed.
+        let visited = !self.call_graph_info.register_fn(stub_def_id);
+        self.add_fn_call(stub_def_id, terminator);
+
+        // If this function has already been analyzed, return;
+        if visited {
+            return;
+        }
+
+        // Step 2: Find all impls of the virtual function;
+        let mut candidates: HashSet<DefId> = HashSet::new();
+        if let Some(trait_def_id) = self.tcx.trait_of_assoc(stub_def_id) {
+            rap_debug!(
+                "[Callgraph] Virtual fn {:?} belongs to trait {:?}",
+                stub_def_id,
+                trait_def_id
+            );
+            for impl_id in self.tcx.all_impls(trait_def_id) {
+                let impl_map = self.tcx.impl_item_implementor_ids(impl_id);
+                if let Some(candidate_def_id) = impl_map.get(&stub_def_id) {
+                    candidates.insert(*candidate_def_id);
                 }
             }
+        }
+        rap_debug!(
+            "[Callgraph] Implementors of {:?}: {:?}",
+            stub_def_id,
+            candidates
+        );
+
+        // Step 3: For each implementor, add an edge from the stub to it.
+        for candidate_def_id in candidates {
+            self.add_fn_call(candidate_def_id, terminator);
         }
     }
 
     pub fn visit(&mut self) {
-        let caller_path_str = self.tcx.def_path_str(self.def_id);
-        self.call_graph_info.add_node(self.def_id, &caller_path_str);
+        self.call_graph_info.register_fn(self.def_id);
         for (_, data) in self.body.basic_blocks.iter().enumerate() {
             let terminator = data.terminator();
             self.visit_terminator(&terminator);
-        }
-    }
-
-    fn add_to_call_graph(
-        &mut self,
-        callee_def_id: DefId,
-        is_virtual: Option<bool>,
-        terminator: &'tcx mir::Terminator<'tcx>,
-    ) {
-        let caller_def_path = self.tcx.def_path_str(self.def_id);
-        let mut callee_def_path = self.tcx.def_path_str(callee_def_id);
-
-        if let Some(true) = is_virtual {
-            // Handle dynamic dispatch for trait objects
-            let re = Regex::new(r"(?<dyn>\w+)::(?<func>\w+)").unwrap();
-            if let Some(caps) = re.captures(&callee_def_path) {
-                callee_def_path = format!("(dyn trait) <* as {}>::{}", &caps["dyn"], &caps["func"]);
-            };
-            self.handle_virtual_call(
-                &caller_def_path,
-                callee_def_id,
-                &callee_def_path,
-                terminator,
-            );
-        } else {
-            // let callee_location = self.tcx.def_span(callee_def_id);
-            if callee_def_id == self.def_id {
-                // Recursion
-                println!("Warning! Find a recursion function which may cause stackoverflow!")
-            }
-            self.add_in_call_graph(
-                &caller_def_path,
-                callee_def_id,
-                &callee_def_path,
-                terminator,
-            );
         }
     }
 
@@ -137,78 +139,14 @@ impl<'b, 'tcx> CallGraphVisitor<'b, 'tcx> {
                             _ => todo!(),
                         };
                         if let Some(instance_def_id) = instance_def_id {
-                            self.add_to_call_graph(instance_def_id, Some(is_virtual), terminator);
+                            self.handle_fn_call(instance_def_id, is_virtual, terminator);
                         }
                     } else {
                         // Although failing to get specific type, callee is still useful.
-                        self.add_to_call_graph(*callee_def_id, None, terminator);
+                        self.handle_fn_call(*callee_def_id, false, terminator);
                     }
                 }
             }
-        }
-    }
-
-    fn handle_virtual_call(
-        &mut self,
-        caller_def_path: &String,
-        stub_def_id: DefId, // Callee is the dynamic call stub, i.e. the fn definition in trait
-        stub_def_path: &String,
-        terminator: &'tcx mir::Terminator<'tcx>,
-    ) {
-        // Step 1: Add an edge from caller to the virtual function (stub);
-        let mut visited = false;
-        let stub_id = if let Some(id) = self.call_graph_info.get_node_by_path(stub_def_path) {
-            // Node exists, suggesting we have already analyzed this virtual function
-            visited = true;
-            id
-        } else {
-            self.call_graph_info.add_node(stub_def_id, stub_def_path)
-        };
-        let caller_id = self
-            .call_graph_info
-            .get_node_by_path(caller_def_path)
-            .unwrap(); // This must be Some since the caller must have been added to graph
-        self.call_graph_info
-            .add_funciton_call_edge(caller_id, stub_id, Some(terminator));
-
-        // If this function has already been analyzed, return;
-        if visited {
-            return;
-        }
-
-        // Step 2: Find all impls of the virtual function;
-        let mut candidates: HashSet<DefId> = HashSet::new();
-        if let Some(trait_def_id) = self.tcx.trait_of_assoc(stub_def_id) {
-            rap_debug!(
-                "[Callgraph] Virtual fn {:?} belongs to trait {:?}",
-                stub_def_id,
-                trait_def_id
-            );
-            for impl_id in self.tcx.all_impls(trait_def_id) {
-                let impl_map = self.tcx.impl_item_implementor_ids(impl_id);
-                if let Some(candidate_def_id) = impl_map.get(&stub_def_id) {
-                    candidates.insert(*candidate_def_id);
-                }
-            }
-        }
-        rap_debug!(
-            "[Callgraph] Implementors of {:?}: {:?}",
-            stub_def_id,
-            candidates
-        );
-
-        // Step 3: For each implementor, add an edge from the stub to it.
-        for candidate_def_id in candidates {
-            let candidate_def_path = self.tcx.def_path_str(candidate_def_id);
-            let callee_id =
-                if let Some(id) = self.call_graph_info.get_node_by_path(&candidate_def_path) {
-                    id
-                } else {
-                    self.call_graph_info
-                        .add_node(candidate_def_id, &candidate_def_path)
-                };
-            self.call_graph_info
-                .add_funciton_call_edge(stub_id, callee_id, None);
         }
     }
 }

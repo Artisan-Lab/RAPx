@@ -3,13 +3,13 @@ use rustc_middle::{
     mir::{self, Body},
     ty::TyCtxt,
 };
+use std::collections::HashMap;
 use std::collections::HashSet;
-use std::{collections::HashMap, hash::Hash};
 
 use super::visitor::CallGraphVisitor;
 use crate::{
     Analysis,
-    analysis::core::callgraph::{FnCallMap, CallGraphAnalysis},
+    analysis::core::callgraph::{CallGraphAnalysis, FnCallMap},
 };
 
 pub struct CallGraphAnalyzer<'tcx> {
@@ -39,24 +39,8 @@ impl<'tcx> CallGraphAnalysis for CallGraphAnalyzer<'tcx> {
             .clone()
             .into_iter()
             .map(|(caller, callees)| {
-                let caller_id = self
-                    .graph
-                    .functions
-                    .get(&caller)
-                    .expect("Key must exist in functions map")
-                    .def_id;
-
-                let callees_id = callees
-                    .into_iter()
-                    .map(|(callee, _)| {
-                        self.graph
-                            .functions
-                            .get(&callee)
-                            .expect("Value must exist in functions map")
-                            .def_id
-                    })
-                    .collect::<Vec<_>>();
-                (caller_id, callees_id)
+                let callee_ids = callees.into_iter().map(|(did, _)| did).collect::<Vec<_>>();
+                (caller, callee_ids)
             })
             .collect();
         fn_calls
@@ -67,7 +51,7 @@ impl<'tcx> CallGraphAnalyzer<'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>) -> Self {
         Self {
             tcx: tcx,
-            graph: CallGraph::new(),
+            graph: CallGraph::new(tcx),
         }
     }
 
@@ -102,101 +86,49 @@ impl<'tcx> CallGraphAnalyzer<'tcx> {
             }
         }
     }
-
-    pub fn get_callee_def_path(&self, def_path: String) -> Option<HashSet<String>> {
-        self.graph.get_callees_path(&def_path)
-    }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct Node {
-    def_id: DefId,
-    def_path: String,
-}
-
-impl Node {
-    pub fn new(def_id: DefId, def_path: &String) -> Self {
-        Self {
-            def_id: def_id,
-            def_path: def_path.clone(),
-        }
-    }
-
-    pub fn get_def_id(&self) -> DefId {
-        self.def_id
-    }
-
-    pub fn get_def_path(&self) -> String {
-        self.def_path.clone()
-    }
-}
+pub type CallMap<'tcx> = HashMap<DefId, Vec<(DefId, Option<&'tcx mir::Terminator<'tcx>>)>>;
 
 pub struct CallGraph<'tcx> {
-    pub functions: HashMap<usize, Node>, // id -> node
-    pub fn_calls: HashMap<usize, Vec<(usize, Option<&'tcx mir::Terminator<'tcx>>)>>, // caller_id -> Vec<(callee_id, terminator)>
-    pub node_registry: HashMap<String, usize>,                                       // path -> id
+    pub tcx: TyCtxt<'tcx>,
+    pub functions: HashSet<DefId>, // Function-like, including closures
+    pub fn_calls: CallMap<'tcx>,   // caller -> Vec<(callee, terminator)>
 }
 
 impl<'tcx> CallGraph<'tcx> {
-    pub fn new() -> Self {
+    pub fn new(tcx: TyCtxt<'tcx>) -> Self {
         Self {
-            functions: HashMap::new(),
+            tcx,
+            functions: HashSet::new(),
             fn_calls: HashMap::new(),
-            node_registry: HashMap::new(),
         }
     }
 
-    pub fn get_node_num(&self) -> usize {
-        self.functions.len()
-    }
-
-    pub fn get_callees_path(&self, caller_def_path: &String) -> Option<HashSet<String>> {
-        let mut callees_path: HashSet<String> = HashSet::new();
-        if let Some(caller_id) = self.node_registry.get(caller_def_path) {
-            if let Some(callees) = self.fn_calls.get(caller_id) {
-                for (id, _terminator) in callees {
-                    if let Some(callee_node) = self.functions.get(id) {
-                        callees_path.insert(callee_node.get_def_path());
-                    }
-                }
-            }
-            Some(callees_path)
+    /// Register a function to the call graph. Return true on insert, false if that DefId already exists.
+    pub fn register_fn(&mut self, def_id: DefId) -> bool {
+        if let Some(_) = self.functions.iter().find(|func_id| **func_id == def_id) {
+            false
         } else {
-            None
+            self.functions.insert(def_id);
+            true
         }
     }
 
-    /// Add a node and return its id. If node already exists, only return its id.
-    pub fn add_node(&mut self, def_id: DefId, def_path: &String) -> usize {
-        if let Some(old_id) = self.node_registry.get(def_path) {
-            *old_id
-        } else {
-            let new_id = self.node_registry.len();
-            let node = Node::new(def_id, def_path);
-            self.node_registry.insert(def_path.clone(), new_id);
-            self.functions.insert(new_id, node);
-            new_id
-        }
-    }
-
-    pub fn add_funciton_call_edge(
+    /// Add a function call to the call graph.
+    pub fn add_funciton_call(
         &mut self,
-        caller_id: usize,
-        callee_id: usize,
+        caller_id: DefId,
+        callee_id: DefId,
         terminator_stmt: Option<&'tcx mir::Terminator<'tcx>>,
     ) {
         let entry = self.fn_calls.entry(caller_id).or_insert_with(Vec::new);
         entry.push((callee_id, terminator_stmt));
     }
 
-    pub fn get_node_by_path(&self, def_path: &String) -> Option<usize> {
-        self.node_registry.get(def_path).copied()
-    }
-    pub fn get_callers_map(
-        &self,
-    ) -> HashMap<usize, Vec<(usize, Option<&'tcx mir::Terminator<'tcx>>)>> {
-        let mut callers_map: HashMap<usize, Vec<(usize, Option<&'tcx mir::Terminator<'tcx>>)>> =
-            HashMap::new();
+    /// Get a reversed (callee -> Vec<Caller>) call map.
+    pub fn get_callers_map(&self) -> CallMap<'tcx> {
+        let mut callers_map: CallMap<'tcx> = HashMap::new();
 
         for (&caller_id, calls_vec) in &self.fn_calls {
             for (callee_id, terminator) in calls_vec {
@@ -209,59 +141,19 @@ impl<'tcx> CallGraph<'tcx> {
         callers_map
     }
 
-    pub fn display(&self) {
-        rap_info!("CallGraph Analysis:");
-        for (caller_id, callees) in &self.fn_calls {
-            if let Some(caller_node) = self.functions.get(caller_id) {
-                for (callee_id, terminator) in callees {
-                    if let Some(callee_node) = self.functions.get(callee_id) {
-                        let caller_def_path = caller_node.get_def_path();
-                        let callee_def_path = callee_node.get_def_path();
-                        if let Some(terminator_stmt) = terminator {
-                            rap_info!(
-                                "{}:{} -> {}:{} @ {:?}",
-                                caller_id,
-                                caller_def_path,
-                                *callee_id,
-                                callee_def_path,
-                                terminator_stmt.kind
-                            );
-                        } else {
-                            rap_info!(
-                                " (Virtual) {}:{} -> {}:{}",
-                                caller_id,
-                                caller_def_path,
-                                *callee_id,
-                                callee_def_path,
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     pub fn get_reverse_post_order(&self) -> Vec<DefId> {
         let mut visited = HashSet::new();
         let mut post_order_ids = Vec::new(); // Will store the post-order traversal of `usize` IDs
 
         // Iterate over all functions defined in the graph to handle disconnected components
-        for &node_id in self.functions.keys() {
-            if !visited.contains(&node_id) {
-                self.dfs_post_order(node_id, &mut visited, &mut post_order_ids);
+        for &func_def_id in self.functions.iter() {
+            if !visited.contains(&func_def_id) {
+                self.dfs_post_order(func_def_id, &mut visited, &mut post_order_ids);
             }
         }
 
         // Map the ordered `usize` IDs back to `DefId`s for the analysis pipeline
-        let mut analysis_order: Vec<DefId> = post_order_ids
-            .into_iter()
-            .map(|id| {
-                self.functions
-                    .get(&id)
-                    .expect("Node ID must exist in functions map")
-                    .def_id
-            })
-            .collect();
+        let mut analysis_order: Vec<DefId> = post_order_ids;
 
         // Reversing the post-order gives a topological sort (bottom-up)
         analysis_order.reverse();
@@ -272,15 +164,15 @@ impl<'tcx> CallGraph<'tcx> {
     /// Helper function to perform a recursive depth-first search.
     fn dfs_post_order(
         &self,
-        node_id: usize,
-        visited: &mut HashSet<usize>,
-        post_order_ids: &mut Vec<usize>,
+        func_def_id: DefId,
+        visited: &mut HashSet<DefId>,
+        post_order_ids: &mut Vec<DefId>,
     ) {
         // Mark the current node as visited
-        visited.insert(node_id);
+        visited.insert(func_def_id);
 
         // Visit all callees (children) of the current node
-        if let Some(callees) = self.fn_calls.get(&node_id) {
+        if let Some(callees) = self.fn_calls.get(&func_def_id) {
             for (callee_id, _terminator) in callees {
                 if !visited.contains(callee_id) {
                     self.dfs_post_order(*callee_id, visited, post_order_ids);
@@ -289,6 +181,6 @@ impl<'tcx> CallGraph<'tcx> {
         }
 
         // After visiting all children, add the current node to the post-order list
-        post_order_ids.push(node_id);
+        post_order_ids.push(func_def_id);
     }
 }
