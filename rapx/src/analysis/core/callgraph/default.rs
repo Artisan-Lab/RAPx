@@ -96,6 +96,7 @@ pub struct CallGraph<'tcx> {
     pub fn_calls: CallMap<'tcx>,   // caller -> Vec<(callee, terminator)>
 }
 
+/// Internal apis for constructing a call graph
 impl<'tcx> CallGraph<'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>) -> Self {
         Self {
@@ -125,22 +126,10 @@ impl<'tcx> CallGraph<'tcx> {
         let entry = self.fn_calls.entry(caller_id).or_insert_with(Vec::new);
         entry.push((callee_id, terminator_stmt));
     }
+}
 
-    /// Get a reversed (callee -> Vec<Caller>) call map.
-    pub fn get_callers_map(&self) -> CallMap<'tcx> {
-        let mut callers_map: CallMap<'tcx> = HashMap::new();
-
-        for (&caller_id, calls_vec) in &self.fn_calls {
-            for (callee_id, terminator) in calls_vec {
-                callers_map
-                    .entry(*callee_id)
-                    .or_insert_with(Vec::new)
-                    .push((caller_id, *terminator));
-            }
-        }
-        callers_map
-    }
-
+/// Public apis to get information from the call graph
+impl<'tcx> CallGraph<'tcx> {
     pub fn get_reverse_post_order(&self) -> Vec<DefId> {
         let mut visited = HashSet::new();
         let mut post_order_ids = Vec::new(); // Will store the post-order traversal of `usize` IDs
@@ -155,7 +144,7 @@ impl<'tcx> CallGraph<'tcx> {
         // Map the ordered `usize` IDs back to `DefId`s for the analysis pipeline
         let mut analysis_order: Vec<DefId> = post_order_ids;
 
-        // Reversing the post-order gives a topological sort (bottom-up)
+        // Reversing the post-order gives a topological sort (top-down)
         analysis_order.reverse();
 
         analysis_order
@@ -182,5 +171,55 @@ impl<'tcx> CallGraph<'tcx> {
 
         // After visiting all children, add the current node to the post-order list
         post_order_ids.push(func_def_id);
+    }
+
+    /// Get a reversed (callee -> Vec<Caller>) call map.
+    pub fn get_callers_map(&self) -> CallMap<'tcx> {
+        let mut callers_map: CallMap<'tcx> = HashMap::new();
+
+        for (&caller_id, calls_vec) in &self.fn_calls {
+            for (callee_id, terminator) in calls_vec {
+                callers_map
+                    .entry(*callee_id)
+                    .or_insert_with(Vec::new)
+                    .push((caller_id, *terminator));
+            }
+        }
+        callers_map
+    }
+
+    /// Get all direct callees' DefId of the caller function
+    pub fn get_callees(&self, caller_def_id: DefId) -> Vec<DefId> {
+        if let Some(callees) = self.fn_calls.get(&caller_def_id) {
+            callees
+                .clone()
+                .into_iter()
+                .map(|(did, _)| did)
+                .collect::<Vec<_>>()
+        } else {
+            vec![]
+        }
+    }
+
+    /// Get all recursively reachable callee's DefId
+    pub fn get_callees_recursive(&self, caller_def_id: DefId) -> Vec<DefId> {
+        let mut visited = HashSet::new();
+        let mut result = Vec::new();
+        self.dfs_post_order(caller_def_id, &mut visited, &mut result);
+        result
+    }
+
+    /// Get all direct callers' DefId of the callee function
+    pub fn get_callers(&self, callee_def_id: DefId) -> Vec<DefId> {
+        let callers_map = self.get_callers_map();
+        if let Some(callers) = callers_map.get(&callee_def_id) {
+            callers
+                .clone()
+                .into_iter()
+                .map(|(did, _)| did)
+                .collect::<Vec<_>>()
+        } else {
+            vec![]
+        }
     }
 }
