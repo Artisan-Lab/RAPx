@@ -131,6 +131,12 @@ impl<'tcx> CallGraph<'tcx> {
 /// Public apis to get information from the call graph
 impl<'tcx> CallGraph<'tcx> {
     pub fn get_reverse_post_order(&self) -> Vec<DefId> {
+        let mut result = self.get_post_order();
+        result.reverse();
+        result
+    }
+
+    pub fn get_post_order(&self) -> Vec<DefId> {
         let mut visited = HashSet::new();
         let mut post_order_ids = Vec::new(); // Will store the post-order traversal of `usize` IDs
 
@@ -141,13 +147,7 @@ impl<'tcx> CallGraph<'tcx> {
             }
         }
 
-        // Map the ordered `usize` IDs back to `DefId`s for the analysis pipeline
-        let mut analysis_order: Vec<DefId> = post_order_ids;
-
-        // Reversing the post-order gives a topological sort (top-down)
-        analysis_order.reverse();
-
-        analysis_order
+        post_order_ids
     }
 
     /// Helper function to perform a recursive depth-first search.
