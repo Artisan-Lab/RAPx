@@ -5,7 +5,7 @@ use crate::{
         Analysis,
         core::{
             alias_analysis::default::graph::MopGraph,
-            callgraph::{default::CallGraphInfo, visitor::CallGraphVisitor},
+            callgraph::{default::CallGraph, visitor::CallGraphVisitor},
             range_analysis::{
                 Range, RangeAnalysis,
                 domain::{
@@ -45,7 +45,7 @@ pub struct RangeAnalyzer<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub final_vars: RAResultMap<'tcx, T>,
     pub ssa_places_mapping: FxHashMap<DefId, HashMap<Place<'tcx>, HashSet<Place<'tcx>>>>,
     pub fn_constraintgraph_mapping: FxHashMap<DefId, ConstraintGraph<'tcx, T>>,
-    pub callgraph: CallGraphInfo<'tcx>,
+    pub callgraph: CallGraph<'tcx>,
     pub body_map: FxHashMap<DefId, Body<'tcx>>,
     pub cg_map: FxHashMap<DefId, Rc<RefCell<ConstraintGraph<'tcx, T>>>>,
     pub vars_map: FxHashMap<DefId, Vec<RefCell<VarNodes<'tcx, T>>>>,
@@ -143,7 +143,7 @@ where
             final_vars: FxHashMap::default(),
             ssa_places_mapping: FxHashMap::default(),
             fn_constraintgraph_mapping: FxHashMap::default(),
-            callgraph: CallGraphInfo::new(),
+            callgraph: CallGraph::new(),
             body_map: FxHashMap::default(),
             cg_map: FxHashMap::default(),
             vars_map: FxHashMap::default(),

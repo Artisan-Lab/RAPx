@@ -34,7 +34,7 @@ use analysis::{
     core::{
         alias_analysis::{AAResultMapWrapper, AliasAnalysis, default::AliasAnalyzer},
         api_dependency::ApiDependencyAnalyzer,
-        callgraph::{CallGraphAnalysis, CallGraphDisplay, default::CallGraphAnalyzer},
+        callgraph::{CallGraphAnalysis, FnCallDisplay, default::CallGraphAnalyzer},
         dataflow::{
             Arg2RetMapWrapper, DataFlowAnalysis, DataFlowGraphMapWrapper, default::DataFlowAnalyzer,
         },
@@ -445,11 +445,11 @@ pub fn start_analyzer(tcx: TyCtxt, callback: &RapCallback) {
     if callback.is_callgraph_enabled() {
         let mut analyzer = CallGraphAnalyzer::new(tcx);
         analyzer.run();
-        let callgraph = analyzer.get_callgraph();
+        let callgraph = analyzer.get_fn_calls();
         rap_info!(
             "{}",
-            CallGraphDisplay {
-                graph: &callgraph,
+            FnCallDisplay {
+                fn_calls: &callgraph,
                 tcx
             }
         );

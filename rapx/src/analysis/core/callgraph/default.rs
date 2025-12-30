@@ -9,12 +9,12 @@ use std::{collections::HashMap, hash::Hash};
 use super::visitor::CallGraphVisitor;
 use crate::{
     Analysis,
-    analysis::core::callgraph::{CallGraph, CallGraphAnalysis},
+    analysis::core::callgraph::{FnCallMap, CallGraphAnalysis},
 };
 
 pub struct CallGraphAnalyzer<'tcx> {
     pub tcx: TyCtxt<'tcx>,
-    pub graph: CallGraphInfo<'tcx>,
+    pub graph: CallGraph<'tcx>,
 }
 
 impl<'tcx> Analysis for CallGraphAnalyzer<'tcx> {
@@ -32,7 +32,7 @@ impl<'tcx> Analysis for CallGraphAnalyzer<'tcx> {
 }
 
 impl<'tcx> CallGraphAnalysis for CallGraphAnalyzer<'tcx> {
-    fn get_callgraph(&mut self) -> CallGraph {
+    fn get_fn_calls(&self) -> FnCallMap {
         let fn_calls: HashMap<DefId, Vec<DefId>> = self
             .graph
             .fn_calls
@@ -59,7 +59,7 @@ impl<'tcx> CallGraphAnalysis for CallGraphAnalyzer<'tcx> {
                 (caller_id, callees_id)
             })
             .collect();
-        CallGraph { fn_calls }
+        fn_calls
     }
 }
 
@@ -67,7 +67,7 @@ impl<'tcx> CallGraphAnalyzer<'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>) -> Self {
         Self {
             tcx: tcx,
-            graph: CallGraphInfo::new(),
+            graph: CallGraph::new(),
         }
     }
 
@@ -131,13 +131,13 @@ impl Node {
     }
 }
 
-pub struct CallGraphInfo<'tcx> {
+pub struct CallGraph<'tcx> {
     pub functions: HashMap<usize, Node>, // id -> node
     pub fn_calls: HashMap<usize, Vec<(usize, Option<&'tcx mir::Terminator<'tcx>>)>>, // caller_id -> Vec<(callee_id, terminator)>
     pub node_registry: HashMap<String, usize>,                                       // path -> id
 }
 
-impl<'tcx> CallGraphInfo<'tcx> {
+impl<'tcx> CallGraph<'tcx> {
     pub fn new() -> Self {
         Self {
             functions: HashMap::new(),

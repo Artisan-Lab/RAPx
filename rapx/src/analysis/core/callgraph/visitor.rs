@@ -1,4 +1,4 @@
-use super::default::CallGraphInfo;
+use super::default::CallGraph;
 use regex::Regex;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
@@ -9,7 +9,7 @@ pub struct CallGraphVisitor<'b, 'tcx> {
     tcx: TyCtxt<'tcx>,
     def_id: DefId,
     body: &'tcx mir::Body<'tcx>,
-    call_graph_info: &'b mut CallGraphInfo<'tcx>,
+    call_graph_info: &'b mut CallGraph<'tcx>,
 }
 
 impl<'b, 'tcx> CallGraphVisitor<'b, 'tcx> {
@@ -17,7 +17,7 @@ impl<'b, 'tcx> CallGraphVisitor<'b, 'tcx> {
         tcx: TyCtxt<'tcx>,
         def_id: DefId,
         body: &'tcx mir::Body<'tcx>,
-        call_graph_info: &'b mut CallGraphInfo<'tcx>,
+        call_graph_info: &'b mut CallGraph<'tcx>,
     ) -> Self {
         Self {
             tcx: tcx,
