@@ -56,33 +56,33 @@ impl<'tcx> CallGraphAnalyzer<'tcx> {
     }
 
     pub fn start(&mut self) {
-        for local_def_id in self.tcx.iter_local_def_id() {
-            if self.tcx.hir_maybe_body_owned_by(local_def_id).is_some() {
-                let def_id = local_def_id.to_def_id();
-                if self.tcx.is_mir_available(def_id) {
-                    let def_kind = self.tcx.def_kind(def_id);
+        for local_def_id in self.tcx.mir_keys(()) {
+            let def_id = local_def_id.to_def_id();
+            if self.tcx.is_mir_available(def_id) {
+                let def_kind = self.tcx.def_kind(def_id);
 
-                    let body: &Body<'_> = match def_kind {
-                        DefKind::Fn | DefKind::AssocFn => &self.tcx.optimized_mir(def_id),
-                        DefKind::Const
-                        | DefKind::Static { .. }
-                        | DefKind::AssocConst
-                        | DefKind::InlineConst
-                        | DefKind::AnonConst => {
-                            // NOTE: safer fallback for constants
-                            &self.tcx.mir_for_ctfe(def_id)
-                        }
-                        // These don't have MIR or shouldn't be visited
-                        _ => {
-                            rap_debug!("Skipping def_id {:?} with kind {:?}", def_id, def_kind);
-                            continue;
-                        }
-                    };
+                let body: &Body<'_> = match def_kind {
+                    DefKind::Fn | DefKind::AssocFn | DefKind::Closure => {
+                        &self.tcx.optimized_mir(def_id)
+                    }
+                    DefKind::Const
+                    | DefKind::Static { .. }
+                    | DefKind::AssocConst
+                    | DefKind::InlineConst
+                    | DefKind::AnonConst => {
+                        // NOTE: safer fallback for constants
+                        &self.tcx.mir_for_ctfe(def_id)
+                    }
+                    // These don't have MIR or shouldn't be visited
+                    _ => {
+                        rap_debug!("Skipping def_id {:?} with kind {:?}", def_id, def_kind);
+                        continue;
+                    }
+                };
 
-                    let mut call_graph_visitor =
-                        CallGraphVisitor::new(self.tcx, def_id.into(), body, &mut self.graph);
-                    call_graph_visitor.visit();
-                }
+                let mut call_graph_visitor =
+                    CallGraphVisitor::new(self.tcx, def_id.into(), body, &mut self.graph);
+                call_graph_visitor.visit();
             }
         }
     }
