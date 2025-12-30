@@ -1,6 +1,9 @@
 use super::{MopAAResult, assign::*, block::*, types::*, value::*};
 use crate::{
-    analysis::graphs::scc::{Scc, SccExit},
+    analysis::{
+        graphs::scc::{Scc, SccExit},
+        utils::show_mir::display_mir,
+    },
     def_id::*,
     utils::source::*,
 };
@@ -48,9 +51,10 @@ pub struct MopGraph<'tcx> {
 impl<'tcx> MopGraph<'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>, def_id: DefId) -> MopGraph<'tcx> {
         let fn_name = get_fn_name(tcx, def_id);
-        rap_debug!("Building a new MoP graph for: {:?}", fn_name);
+        rap_info!("New a MopGraph for: {:?}", fn_name);
         // handle variables
         let body = tcx.optimized_mir(def_id);
+        display_mir(def_id, body);
         let locals = &body.local_decls;
         let arg_size = body.arg_count;
         let mut values = Vec::<Value>::new();
@@ -262,6 +266,68 @@ impl<'tcx> MopGraph<'tcx> {
                                                 }
                                                 Operand::Constant(_) => {
                                                     // Constants don't need alias analysis
+                                                }
+                                            }
+                                        }
+                                    }
+                                    AggregateKind::Adt(_, _, _, _, _) => {
+                                        // For ADTs (structs/enums), handle field assignments field-sensitively.
+                                        // NOTE: Here we treat the ADT similarly to tuples,
+                                        // but fields might be named and ADT type info is available, so more precise field indexing is possible if needed.
+                                        let lv_ty = lv_place.ty(&body.local_decls, tcx).ty;
+                                        for (field_idx, operand) in operands.iter_enumerated() {
+                                            match operand {
+                                                Operand::Copy(rv_place)
+                                                | Operand::Move(rv_place) => {
+                                                    let rv_local = rv_place.local.as_usize();
+                                                    if values[lv_local].may_drop
+                                                        && values[rv_local].may_drop
+                                                    {
+                                                        // If possible, resolve field type for better analysis. Here we use tuple logic as a template.
+                                                        let field_ty = match lv_ty.kind() {
+                                                            ty::Adt(adt_def, substs) => {
+                                                                // Try getting the field type if available.
+                                                                if field_idx.as_usize()
+                                                                    < adt_def.all_fields().count()
+                                                                {
+                                                                    adt_def
+                                                                        .all_fields()
+                                                                        .nth(field_idx.as_usize())
+                                                                        .map(|f| f.ty(tcx, substs))
+                                                                        .unwrap_or(lv_ty) // fallback
+                                                                } else {
+                                                                    lv_ty
+                                                                }
+                                                            }
+                                                            _ => lv_ty,
+                                                        };
+
+                                                        // Create lv.field_idx Place using tcx.mk_place_field, as for tuples.
+                                                        let lv_field_place = tcx.mk_place_field(
+                                                            lv_place, field_idx, field_ty,
+                                                        );
+
+                                                        let assign = Assignment::new(
+                                                            lv_field_place,
+                                                            *rv_place,
+                                                            if matches!(operand, Operand::Move(_)) {
+                                                                AssignType::Move
+                                                            } else {
+                                                                AssignType::Copy
+                                                            },
+                                                            span,
+                                                        );
+                                                        cur_bb.assignments.push(assign);
+                                                        rap_debug!(
+                                                            "Aggregate ADT field assignment: {:?}.{} = {:?}",
+                                                            lv_place,
+                                                            field_idx.as_usize(),
+                                                            rv_place
+                                                        );
+                                                    }
+                                                }
+                                                Operand::Constant(_) => {
+                                                    // Constants don't need alias analysis for this context.
                                                 }
                                             }
                                         }

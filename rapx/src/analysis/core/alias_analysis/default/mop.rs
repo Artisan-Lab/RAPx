@@ -20,7 +20,6 @@ impl<'tcx> MopGraph<'tcx> {
         fn_map: &mut MopAAResultMap,
         recursion_set: &mut HashSet<DefId>,
     ) {
-        rap_debug!("split check: {:?}", bb_idx);
         /* duplicate the status before visiting a path; */
         let backup_values = self.values.clone(); // duplicate the status when visiting different paths;
         let backup_constant = self.constants.clone();
@@ -39,7 +38,6 @@ impl<'tcx> MopGraph<'tcx> {
         fn_map: &mut MopAAResultMap,
         recursion_set: &mut HashSet<DefId>,
     ) {
-        rap_debug!("split check with cond: {:?}", bb_idx);
         /* duplicate the status before visiting a path; */
         let backup_values = self.values.clone(); // duplicate the status when visiting different paths;
         let backup_constant = self.constants.clone();
@@ -115,7 +113,6 @@ impl<'tcx> MopGraph<'tcx> {
             }
             // The last node is already ouside the scc.
             if let Some(&last_node) = path.last() {
-                rap_debug!("Handle the last node in an scc path: {:?}", last_node);
                 if self.blocks[last_node].scc.nodes.is_empty() {
                     self.check_single_node(last_node, fn_map, recursion_set);
                     self.handle_nexts(last_node, fn_map, Some(path_constraints), recursion_set);
@@ -132,8 +129,8 @@ impl<'tcx> MopGraph<'tcx> {
         fn_map: &mut MopAAResultMap,
         recursion_set: &mut HashSet<DefId>,
     ) {
-        let cur_block = self.blocks[bb_idx].clone();
         rap_debug!("check {:?} as a node", bb_idx);
+        let cur_block = self.blocks[bb_idx].clone();
         self.alias_bb(self.blocks[bb_idx].scc.enter);
         self.alias_bbcall(self.blocks[bb_idx].scc.enter, fn_map, recursion_set);
         if cur_block.next.is_empty() {
@@ -177,24 +174,24 @@ impl<'tcx> MopGraph<'tcx> {
                 {
                     match discr {
                         Copy(p) | Move(p) => {
-                            let place = self.projection(false, *p);
+                            let value_idx = self.projection(*p);
                             let local_decls = &tcx.optimized_mir(self.def_id).local_decls;
                             let place_ty = (*p).ty(local_decls, tcx);
-                            rap_debug!("place {:?}", place);
+                            rap_debug!("value_idx: {:?}", value_idx);
                             match place_ty.ty.kind() {
                                 TyKind::Bool => {
-                                    if let Some(constant) = self.constants.get(&place) {
+                                    if let Some(constant) = self.constants.get(&value_idx) {
                                         if *constant != usize::MAX {
                                             single_target = true;
                                             sw_val = *constant;
                                         }
                                     }
-                                    path_discr_id = place;
+                                    path_discr_id = value_idx;
                                     sw_targets = Some(targets.clone());
                                 }
                                 _ => {
                                     if let Some(father) =
-                                        self.discriminants.get(&self.values[place].local)
+                                        self.discriminants.get(&self.values[value_idx].local)
                                     {
                                         if let Some(constant) = self.constants.get(father) {
                                             if *constant != usize::MAX {
@@ -202,7 +199,7 @@ impl<'tcx> MopGraph<'tcx> {
                                                 sw_val = *constant;
                                             }
                                         }
-                                        if self.values[place].local == place {
+                                        if self.values[value_idx].local == value_idx {
                                             path_discr_id = *father;
                                             sw_targets = Some(targets.clone());
                                         }
@@ -243,7 +240,6 @@ impl<'tcx> MopGraph<'tcx> {
             }
             _ => {
                 // Not SwitchInt
-                rap_debug!("not a switchInt: {:?}, we do nothing", cur_block.next);
             }
         }
         /* End: finish handling SwitchInt */
@@ -466,7 +462,7 @@ impl<'tcx> MopGraph<'tcx> {
         scc_path_set: &mut std::collections::HashSet<Vec<usize>>,
     ) {
         let place = match discr {
-            Copy(p) | Move(p) => Some(self.projection(false, *p)),
+            Copy(p) | Move(p) => Some(self.projection(*p)),
             _ => None,
         };
 

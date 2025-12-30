@@ -197,7 +197,7 @@ fn test_alias_field() {
 #[test]
 fn test_alias_lib_no_caller() {
     let output = running_tests_with_arg("alias/alias_lib_no_caller", "-alias");
-    assert_eq!(output.contains("new\": (0,1.0)"), true);
+    assert_eq!(output.contains("new\": (0.0,1.0)"), true);
 }
 
 #[test]
@@ -227,13 +227,13 @@ fn test_alias_switch() {
 #[test]
 fn test_alias_copy_on_deref() {
     let output = running_tests_with_arg("alias/alias_copy_for_deref", "-alias");
-    assert_eq!(output.contains("new\": (0,1.0)"), true);
+    assert_eq!(output.contains("new\": (0.0,1.0)"), true);
 }
 
 #[test]
 fn test_alias_indirect() {
     let output = running_tests_with_arg("alias/alias_indirect", "-alias");
-    assert_eq!(output.contains("iter_prop\": (0,1.0)"), true);
+    assert_eq!(output.contains("iter_prop\": (0.0,1.0)"), true);
 }
 
 #[test]

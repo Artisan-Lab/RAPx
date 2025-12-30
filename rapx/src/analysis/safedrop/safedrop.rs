@@ -31,9 +31,11 @@ impl<'tcx> SafeDropGraph<'tcx> {
                         return;
                     }
                     let birth = self.mop_graph.blocks[bb_idx].scc.enter;
-                    let local = self.projection(false, place.clone());
+                    let value_idx = self.projection(place.clone());
                     let info = drop.source_info.clone();
-                    self.add_to_drop_record(local, local, birth, &info, false, bb_idx, is_cleanup);
+                    self.add_to_drop_record(
+                        value_idx, value_idx, birth, &info, false, bb_idx, is_cleanup,
+                    );
                 }
                 TerminatorKind::Call {
                     func: _, ref args, ..
@@ -51,7 +53,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
                         if !self.drop_heap_item_check(&place) {
                             return;
                         }
-                        let local = self.projection(false, place.clone());
+                        let local = self.projection(place.clone());
                         let info = drop.source_info.clone();
                         self.add_to_drop_record(
                             local, local, birth, &info, false, bb_idx, is_cleanup,
@@ -235,27 +237,27 @@ impl<'tcx> SafeDropGraph<'tcx> {
                 rap_debug!("{:?}", self.mop_graph.constants);
                 match discr {
                     Copy(p) | Move(p) => {
-                        let place = self.projection(false, *p);
+                        let value_idx = self.projection(*p);
                         let local_decls = &tcx.optimized_mir(self.mop_graph.def_id).local_decls;
                         let place_ty = (*p).ty(local_decls, tcx);
-                        rap_debug!("place {:?}", place);
+                        rap_debug!("value_idx: {:?}", value_idx);
                         match place_ty.ty.kind() {
                             TyKind::Bool => {
                                 rap_debug!("SwitchInt via Bool");
-                                if let Some(constant) = self.mop_graph.constants.get(&place) {
+                                if let Some(constant) = self.mop_graph.constants.get(&value_idx) {
                                     if *constant != usize::MAX {
                                         single_target = true;
                                         sw_val = *constant;
                                     }
                                 }
-                                path_discr_id = place;
+                                path_discr_id = value_idx;
                                 sw_targets = Some(targets.clone());
                             }
                             _ => {
                                 if let Some(father) = self
                                     .mop_graph
                                     .discriminants
-                                    .get(&self.mop_graph.values[place].local)
+                                    .get(&self.mop_graph.values[value_idx].local)
                                 {
                                     if let Some(constant) = self.mop_graph.constants.get(father) {
                                         if *constant != usize::MAX {
@@ -263,7 +265,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
                                             sw_val = *constant;
                                         }
                                     }
-                                    if self.mop_graph.values[place].local == place {
+                                    if self.mop_graph.values[value_idx].local == value_idx {
                                         path_discr_id = *father;
                                         sw_targets = Some(targets.clone());
                                     }

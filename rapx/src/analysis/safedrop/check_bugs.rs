@@ -1,9 +1,6 @@
 use super::{bug_records::TyBug, graph::*};
 use crate::{
-    analysis::{
-        core::alias_analysis::default::{types::TyKind, value::*},
-        utils::fn_info::generate_mir_cfg_dot,
-    },
+    analysis::core::alias_analysis::default::{types::TyKind, value::*},
     utils::source::*,
 };
 use rustc_middle::mir::SourceInfo;
@@ -39,12 +36,13 @@ impl<'tcx> SafeDropGraph<'tcx> {
             .uaf_bugs_output(body, fn_name, self.mop_graph.span);
         self.bug_records
             .dp_bug_output(body, fn_name, self.mop_graph.span);
+        /*
         let _ = generate_mir_cfg_dot(
             self.mop_graph.tcx,
             self.mop_graph.def_id,
             &self.mop_graph.alias_sets,
         );
-        rap_debug!("Alias: {:?}", &self.mop_graph.alias_sets);
+        */
     }
 
     pub fn uaf_check(&mut self, bb_idx: usize, idx: usize, span: Span, is_fncall: bool) {
@@ -92,12 +90,11 @@ impl<'tcx> SafeDropGraph<'tcx> {
             span: span.clone(),
             confidence,
         };
-        rap_debug!("Find use-after-free bug {:?}; add to records", bug);
         if self.bug_records.uaf_bugs.contains_key(&local) {
             return;
         }
+        rap_warn!("Find use-after-free bug {:?}; add to records", bug);
         self.bug_records.uaf_bugs.insert(local, bug);
-        rap_debug!("Find use-after-free bug {:?}; add to records", local);
     }
 
     pub fn sync_drop_record(&mut self, idx: usize) {
@@ -150,7 +147,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
         if flag_cleanup {
             if !self.bug_records.df_bugs_unwind.contains_key(&local) {
                 self.bug_records.df_bugs_unwind.insert(local, bug);
-                rap_debug!(
+                rap_warn!(
                     "Find double free bug {} during unwinding; add to records.",
                     local
                 );
@@ -158,7 +155,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
         } else {
             if !self.bug_records.df_bugs.contains_key(&local) {
                 self.bug_records.df_bugs.insert(local, bug);
-                rap_debug!("Find double free bug {}; add to records.", local);
+                rap_warn!("Find double free bug {}; add to records.", local);
             }
         }
         return true;
@@ -181,7 +178,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
                         confidence,
                     };
                     self.bug_records.dp_bugs_unwind.insert(arg_idx, bug);
-                    rap_debug!(
+                    rap_warn!(
                         "Find dangling pointer {} during unwinding; add to record.",
                         arg_idx
                     );
@@ -202,7 +199,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
                     confidence,
                 };
                 self.bug_records.dp_bugs.insert(0, bug);
-                rap_debug!("Find dangling pointer 0; add to record.");
+                rap_warn!("Find dangling pointer 0; add to record.");
             } else {
                 for arg_idx in 0..self.mop_graph.arg_size + 1 {
                     if self.mop_graph.values[arg_idx].is_ptr()
@@ -221,7 +218,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
                             confidence,
                         };
                         self.bug_records.dp_bugs.insert(arg_idx, bug);
-                        rap_debug!("Find dangling pointer {}; add to record.", arg_idx);
+                        rap_warn!("Find dangling pointer {}; add to record.", arg_idx);
                     }
                 }
             }
@@ -260,7 +257,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
             );
             //drop their alias
             for i in 0..self.mop_graph.values.len() {
-                if !self.mop_graph.union_is_same(idx, i)
+                if !self.mop_graph.is_aliasing(idx, i)
                     || i == idx
                     || self.mop_graph.values[i].is_ref()
                 {
@@ -293,7 +290,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
                     self.mop_graph.values[via_idx].local,
                     birth,
                     info,
-                    false,
+                    true,
                     bb_idx,
                     flag_cleanup,
                 );

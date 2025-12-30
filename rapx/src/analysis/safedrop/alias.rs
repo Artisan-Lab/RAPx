@@ -18,12 +18,31 @@ impl<'tcx> SafeDropGraph<'tcx> {
         }
         let cur_block = self.mop_graph.blocks[bb_index].clone();
         for assign in cur_block.assignments {
-            let lv_idx = self.projection(false, assign.lv);
-            let rv_idx = self.projection(true, assign.rv);
+            let lv_idx = self.projection(assign.lv);
+            let rv_idx = self.projection(assign.rv);
             // We should perform uaf check before alias analysis.
             // Example: *1 = 4; when *1 is dangling.
             // Perfoming alias analysis first would introduce false positives.
             self.uaf_check(bb_index, rv_idx, assign.span, false);
+
+            let lv_local = assign.lv.local.as_usize();
+            let rv_local = assign.rv.local.as_usize();
+
+            // This is a field assignment, we should also add the father to the alias set.
+            // A temp solution; should be fixed;
+            if lv_idx != lv_local {
+                if self.mop_graph.values[lv_idx].field_id != 0 {
+                    continue;
+                }
+                self.mop_graph.assign_alias(lv_local, rv_idx);
+            }
+
+            if rv_idx != rv_local {
+                if self.mop_graph.values[rv_idx].field_id != 0 {
+                    continue;
+                }
+                self.mop_graph.assign_alias(rv_local, lv_idx);
+            }
             self.mop_graph.assign_alias(lv_idx, rv_idx);
             self.fill_birth(lv_idx, self.mop_graph.blocks[bb_index].scc.enter as isize);
 
@@ -36,7 +55,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
                 self.drop_record[lv_idx] = DropRecord::false_record();
                 // Synchronize the status of its aliases as not dropped.
                 for i in 0..self.mop_graph.values.len() {
-                    if self.mop_graph.union_is_same(lv_idx, i) {
+                    if self.mop_graph.is_aliasing(lv_idx, i) {
                         self.drop_record[i] = DropRecord::false_record();
                     }
                 }
@@ -59,7 +78,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
             } = call.kind
             {
                 rap_debug!("alias_bbcall in {:?}: {:?}", bb_index, call);
-                let lv = self.projection(false, destination.clone());
+                let lv = self.projection(destination.clone());
                 self.mop_graph.values[lv].birth =
                     self.mop_graph.blocks[bb_index].scc.enter as isize;
                 let mut merge_vec = Vec::new();
@@ -71,7 +90,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
                 for arg in args {
                     match arg.node {
                         Operand::Copy(ref p) | Operand::Move(ref p) => {
-                            let rv = self.projection(true, p.clone());
+                            let rv = self.projection(p.clone());
                             self.uaf_check(bb_index, rv, call.source_info.span, true);
                             merge_vec.push(rv);
                             if self.mop_graph.values[rv].may_drop {
@@ -127,7 +146,7 @@ impl<'tcx> SafeDropGraph<'tcx> {
     pub fn fill_birth(&mut self, node: usize, birth: isize) {
         self.mop_graph.values[node].birth = birth;
         for i in 0..self.mop_graph.values.len() {
-            if self.mop_graph.union_is_same(i, node) && self.mop_graph.values[i].birth == -1 {
+            if self.mop_graph.is_aliasing(i, node) && self.mop_graph.values[i].birth == -1 {
                 self.mop_graph.values[i].birth = birth;
             }
         }
@@ -142,16 +161,13 @@ impl<'tcx> SafeDropGraph<'tcx> {
      * If the id is not a ref (e.g., 1.0), we project it to the value index.
      *
      */
-    pub fn projection(&mut self, _is_right: bool, place: Place<'tcx>) -> usize {
+    pub fn projection(&mut self, place: Place<'tcx>) -> usize {
         let local = place.local.as_usize();
         let mut value_idx = local;
         for proj in place.projection {
             let new_value_idx = self.mop_graph.values.len();
             match proj {
                 ProjectionElem::Deref => {}
-                /*
-                 * Objective: 2 = 1.0; 0 = 2.0; => 0 = 1.0.0
-                 */
                 ProjectionElem::Field(field, ty) => {
                     let field_idx = field.as_usize();
                     if !self.mop_graph.values[local].fields.contains_key(&field_idx) {
