@@ -1049,52 +1049,7 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> VarNode<'tcx, T> {
         let value = self.get_value();
     }
 }
-// impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> VarNode<'tcx, T> {
-//     pub fn new(v: &'tcx Place<'tcx>) -> Self {
-//         Self {
-//             v,
-//             interval: Range::default(T::min_value()),
-//             abstract_state: '?',
-//         }
-//     }
 
-//     /// Initializes the value of the node.
-//     pub fn init(&mut self, outside: bool) {
-//         let value = self.get_value();
-//     }
-
-//     /// Returns the range of the variable represented by this node.
-//     pub fn get_range(&self) -> &Range<T> {
-//         &self.interval
-//     }
-
-//     /// Returns the variable represented by this node.
-//     pub fn get_value(&self) -> &'tcx Place<'tcx> {
-//         self.v
-//     }
-
-//     /// Changes the status of the variable represented by this node.
-//     pub fn set_range(&mut self, new_interval: Range<T>) {
-//         self.interval = new_interval;
-//     }
-
-//     /// Pretty print.
-//     pub fn print(&self, os: &mut dyn std::io::Write) {
-//         // Implementation of pretty printing using the `os` writer.
-//     }
-//     pub fn set_default(&mut self) {
-//         self.interval.set_default();
-//     }
-
-//     pub fn get_abstract_state(&self) -> char {
-//         self.abstract_state
-//     }
-
-//     /// The possible states are '0', '+', '-', and '?'.
-//     pub fn store_abstract_state(&mut self) {
-//         // Implementation of storing the abstract state.
-//     }
-// }
 #[derive(Debug, Clone)]
 pub struct ValueBranchMap<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     v: &'tcx Place<'tcx>,         // The value associated with the branch

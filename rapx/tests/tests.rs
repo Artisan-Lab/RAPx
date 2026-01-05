@@ -408,7 +408,7 @@ fn test_symbolic_interval() {
 
     let expected_ranges = vec![
         "Var: (_5.0: i32). [ Binary(AddWithOverflow, Place(_1), Constant(Val(Scalar(0x00000001), i32))) , Binary(AddWithOverflow, Place(_1), Constant(Val(Scalar(0x00000001), i32))) ]",
-        "Var: _6. [ Place(_1) , Place(_1) ]"   ,
+        "Var: _6. [ Place(_1) , Place(_1) ]",
         "Var: _8. [ Constant(Val(Scalar(0x00000001), i32)) , Constant(Val(Scalar(0x00000001), i32)) ]",
     ];
 
