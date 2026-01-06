@@ -11,7 +11,7 @@ use rustc_middle::ty::TyCtxt;
 use crate::{
     analysis::{
         core::{
-            alias_analysis::default::{AliasAnalyzer, MopAAResultMap},
+            alias_analysis::default::{AliasAnalyzer, MopFnAliasMap},
             ownedheap_analysis::{OHAResultMap, OwnedHeapAnalysis, default::OwnedHeapAnalyzer},
         },
         graphs::scc::Scc,
@@ -35,6 +35,8 @@ impl<'tcx> SafeDrop<'tcx> {
         let mut mop = AliasAnalyzer::new(self.tcx);
         mop.run();
         let fn_map = mop.get_all_fn_alias_raw();
+        rap_info!("================================");
+        rap_info!("Aliases found: {:?}", fn_map);
 
         let mut heap = OwnedHeapAnalyzer::new(self.tcx);
         heap.run();
@@ -52,12 +54,7 @@ impl<'tcx> SafeDrop<'tcx> {
     }
 }
 
-pub fn query_safedrop(
-    tcx: TyCtxt,
-    fn_map: &MopAAResultMap,
-    def_id: DefId,
-    adt_owner: OHAResultMap,
-) {
+pub fn query_safedrop(tcx: TyCtxt, fn_map: &MopFnAliasMap, def_id: DefId, adt_owner: OHAResultMap) {
     let fn_name = get_fn_name(tcx, def_id);
     if fn_name
         .as_ref()

@@ -2,7 +2,7 @@ use crate::{
     analysis::{
         Analysis,
         core::{
-            alias_analysis::AAResult,
+            alias_analysis::FnAliasPairs,
             ownedheap_analysis::OHAResultMap,
             range_analysis::{RangeAnalysis, default::RangeAnalyzer},
         },
@@ -151,7 +151,7 @@ impl<'tcx> BodyVisitor<'tcx> {
     /// Returns an InterResultNode merging all path results.
     pub fn path_forward_check(
         &mut self,
-        fn_map: &FxHashMap<DefId, AAResult>,
+        fn_map: &FxHashMap<DefId, FnAliasPairs>,
     ) -> InterResultNode<'tcx> {
         let mut inter_return_value =
             InterResultNode::construct_from_var_node(self.chains.clone(), 0);
@@ -234,7 +234,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         path_index: usize,
         bb_index: usize,
         next_block: Option<usize>,
-        fn_map: &FxHashMap<DefId, AAResult>,
+        fn_map: &FxHashMap<DefId, FnAliasPairs>,
     ) {
         for statement in block.statements.iter() {
             self.path_analyze_statement(statement, path_index);
@@ -495,7 +495,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         path_index: usize,
         bb_index: usize,
         next_block: Option<usize>,
-        fn_map: &FxHashMap<DefId, AAResult>,
+        fn_map: &FxHashMap<DefId, FnAliasPairs>,
     ) {
         match &terminator.kind {
             TerminatorKind::Call {
@@ -605,7 +605,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         def_id: &DefId,
         args: &Box<[Spanned<Operand<'tcx>>]>,
         path_index: usize,
-        fn_map: &FxHashMap<DefId, AAResult>,
+        fn_map: &FxHashMap<DefId, FnAliasPairs>,
         fn_span: Span,
         generic_mapping: FxHashMap<String, Ty<'tcx>>,
     ) {
@@ -670,18 +670,18 @@ impl<'tcx> BodyVisitor<'tcx> {
     }
 
     /// Merge function-level alias results into internal chains and value domains.
-    /// Uses cached alias analysis (AAResult) to connect return/arg relationships.
+    /// Uses cached alias analysis (FnAliasPairs) to connect return/arg relationships.
     pub fn handle_ret_alias(
         &mut self,
         dst_place: &Place<'tcx>,
         def_id: &DefId,
-        fn_map: &FxHashMap<DefId, AAResult>,
+        fn_map: &FxHashMap<DefId, FnAliasPairs>,
         args: &Box<[Spanned<Operand>]>,
     ) {
         let d_local = self.handle_proj(false, dst_place.clone());
         if let Some(retalias) = fn_map.get(def_id) {
             for alias_set in retalias.aliases() {
-                let (l, r) = (alias_set.lhs_no, alias_set.rhs_no);
+                let (l, r) = (alias_set.left_local, alias_set.right_local);
                 let (l_fields, r_fields) =
                     (alias_set.lhs_fields.clone(), alias_set.rhs_fields.clone());
                 let (l_place, r_place) = (

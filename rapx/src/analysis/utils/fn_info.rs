@@ -9,7 +9,7 @@ use crate::analysis::{
 use crate::def_id::*;
 use crate::{rap_debug, rap_warn};
 use rustc_ast::ItemKind;
-use rustc_data_structures::fx::FxHashMap;
+use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_hir::{
     Attribute, ImplItemKind, Safety,
     def::DefKind,
@@ -1380,13 +1380,12 @@ pub fn get_all_std_fns_by_rustc_public(tcx: TyCtxt) -> Vec<DefId> {
 pub fn generate_mir_cfg_dot<'tcx>(
     tcx: TyCtxt<'tcx>,
     def_id: DefId,
-    alias_set: &[usize],
+    alias_sets: &Vec<FxHashSet<usize>>,
 ) -> Result<(), std::io::Error> {
     let mir = tcx.optimized_mir(def_id);
 
     let mut dot_content = String::new();
 
-    let alias_sets = convert_alias_to_sets(alias_set.to_vec());
     let alias_info_str = format!("Alias Sets: {:?}", alias_sets);
 
     dot_content.push_str(&format!(
@@ -1474,26 +1473,6 @@ pub fn generate_mir_cfg_dot<'tcx>(
     render_dot_string(name, dot_content);
     rap_debug!("render dot for {:?}", def_id);
     Ok(())
-}
-
-pub fn convert_alias_to_sets(alias_map: Vec<usize>) -> Vec<Vec<usize>> {
-    let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
-
-    for (local_id, &representative) in alias_map.iter().enumerate() {
-        groups
-            .entry(representative)
-            .or_insert_with(Vec::new)
-            .push(local_id);
-    }
-
-    let mut result: Vec<Vec<usize>> = groups.into_values().collect();
-
-    for group in &mut result {
-        group.sort();
-    }
-    result.sort_by_key(|group| group[0]);
-
-    result
 }
 
 // Input the adt def id

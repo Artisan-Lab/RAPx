@@ -22,7 +22,7 @@ use visitor::{BodyVisitor, CheckResult};
 
 use crate::analysis::{
     Analysis,
-    core::alias_analysis::{AAResult, AliasAnalysis, default::AliasAnalyzer},
+    core::alias_analysis::{AliasAnalysis, FnAliasPairs, default::AliasAnalyzer},
     upg::{fn_collector::FnCollector, hir_visitor::ContainsUnsafe},
     utils::fn_info::*,
 };
@@ -198,7 +198,7 @@ impl<'tcx> SenryxCheck<'tcx> {
 
     /// Run soundness checks on a single function identified by `def_id` using
     /// the provided alias analysis map `fn_map`.
-    pub fn check_soundness(&mut self, def_id: DefId, fn_map: &FxHashMap<DefId, AAResult>) {
+    pub fn check_soundness(&mut self, def_id: DefId, fn_map: &FxHashMap<DefId, FnAliasPairs>) {
         let check_results = self.body_visit_and_check(def_id, fn_map);
         let tcx = self.tcx;
         if !check_results.is_empty() {
@@ -224,7 +224,7 @@ impl<'tcx> SenryxCheck<'tcx> {
     pub fn body_visit_and_check(
         &mut self,
         def_id: DefId,
-        fn_map: &FxHashMap<DefId, AAResult>,
+        fn_map: &FxHashMap<DefId, FnAliasPairs>,
     ) -> Vec<CheckResult> {
         // Create a body visitor for the target function
         let mut body_visitor = BodyVisitor::new(self.tcx, def_id, 0);

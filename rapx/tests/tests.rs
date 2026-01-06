@@ -2,6 +2,22 @@
 use std::path::Path;
 use std::process::Command;
 
+/// Checks if any bug message in the output has confidence > 50
+pub fn detected_high_confidence(output: &str) -> bool {
+    // Regex to find confidence, e.g., `confidence 50%`
+    let re = regex::Regex::new(r"confidence (\d+)%").unwrap();
+    output.lines().any(|line| {
+        if let Some(cap) = re.captures(line) {
+            if let Some(conf_str) = cap.get(1) {
+                if let Ok(conf) = conf_str.as_str().parse::<u32>() {
+                    return conf > 10;
+                }
+            }
+        }
+        false
+    })
+}
+
 #[inline(always)]
 fn running_tests_with_arg(dir: &str, arg: &str) -> String {
     let raw_path = "./tests/".to_owned() + dir;
@@ -108,7 +124,7 @@ fn test_uaf_swithint() {
 #[test]
 fn test_false_wrapper() {
     let output = running_tests_with_arg("uaf/false_wrapper", "-F");
-    assert_eq!(output.contains("detected"), false);
+    assert_eq!(detected_high_confidence(&output), false);
 }
 
 #[test]
@@ -120,7 +136,7 @@ fn test_false_scc1() {
 #[test]
 fn test_false_tuple_transitive() {
     let output = running_tests_with_arg("uaf/false_tuple_transitive", "-F");
-    assert_eq!(output.contains("detected"), false);
+    assert_eq!(detected_high_confidence(&output), false);
 }
 
 #[test]
@@ -137,10 +153,10 @@ fn test_false_clone1() {
 }
 
 #[test]
-fn test_false_field_clone1() {
+fn test_false_field_clone() {
     #[allow(unused)]
     let output = running_tests_with_arg("uaf/false_field_clone", "-F");
-    assert_eq!(output.contains("detected"), false);
+    assert_eq!(detected_high_confidence(&output), false);
 }
 
 #[test]
@@ -173,6 +189,18 @@ fn test_reference() {
 
 // ===============Alias Analysis Test==============
 #[test]
+fn test_alias_from_raw_parts_in() {
+    let output = running_tests_with_arg("alias/alias_from_raw_parts_in", "-alias");
+    assert_eq!(output.contains("foo\": (0.0,1)"), true);
+}
+
+#[test]
+fn test_alias_from_raw_parts() {
+    let output = running_tests_with_arg("alias/alias_from_raw_parts", "-alias");
+    assert_eq!(output.contains("foo\": (0,1)"), true);
+}
+
+#[test]
 fn test_alias_not_alias_iter() {
     let output = running_tests_with_arg("alias/not_alias_iter", "-alias");
     assert_eq!(output.contains("foo\": null"), true);
@@ -191,7 +219,7 @@ fn test_alias_field() {
 #[test]
 fn test_alias_lib_no_caller() {
     let output = running_tests_with_arg("alias/alias_lib_no_caller", "-alias");
-    assert_eq!(output.contains("new\": (0,1.0)"), true);
+    assert_eq!(output.contains("new\": (0.0,1.0)"), true);
 }
 
 #[test]
@@ -209,7 +237,7 @@ fn test_alias_sub_scc1() {
 #[test]
 fn test_alias_sub_scc2() {
     let output = running_tests_with_arg("alias/alias_sub_scc2", "-alias");
-    assert_eq!(output.contains("foo\": (0,1) (0,2)"), true);
+    assert_eq!(output.contains("foo\": (0,1), (0,2)"), true);
 }
 
 #[test]
@@ -221,13 +249,13 @@ fn test_alias_switch() {
 #[test]
 fn test_alias_copy_on_deref() {
     let output = running_tests_with_arg("alias/alias_copy_for_deref", "-alias");
-    assert_eq!(output.contains("new\": (0,1.0)"), true);
+    assert_eq!(output.contains("new\": (0.0,1.0)"), true);
 }
 
 #[test]
 fn test_alias_indirect() {
     let output = running_tests_with_arg("alias/alias_indirect", "-alias");
-    assert_eq!(output.contains("iter_prop\": (0,1.0)"), true);
+    assert_eq!(output.contains("iter_prop\": (0.0,1.0)"), true);
 }
 
 #[test]

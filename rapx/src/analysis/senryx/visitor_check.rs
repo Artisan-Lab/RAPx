@@ -8,7 +8,7 @@ use super::{
 use crate::{
     analysis::{
         core::{
-            alias_analysis::AAResult,
+            alias_analysis::FnAliasPairs,
             dataflow::{DataFlowAnalysis, default::DataFlowAnalyzer},
         },
         senryx::{
@@ -42,7 +42,7 @@ impl<'tcx> BodyVisitor<'tcx> {
         def_id: &DefId,
         args: &[Spanned<Operand>],
         _path_index: usize,
-        _fn_map: &FxHashMap<DefId, AAResult>,
+        _fn_map: &FxHashMap<DefId, FnAliasPairs>,
         fn_span: Span,
         fn_result: UnsafeApi,
         generic_mapping: FxHashMap<String, Ty<'tcx>>,

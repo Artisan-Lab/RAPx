@@ -23,5 +23,3 @@ impl PropList {
         Iterator::new(raw_ptr)
     }
 }
-
-fn main() {}

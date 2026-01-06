@@ -7,25 +7,63 @@ use rustc_span::def_id::DefId;
 use std::{fmt, usize, vec::Vec};
 
 #[derive(Debug, Copy, Clone)]
+pub struct LocalSpot {
+    pub bb: Option<usize>,
+    pub local: Option<usize>,
+}
+
+impl LocalSpot {
+    pub fn new(bb: usize, local: usize) -> Self {
+        LocalSpot {
+            bb: Some(bb),
+            local: Some(local),
+        }
+    }
+    pub fn from_local(local: usize) -> Self {
+        LocalSpot {
+            bb: None,
+            local: Some(local),
+        }
+    }
+    pub fn default() -> Self {
+        LocalSpot {
+            bb: None,
+            local: None,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
 pub struct DropRecord {
+    pub value_index: usize,
     pub is_dropped: bool,
-    pub drop_at_bb: usize,
-    pub drop_via_local: usize,
+    pub drop_info: LocalSpot,
+    pub has_dropped_field: bool,
 }
 
 impl DropRecord {
-    pub fn new(is_dropped: bool, drop_at_bb: usize, drop_via_local: usize) -> Self {
+    pub fn new(value_index: usize, is_dropped: bool, drop_info: LocalSpot) -> Self {
         DropRecord {
+            value_index,
             is_dropped,
-            drop_at_bb,
-            drop_via_local,
+            drop_info,
+            has_dropped_field: false,
         }
     }
-    pub fn false_record() -> Self {
+    pub fn false_record(value_index: usize) -> Self {
         DropRecord {
+            value_index,
             is_dropped: false,
-            drop_at_bb: usize::MAX,
-            drop_via_local: usize::MAX,
+            drop_info: LocalSpot::default(),
+            has_dropped_field: false,
+        }
+    }
+    pub fn from(value_index: usize, record: &DropRecord) -> Self {
+        DropRecord {
+            value_index,
+            is_dropped: record.is_dropped,
+            drop_info: record.drop_info.clone(),
+            has_dropped_field: record.has_dropped_field,
         }
     }
 }
@@ -35,7 +73,6 @@ impl DropRecord {
 pub struct SafeDropGraph<'tcx> {
     pub mop_graph: MopGraph<'tcx>,
     pub bug_records: BugRecords,
-    // a threhold to avoid path explosion.
     pub drop_record: Vec<DropRecord>,
     // analysis of heap item
     pub adt_owner: OHAResultMap,
@@ -45,8 +82,8 @@ impl<'tcx> SafeDropGraph<'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>, def_id: DefId, adt_owner: OHAResultMap) -> Self {
         let mop_graph = MopGraph::new(tcx, def_id);
         let mut drop_record = Vec::<DropRecord>::new();
-        for _v in &mop_graph.values {
-            drop_record.push(DropRecord::false_record());
+        for v in &mop_graph.values {
+            drop_record.push(DropRecord::false_record(v.index));
         }
 
         SafeDropGraph {

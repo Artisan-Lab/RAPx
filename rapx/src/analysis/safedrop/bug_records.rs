@@ -8,12 +8,12 @@ use crate::utils::log::{
 };
 use rustc_middle::mir::{Body, HasLocalDecls, Local};
 
+use super::graph::LocalSpot;
+
 #[derive(Debug)]
 pub struct TyBug {
-    pub drop_bb: usize,
-    pub drop_id: usize,
-    pub trigger_bb: usize,
-    pub trigger_id: usize,
+    pub drop_info: LocalSpot,
+    pub trigger_info: LocalSpot,
     pub span: Span,
     pub confidence: usize,
 }
@@ -54,15 +54,15 @@ impl BugRecords {
             body, &self.df_bugs, fn_name, span,
             "Double free detected",
             "Double free detected.",
-            |bug, drop_name, trigger_name, drop_bb_str, trigger_bb_str| {
+            |bug, drop_local, trigger_local, drop_bb, trigger_bb| {
                 format!(
                     "Double free (confidence {}%): Location in file {} line {}.\n    | MIR detail: Value {} and {} are alias.\n    | MIR detail: {} is dropped at {}; {} is dropped at {}.",
                     bug.confidence,
                     span_to_filename(bug.span),
                     span_to_line_number(bug.span),
-                    drop_name, trigger_name,
-                    drop_name, drop_bb_str,
-                    trigger_name, trigger_bb_str
+                    drop_local, trigger_local,
+                    drop_local, drop_bb,
+                    trigger_local, trigger_bb
                 )
             }
         );
@@ -71,15 +71,15 @@ impl BugRecords {
             body, &self.df_bugs_unwind, fn_name, span,
             "Double free detected",
             "Double free detected during unwinding.",
-            |bug, drop_name, trigger_name, drop_bb_str, trigger_bb_str| {
+            |bug, drop_local, trigger_local, drop_bb, trigger_bb| {
                 format!(
                     "Double free (confidence {}%): Location in file {} line {}.\n    | MIR detail: Value {} and {} are alias.\n    | MIR detail: {} is dropped at {}; {} is dropped at {}.",
                     bug.confidence,
                     span_to_filename(bug.span),
                     span_to_line_number(bug.span),
-                    drop_name, trigger_name,
-                    drop_name, drop_bb_str,
-                    trigger_name, trigger_bb_str
+                    drop_local, trigger_local,
+                    drop_local, drop_bb,
+                    trigger_local, trigger_bb
                 )
             }
         );
@@ -90,15 +90,15 @@ impl BugRecords {
             body, &self.uaf_bugs, fn_name, span,
             "Use-after-free detected",
             "Use-after-free detected.",
-            |bug, drop_name, trigger_name, drop_bb_str, trigger_bb_str| {
+            |bug, drop_local, trigger_local, drop_bb, trigger_bb| {
                 format!(
                     "Use-after-free (confidence {}%): Location in file {} line {}.\n    | MIR detail: Value {} and {} are alias.\n    | MIR detail: {} is dropped at {}; {} is used at {}.",
                     bug.confidence,
                     span_to_filename(bug.span),
                     span_to_line_number(bug.span),
-                    drop_name, trigger_name,
-                    drop_name, drop_bb_str,
-                    trigger_name, trigger_bb_str
+                    drop_local, trigger_local,
+                    drop_local, drop_bb,
+                    trigger_local, trigger_bb
                 )
             }
         );
@@ -109,15 +109,15 @@ impl BugRecords {
             body, &self.dp_bugs, fn_name, span,
             "Dangling pointer detected",
             "Dangling pointer detected.",
-            |bug, drop_name, trigger_name, drop_bb_str, _trigger_bb_str| {
+            |bug, drop_local, trigger_local, drop_bb, _trigger_bb| {
                 format!(
                     "Dangling pointer (confidence {}%): Location in file {} line {}.\n    | MIR detail: Value {} and {} are alias.\n    | MIR detail: {} is dropped at {}; {} became dangling.",
                     bug.confidence,
                     span_to_filename(bug.span),
                     span_to_line_number(bug.span),
-                    drop_name, trigger_name,
-                    drop_name, drop_bb_str,
-                    trigger_name,
+                    drop_local, trigger_local,
+                    drop_local, drop_bb,
+                    trigger_local,
                 )
             }
         );
@@ -126,15 +126,15 @@ impl BugRecords {
             body, &self.dp_bugs_unwind, fn_name, span,
             "Dangling pointer detected during unwinding",
             "Dangling pointer detected during unwinding.",
-            |bug, drop_name, trigger_name, drop_bb_str, _trigger_bb_str| {
+            |bug, drop_local, trigger_local, drop_bb, _trigger_bb| {
                 format!(
                     "Dangling pointer (confidence {}%): Location in file {} line {}.\n    | MIR detail: Value {} and {} are alias.\n    | MIR detail: {} is dropped at {}; {} became dangling.",
                     bug.confidence,
                     span_to_filename(bug.span),
                     span_to_line_number(bug.span),
-                    drop_name, trigger_name,
-                    drop_name, drop_bb_str,
-                    trigger_name,
+                    drop_local, trigger_local,
+                    drop_local, drop_bb,
+                    trigger_local,
                 )
             }
         );
@@ -164,7 +164,7 @@ impl BugRecords {
 
         for bug in bugs.values() {
             if are_spans_in_same_file(span, bug.span) {
-                let format_debug_info = |id: usize| -> String {
+                let format_local_info = |id: usize| -> String {
                     if id >= body.local_decls().len() {
                         return format!("UNKNWON(_{}) in {}", id, fn_name.as_str());
                     }
@@ -192,18 +192,29 @@ impl BugRecords {
                     format!("BB{}({})", bb_id, location)
                 };
 
-                let drop_name = format_debug_info(bug.drop_id);
-                let trigger_name = format_debug_info(bug.trigger_id);
-                let drop_bb_str = format_bb_info(bug.drop_bb);
-                let trigger_bb_str = format_bb_info(bug.trigger_bb);
+                let drop_bb = if let Some(bb) = bug.drop_info.bb {
+                    format_bb_info(bb)
+                } else {
+                    String::from("NA")
+                };
+                let drop_local = if let Some(local) = bug.drop_info.local {
+                    format_local_info(local)
+                } else {
+                    String::from("NA")
+                };
+                let trigger_bb = if let Some(bb) = bug.trigger_info.bb {
+                    format_bb_info(bb)
+                } else {
+                    String::from("NA")
+                };
+                let trigger_local = if let Some(local) = bug.trigger_info.local {
+                    format_local_info(local)
+                } else {
+                    String::from("NA")
+                };
 
-                let detail = detail_formatter(
-                    bug,
-                    &drop_name,
-                    &trigger_name,
-                    &drop_bb_str,
-                    &trigger_bb_str,
-                );
+                let detail =
+                    detail_formatter(bug, &drop_local, &trigger_local, &drop_bb, &trigger_bb);
 
                 let mut snippet = Snippet::source(&code_source)
                     .line_start(span_to_line_number(span))

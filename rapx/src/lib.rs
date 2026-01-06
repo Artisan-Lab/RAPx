@@ -32,9 +32,9 @@ use crate::analysis::scan::ScanAnalysis;
 use analysis::{
     Analysis,
     core::{
-        alias_analysis::{AAResultMapWrapper, AliasAnalysis, default::AliasAnalyzer},
+        alias_analysis::{AliasAnalysis, FnAliasMapWrapper, default::AliasAnalyzer},
         api_dependency::ApiDependencyAnalyzer,
-        callgraph::{CallGraphAnalysis, CallGraphDisplay, default::CallGraphAnalyzer},
+        callgraph::{CallGraphAnalysis, FnCallDisplay, default::CallGraphAnalyzer},
         dataflow::{
             Arg2RetMapWrapper, DataFlowAnalysis, DataFlowGraphMapWrapper, default::DataFlowAnalyzer,
         },
@@ -427,7 +427,7 @@ pub fn start_analyzer(tcx: TyCtxt, callback: &RapCallback) {
         let mut analyzer = AliasAnalyzer::new(tcx);
         analyzer.run();
         let alias = analyzer.get_local_fn_alias();
-        rap_info!("{}", AAResultMapWrapper(alias));
+        rap_info!("{}", FnAliasMapWrapper(alias));
     }
 
     if callback.is_api_dependency_enabled() {
@@ -445,11 +445,11 @@ pub fn start_analyzer(tcx: TyCtxt, callback: &RapCallback) {
     if callback.is_callgraph_enabled() {
         let mut analyzer = CallGraphAnalyzer::new(tcx);
         analyzer.run();
-        let callgraph = analyzer.get_callgraph();
+        let callgraph = analyzer.get_fn_calls();
         rap_info!(
             "{}",
-            CallGraphDisplay {
-                graph: &callgraph,
+            FnCallDisplay {
+                fn_calls: &callgraph,
                 tcx
             }
         );

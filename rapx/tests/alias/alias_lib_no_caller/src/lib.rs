@@ -15,5 +15,3 @@ impl<'a> Iter {
         Iter { ptr: item.ptr }
     }
 }
-
-fn main() {}

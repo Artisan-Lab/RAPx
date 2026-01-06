@@ -1,54 +1,78 @@
 use crate::analysis::core::alias_analysis::default::types::TyKind;
 use rustc_data_structures::fx::FxHashMap;
 
+/// Represents a value node in the alias analysis graph.
+/// Each value may correspond to local variables, or fields of structures temporarily crated in the alias analysis
 #[derive(Debug, Clone)]
 pub struct Value {
-    pub index: usize, // node index; this could be the field of a value.
-    pub local: usize, // This is the real local; The range of index is generally larger than local.
+    /// A unique value index, which is the same as `local` if the number within the range of local
+    /// variables; When encountering fields (e.g., 1.1), the index points to the unique field of the local.
+    pub index: usize,
+    /// Real local variable identifier in mir.
+    pub local: usize,
+    /// Indicates whether this value needs to be dropped at the end of its lifetime.
     pub need_drop: bool,
+    /// Indicates whether this value may need to be dropped (uncertain drop semantics).
     pub may_drop: bool,
+    /// The type of this value node (see `TyKind`).
     pub kind: TyKind,
-    pub father: usize,
-    pub field_id: usize, // the field id of its father node.
-    pub birth: isize,
+    /// Information about this value’s parent, if it is a field of a parent node.
+    pub father: Option<FatherInfo>,
+    /// Mapping from field IDs to their value node IDs for field accesses.
+    /// First field: field id; Second field: value id;
     pub fields: FxHashMap<usize, usize>,
 }
 
+/// Represents the relation between a field and its parent (father).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FatherInfo {
+    /// The value ID of the parent node.
+    pub father_value_id: usize,
+    /// The ID of the field within the parent.
+    pub field_id: usize,
+}
+
+impl FatherInfo {
+    /// Construct a new `FatherInfo` with the specified father value ID and field ID.
+    pub fn new(father_value_id: usize, field_id: usize) -> Self {
+        FatherInfo {
+            father_value_id,
+            field_id,
+        }
+    }
+}
+
 impl Value {
+    /// Create a new value node with the provided properties.
+    /// The `kind` defaults to `TyKind::Adt` and `father` defaults to `None`.
     pub fn new(index: usize, local: usize, need_drop: bool, may_drop: bool) -> Self {
         Value {
             index,
             local,
             need_drop,
-            father: local,
-            field_id: usize::MAX,
-            birth: 0,
             may_drop,
             kind: TyKind::Adt,
+            father: None,
             fields: FxHashMap::default(),
         }
     }
 
-    pub fn drop(&mut self) {
-        self.birth = -1;
-    }
-
-    pub fn is_alive(&self) -> bool {
-        self.birth > -1
-    }
-
+    /// Returns whether this value is a tuple type.
     pub fn is_tuple(&self) -> bool {
         self.kind == TyKind::Tuple
     }
 
+    /// Returns whether this value is a pointer (raw pointer or reference).
     pub fn is_ptr(&self) -> bool {
         self.kind == TyKind::RawPtr || self.kind == TyKind::Ref
     }
 
+    /// Returns whether this value is a reference type.
     pub fn is_ref(&self) -> bool {
         self.kind == TyKind::Ref
     }
 
+    /// Returns whether this value is of a corner case type as defined in `TyKind`.
     pub fn is_corner_case(&self) -> bool {
         self.kind == TyKind::CornerCase
     }

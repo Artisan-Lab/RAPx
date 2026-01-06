@@ -1,7 +1,7 @@
 use crate::analysis::{
     Analysis,
     core::{
-        alias_analysis::{AAResultMapWrapper, AliasAnalysis, default::AliasAnalyzer},
+        alias_analysis::{AliasAnalysis, FnAliasMapWrapper, default::AliasAnalyzer},
         dataflow::{Arg2RetMapWrapper, DataFlowAnalysis, default::DataFlowAnalyzer},
         ownedheap_analysis::{OHAResultMapWrapper, OwnedHeapAnalysis, default::OwnedHeapAnalyzer},
         range_analysis::{PathConstraintMapWrapper, RangeAnalysis, default::RangeAnalyzer},
@@ -23,7 +23,7 @@ impl<'tcx> Test<'tcx> {
         let mut alias_analysis = AliasAnalyzer::new(self.tcx);
         alias_analysis.run();
         let result = alias_analysis.get_local_fn_alias();
-        rap_info!("{}", AAResultMapWrapper(result));
+        rap_info!("{}", FnAliasMapWrapper(result));
 
         let mut dataflow_analysis = DataFlowAnalyzer::new(self.tcx, false);
         dataflow_analysis.run();
