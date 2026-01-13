@@ -1,16 +1,16 @@
 extern crate rustc_mir_dataflow;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
-use rustc_index::IndexVec;
 use rustc_middle::{
-    mir::{Body, CallReturnPlaces, Local, Location, Place, Statement, Terminator, TerminatorEdges},
-    ty::TyCtxt,
+    mir::{Body, CallReturnPlaces, Location, Place, Statement, Terminator, TerminatorEdges},
+    ty::{self, Ty, TyCtxt, TypingEnv},
 };
 use rustc_mir_dataflow::{Analysis, JoinSemiLattice};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use super::super::{FnAliasMap, FnAliasPairs};
+use super::super::FnAliasMap;
+use crate::analysis::core::alias_analysis::default::types::is_not_drop;
 
 /// Place identifier supporting field-sensitive analysis
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -69,6 +69,85 @@ impl<'tcx> PlaceInfo<'tcx> {
             may_drop: Vec::new(),
             need_drop: Vec::new(),
             num_places: 0,
+        }
+    }
+
+    /// Build PlaceInfo from MIR body
+    pub fn build(tcx: TyCtxt<'tcx>, def_id: DefId, body: &'tcx Body<'tcx>) -> Self {
+        let mut info = Self::new();
+        let ty_env = TypingEnv::post_analysis(tcx, def_id);
+
+        // Register all locals first
+        for (local, local_decl) in body.local_decls.iter_enumerated() {
+            let ty = local_decl.ty;
+            let need_drop = ty.needs_drop(tcx, ty_env);
+            let may_drop = !is_not_drop(tcx, ty);
+
+            let place_id = PlaceId::Local(local.as_usize());
+            info.register_place(place_id.clone(), may_drop, need_drop);
+
+            // Create fields for this type recursively
+            info.create_fields_for_type(tcx, ty, place_id, 0);
+        }
+
+        info
+    }
+
+    /// Recursively create field PlaceIds for a type
+    fn create_fields_for_type(
+        &mut self,
+        tcx: TyCtxt<'tcx>,
+        ty: Ty<'tcx>,
+        base_place: PlaceId,
+        depth: usize,
+    ) {
+        // Limit recursion depth to avoid infinite loops
+        const MAX_FIELD_DEPTH: usize = 5;
+        if depth >= MAX_FIELD_DEPTH {
+            return;
+        }
+
+        match ty.kind() {
+            // For ADTs (structs/enums), create fields
+            ty::Adt(adt_def, substs) => {
+                for (field_idx, field) in adt_def.all_fields().enumerate() {
+                    let field_ty = field.ty(tcx, substs);
+                    let field_place = base_place.project_field(field_idx);
+
+                    // Check if field may/need drop
+                    // Use the parent def_id for ty_env
+                    let owner = tcx.parent(field.did);
+                    let ty_env = TypingEnv::post_analysis(tcx, owner);
+                    let need_drop = field_ty.needs_drop(tcx, ty_env);
+                    let may_drop = !is_not_drop(tcx, field_ty);
+
+                    self.register_place(field_place.clone(), may_drop, need_drop);
+
+                    // Recursively create nested fields
+                    self.create_fields_for_type(tcx, field_ty, field_place, depth + 1);
+                }
+            }
+            // For tuples, create fields
+            ty::Tuple(fields) => {
+                for (field_idx, field_ty) in fields.iter().enumerate() {
+                    let field_place = base_place.project_field(field_idx);
+
+                    // For tuples, we conservatively check drop requirements
+                    // Note: Tuple fields don't have a specific DefId, so we use a simpler check
+                    let may_drop = !is_not_drop(tcx, field_ty);
+                    // For need_drop, we need a ty_env, but tuples don't have a DefId
+                    // We'll conservatively assume need_drop = may_drop for simplicity
+                    let need_drop = may_drop;
+
+                    self.register_place(field_place.clone(), may_drop, need_drop);
+
+                    // Recursively create nested fields
+                    self.create_fields_for_type(tcx, field_ty, field_place, depth + 1);
+                }
+            }
+            _ => {
+                // Other types don't have explicit fields we track
+            }
         }
     }
 
@@ -229,7 +308,8 @@ impl<'tcx> FnAliasAnalyzer<'tcx> {
         body: &'tcx Body<'tcx>,
         fn_summaries: Rc<RefCell<FnAliasMap>>,
     ) -> Self {
-        let place_info = PlaceInfo::new();
+        // Build place info by analyzing the body
+        let place_info = PlaceInfo::build(tcx, def_id, body);
         FnAliasAnalyzer {
             tcx,
             body,

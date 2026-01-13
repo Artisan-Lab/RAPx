@@ -1,67 +1,258 @@
 /// Transfer functions for alias analysis
-use rustc_middle::mir::{Operand, Place, Rvalue};
+use rustc_middle::mir::{Operand, Place, ProjectionElem};
 
 use super::intraproc::{AliasDomain, PlaceId, PlaceInfo};
 
+/// Convert a MIR Place to a PlaceId
+fn mir_place_to_place_id<'tcx>(place: Place<'tcx>) -> PlaceId {
+    let mut place_id = PlaceId::Local(place.local.as_usize());
+
+    // Process projections
+    for proj in place.projection {
+        match proj {
+            ProjectionElem::Field(field, _) => {
+                place_id = place_id.project_field(field.as_usize());
+            }
+            ProjectionElem::Deref => {
+                // For deref, we keep the current place (pointer itself)
+                // The actual memory is not tracked as a separate place
+            }
+            _ => {
+                // Other projections (index, downcast, etc.) are not tracked
+            }
+        }
+    }
+
+    place_id
+}
+
+/// Extract place from operand if it's Copy or Move
+fn operand_to_place_id<'tcx>(operand: &Operand<'tcx>) -> Option<PlaceId> {
+    match operand {
+        Operand::Copy(place) | Operand::Move(place) => Some(mir_place_to_place_id(*place)),
+        Operand::Constant(_) => None,
+    }
+}
+
 /// Transfer function for assignment: lv = rv
 pub fn transfer_assign<'tcx>(
-    _state: &mut AliasDomain,
-    _lv: Place<'tcx>,
-    _rv: &Operand<'tcx>,
-    _place_info: &PlaceInfo<'tcx>,
+    state: &mut AliasDomain,
+    lv: Place<'tcx>,
+    rv: &Operand<'tcx>,
+    place_info: &PlaceInfo<'tcx>,
 ) {
-    // TODO: Implement assignment transfer function
-    // 1. Kill: remove aliases for lv
-    // 2. Gen: add alias lv ≈ rv
+    let lv_id = mir_place_to_place_id(lv);
+
+    // Get index for lv
+    let lv_idx = match place_info.get_index(&lv_id) {
+        Some(idx) => idx,
+        None => return, // Place not tracked
+    };
+
+    // Check if lv may drop
+    if !place_info.may_drop(lv_idx) {
+        return;
+    }
+
+    // Kill: remove old aliases for lv
+    state.remove_aliases(lv_idx);
+
+    // Gen: add alias lv ≈ rv if rv is a place
+    if let Some(rv_id) = operand_to_place_id(rv) {
+        if let Some(rv_idx) = place_info.get_index(&rv_id) {
+            if place_info.may_drop(rv_idx) {
+                state.union(lv_idx, rv_idx);
+
+                // Sync fields if both have fields
+                sync_fields(state, &lv_id, &rv_id, place_info);
+            }
+        }
+    }
 }
 
 /// Transfer function for reference: lv = &rv
 pub fn transfer_ref<'tcx>(
-    _state: &mut AliasDomain,
-    _lv: Place<'tcx>,
-    _rv: Place<'tcx>,
-    _place_info: &PlaceInfo<'tcx>,
+    state: &mut AliasDomain,
+    lv: Place<'tcx>,
+    rv: Place<'tcx>,
+    place_info: &PlaceInfo<'tcx>,
 ) {
-    // TODO: Implement reference transfer function
+    // Reference creation is similar to assignment
+    let lv_id = mir_place_to_place_id(lv);
+    let rv_id = mir_place_to_place_id(rv);
+
+    let lv_idx = match place_info.get_index(&lv_id) {
+        Some(idx) => idx,
+        None => return,
+    };
+
+    let rv_idx = match place_info.get_index(&rv_id) {
+        Some(idx) => idx,
+        None => return,
+    };
+
+    if !place_info.may_drop(lv_idx) || !place_info.may_drop(rv_idx) {
+        return;
+    }
+
+    // Kill: remove old aliases for lv
+    state.remove_aliases(lv_idx);
+
+    // Gen: add alias lv ≈ rv
+    state.union(lv_idx, rv_idx);
+
+    // Sync fields
+    sync_fields(state, &lv_id, &rv_id, place_info);
 }
 
 /// Transfer function for field assignment: lv = rv.field
 pub fn transfer_field_assign<'tcx>(
-    _state: &mut AliasDomain,
-    _lv: Place<'tcx>,
-    _rv_base: Place<'tcx>,
-    _field_idx: usize,
-    _place_info: &PlaceInfo<'tcx>,
+    state: &mut AliasDomain,
+    lv: Place<'tcx>,
+    rv_base: Place<'tcx>,
+    field_idx: usize,
+    place_info: &PlaceInfo<'tcx>,
 ) {
-    // TODO: Implement field assignment transfer function
+    let lv_id = mir_place_to_place_id(lv);
+    let rv_base_id = mir_place_to_place_id(rv_base);
+    let rv_field_id = rv_base_id.project_field(field_idx);
+
+    let lv_idx = match place_info.get_index(&lv_id) {
+        Some(idx) => idx,
+        None => return,
+    };
+
+    let rv_field_idx = match place_info.get_index(&rv_field_id) {
+        Some(idx) => idx,
+        None => return,
+    };
+
+    if !place_info.may_drop(lv_idx) || !place_info.may_drop(rv_field_idx) {
+        return;
+    }
+
+    // Kill: remove old aliases for lv
+    state.remove_aliases(lv_idx);
+
+    // Gen: add alias lv ≈ rv.field
+    state.union(lv_idx, rv_field_idx);
+
+    // Sync fields
+    sync_fields(state, &lv_id, &rv_field_id, place_info);
 }
 
 /// Transfer function for aggregate: lv = (operands...)
 pub fn transfer_aggregate<'tcx>(
-    _state: &mut AliasDomain,
-    _lv: Place<'tcx>,
-    _operands: &[Operand<'tcx>],
-    _place_info: &PlaceInfo<'tcx>,
+    state: &mut AliasDomain,
+    lv: Place<'tcx>,
+    operands: &[Operand<'tcx>],
+    place_info: &PlaceInfo<'tcx>,
 ) {
-    // TODO: Implement aggregate transfer function
+    let lv_id = mir_place_to_place_id(lv);
+
+    let lv_idx = match place_info.get_index(&lv_id) {
+        Some(idx) => idx,
+        None => return,
+    };
+
+    // Kill: remove old aliases for lv
+    state.remove_aliases(lv_idx);
+
+    // Gen: for each field, add alias lv.i ≈ operand[i]
+    for (field_idx, operand) in operands.iter().enumerate() {
+        if let Some(rv_id) = operand_to_place_id(operand) {
+            let lv_field_id = lv_id.project_field(field_idx);
+
+            if let Some(lv_field_idx) = place_info.get_index(&lv_field_id) {
+                if let Some(rv_idx) = place_info.get_index(&rv_id) {
+                    if place_info.may_drop(lv_field_idx) && place_info.may_drop(rv_idx) {
+                        state.union(lv_field_idx, rv_idx);
+
+                        // Sync nested fields
+                        sync_fields(state, &lv_field_id, &rv_id, place_info);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Transfer function for function call
 pub fn transfer_call<'tcx>(
-    _state: &mut AliasDomain,
-    _ret: Place<'tcx>,
+    state: &mut AliasDomain,
+    ret: Place<'tcx>,
     _args: &[Operand<'tcx>],
-    _place_info: &PlaceInfo<'tcx>,
+    place_info: &PlaceInfo<'tcx>,
 ) {
-    // TODO: Implement call transfer function
+    let ret_id = mir_place_to_place_id(ret);
+
+    let ret_idx = match place_info.get_index(&ret_id) {
+        Some(idx) => idx,
+        None => return,
+    };
+
+    // Kill: remove old aliases for return value
+    state.remove_aliases(ret_idx);
+
+    // Note: Function summary application will be handled separately
+    // in the Analysis implementation. This is just the basic kill effect.
+    // The gen effect (applying function summaries) happens in apply_call_return_effect
 }
 
 /// Synchronize field aliases
+/// If lv and rv are aliased, ensure all their corresponding fields are also aliased
 pub fn sync_fields<'tcx>(
-    _state: &mut AliasDomain,
-    _lv: &PlaceId,
-    _rv: &PlaceId,
-    _place_info: &PlaceInfo<'tcx>,
+    state: &mut AliasDomain,
+    lv: &PlaceId,
+    rv: &PlaceId,
+    place_info: &PlaceInfo<'tcx>,
 ) {
-    // TODO: Implement field synchronization
+    // Recursively sync fields up to a reasonable depth
+    const MAX_SYNC_DEPTH: usize = 3;
+    sync_fields_recursive(state, lv, rv, place_info, 0, MAX_SYNC_DEPTH);
+}
+
+/// Recursive helper for field synchronization
+fn sync_fields_recursive<'tcx>(
+    state: &mut AliasDomain,
+    lv: &PlaceId,
+    rv: &PlaceId,
+    place_info: &PlaceInfo<'tcx>,
+    depth: usize,
+    max_depth: usize,
+) {
+    if depth >= max_depth {
+        return;
+    }
+
+    // Try to sync common fields (0..N)
+    // We'll try up to 16 fields as a reasonable upper bound
+    for field_idx in 0..16 {
+        let lv_field = lv.project_field(field_idx);
+        let rv_field = rv.project_field(field_idx);
+
+        // Check if both field places exist
+        if let (Some(lv_field_idx), Some(rv_field_idx)) = (
+            place_info.get_index(&lv_field),
+            place_info.get_index(&rv_field),
+        ) {
+            // Both fields exist and may drop, union them
+            if place_info.may_drop(lv_field_idx) && place_info.may_drop(rv_field_idx) {
+                if state.union(lv_field_idx, rv_field_idx) {
+                    // If union succeeded (they weren't already aliased), recurse
+                    sync_fields_recursive(
+                        state,
+                        &lv_field,
+                        &rv_field,
+                        place_info,
+                        depth + 1,
+                        max_depth,
+                    );
+                }
+            }
+        } else {
+            // If either field doesn't exist, no more fields to sync
+            break;
+        }
+    }
 }
