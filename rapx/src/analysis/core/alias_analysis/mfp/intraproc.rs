@@ -8,7 +8,7 @@ use rustc_middle::{
     },
     ty::{self, Ty, TyCtxt, TypingEnv},
 };
-use rustc_mir_dataflow::{Analysis, JoinSemiLattice};
+use rustc_mir_dataflow::{Analysis, JoinSemiLattice, fmt::DebugWithContext};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -258,7 +258,7 @@ impl<'tcx> PlaceInfo<'tcx> {
 }
 
 /// Alias domain using Union-Find data structure
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct AliasDomain {
     /// Parent array for Union-Find
     parent: Vec<usize>,
@@ -349,6 +349,8 @@ impl JoinSemiLattice for AliasDomain {
         changed
     }
 }
+
+impl DebugWithContext<FnAliasAnalyzer<'_>> for AliasDomain {}
 
 /// Intraprocedural alias analyzer
 pub struct FnAliasAnalyzer<'tcx> {
