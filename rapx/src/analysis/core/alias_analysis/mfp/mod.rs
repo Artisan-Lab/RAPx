@@ -80,11 +80,18 @@ impl<'tcx> MfpAliasAnalyzer<'tcx> {
             .iterate_to_fixpoint(self.tcx, body, None)
             .into_results_cursor(body);
 
-        // Extract the function summary
-        let summary = interproc::extract_summary(&mut results, body, def_id);
+        // Extract the function summary from this analysis
+        let new_summary = interproc::extract_summary(&mut results, body, def_id);
 
-        // Store the summary
-        self.fn_map.insert(def_id, summary);
+        // Join with existing summary to maintain monotonicity
+        // This ensures we never lose alias relationships discovered in previous iterations
+        if let Some(old_summary) = self.fn_map.get_mut(&def_id) {
+            for alias in new_summary.aliases() {
+                old_summary.add_alias(alias.clone());
+            }
+        } else {
+            self.fn_map.insert(def_id, new_summary);
+        }
     }
 }
 

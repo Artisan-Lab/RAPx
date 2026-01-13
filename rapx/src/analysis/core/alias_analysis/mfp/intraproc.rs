@@ -100,6 +100,19 @@ impl PlaceId {
             field_idx,
         }
     }
+
+    /// Check if this place has the given place as a prefix
+    /// e.g., _1.0.1 has prefix _1, _1.0.1 has prefix _1.0, but not _2
+    pub fn has_prefix(&self, prefix: &PlaceId) -> bool {
+        if self == prefix {
+            return true;
+        }
+
+        match self {
+            PlaceId::Local(_) => false,
+            PlaceId::Field { base, .. } => base.has_prefix(prefix),
+        }
+    }
 }
 
 /// Information about all places in a function
@@ -311,10 +324,60 @@ impl AliasDomain {
     }
 
     /// Remove all aliases for a place (used in kill phase)
+    /// This correctly handles the case where idx is the root of a connected component
     pub fn remove_aliases(&mut self, idx: usize) {
-        // Make the place its own representative
+        // Find the root of the connected component containing idx
+        let root = self.find(idx);
+
+        // Collect all nodes in the same connected component
+        let mut component_nodes = Vec::new();
+        for i in 0..self.parent.len() {
+            if self.find(i) == root {
+                component_nodes.push(i);
+            }
+        }
+
+        // Remove idx from the component
+        component_nodes.retain(|&i| i != idx);
+
+        // Isolate idx
         self.parent[idx] = idx;
         self.rank[idx] = 0;
+
+        // Rebuild the remaining component if it's not empty
+        if !component_nodes.is_empty() {
+            // Reset all nodes in the remaining component
+            for &i in &component_nodes {
+                self.parent[i] = i;
+                self.rank[i] = 0;
+            }
+
+            // Re-union them together (excluding idx)
+            let first = component_nodes[0];
+            for &i in &component_nodes[1..] {
+                self.union(first, i);
+            }
+        }
+    }
+
+    /// Remove all aliases for a place and all its field projections
+    /// This ensures that when lv is killed, all lv.* are also killed
+    pub fn remove_aliases_with_prefix(&mut self, place_id: &PlaceId, place_info: &PlaceInfo) {
+        // Collect all place indices that have place_id as a prefix
+        let mut indices_to_remove = Vec::new();
+
+        for idx in 0..self.parent.len() {
+            if let Some(pid) = place_info.get_place(idx) {
+                if pid.has_prefix(place_id) {
+                    indices_to_remove.push(idx);
+                }
+            }
+        }
+
+        // Remove aliases for all collected indices
+        for idx in indices_to_remove {
+            self.remove_aliases(idx);
+        }
     }
 
     /// Get all alias pairs (for debugging/summary extraction)

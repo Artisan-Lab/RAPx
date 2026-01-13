@@ -54,8 +54,8 @@ pub fn transfer_assign<'tcx>(
         return;
     }
 
-    // Kill: remove old aliases for lv
-    state.remove_aliases(lv_idx);
+    // Kill: remove old aliases for lv and all its fields (e.g., lv.0, lv.1.2, etc.)
+    state.remove_aliases_with_prefix(&lv_id, place_info);
 
     // Gen: add alias lv ≈ rv if rv is a place
     if let Some(rv_id) = operand_to_place_id(rv) {
@@ -95,8 +95,8 @@ pub fn transfer_ref<'tcx>(
         return;
     }
 
-    // Kill: remove old aliases for lv
-    state.remove_aliases(lv_idx);
+    // Kill: remove old aliases for lv and all its fields
+    state.remove_aliases_with_prefix(&lv_id, place_info);
 
     // Gen: add alias lv ≈ rv
     state.union(lv_idx, rv_idx);
@@ -131,8 +131,8 @@ pub fn transfer_field_assign<'tcx>(
         return;
     }
 
-    // Kill: remove old aliases for lv
-    state.remove_aliases(lv_idx);
+    // Kill: remove old aliases for lv and all its fields
+    state.remove_aliases_with_prefix(&lv_id, place_info);
 
     // Gen: add alias lv ≈ rv.field
     state.union(lv_idx, rv_field_idx);
@@ -155,8 +155,8 @@ pub fn transfer_aggregate<'tcx>(
         None => return,
     };
 
-    // Kill: remove old aliases for lv
-    state.remove_aliases(lv_idx);
+    // Kill: remove old aliases for lv and all its fields
+    state.remove_aliases_with_prefix(&lv_id, place_info);
 
     // Gen: for each field, add alias lv.i ≈ operand[i]
     for (field_idx, operand) in operands.iter().enumerate() {
@@ -191,8 +191,8 @@ pub fn transfer_call<'tcx>(
         None => return,
     };
 
-    // Kill: remove old aliases for return value
-    state.remove_aliases(ret_idx);
+    // Kill: remove old aliases for return value and all its fields
+    state.remove_aliases_with_prefix(&ret_id, place_info);
 
     // Note: Function summary application will be handled separately
     // in the Analysis implementation. This is just the basic kill effect.
