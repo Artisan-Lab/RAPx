@@ -30,6 +30,23 @@ impl<'tcx> MfpAliasAnalyzer<'tcx> {
         }
     }
 
+    /// Get argument count for a function (returns None if MIR not available)
+    fn get_arg_count(&self, def_id: DefId) -> Option<usize> {
+        if !self.tcx.is_mir_available(def_id) {
+            return None;
+        }
+        // Skip const contexts
+        if self
+            .tcx
+            .hir_body_const_context(def_id.expect_local())
+            .is_some()
+        {
+            return None;
+        }
+        let body = self.tcx.optimized_mir(def_id);
+        Some(body.arg_count)
+    }
+
     /// Analyze a single function
     fn analyze_function(
         &mut self,
@@ -83,16 +100,87 @@ impl<'tcx> RapxAnalysis for MfpAliasAnalyzer<'tcx> {
         let mir_keys = self.tcx.mir_keys(());
 
         // Shared function summaries for interprocedural analysis
-        // For now, this is empty as we're bypassing interprocedural analysis
         let fn_summaries = Rc::new(RefCell::new(FxHashMap::default()));
 
-        // Analyze each function independently
-        for local_def_id in mir_keys {
+        // Step 1: Initialize all function summaries to ⊥ (empty)
+        rap_debug!("Initializing function summaries...");
+        for local_def_id in mir_keys.iter() {
             let def_id = local_def_id.to_def_id();
-            self.analyze_function(def_id, &fn_summaries);
+            if let Some(arg_count) = self.get_arg_count(def_id) {
+                self.fn_map.insert(def_id, FnAliasPairs::new(arg_count));
+            }
         }
 
-        // Sort and display results
+        // Step 2: Fixpoint iteration
+        const MAX_ITERATIONS: usize = 10;
+        let mut iteration = 0;
+
+        loop {
+            iteration += 1;
+            let mut changed = false;
+
+            rap_debug!("Interprocedural iteration {}", iteration);
+
+            // Sync current summaries to fn_summaries (critical for interprocedural analysis)
+            {
+                let mut summaries = fn_summaries.borrow_mut();
+                summaries.clear();
+                for (def_id, summary) in &self.fn_map {
+                    summaries.insert(*def_id, summary.clone());
+                }
+            }
+
+            // Analyze each function with current summaries
+            for local_def_id in mir_keys.iter() {
+                let def_id = local_def_id.to_def_id();
+
+                // Skip if not analyzable
+                if !self.fn_map.contains_key(&def_id) {
+                    continue;
+                }
+
+                // Save old summary for comparison
+                let old_summary = self.fn_map.get(&def_id).cloned().unwrap();
+
+                // Re-analyze the function
+                self.analyze_function(def_id, &fn_summaries);
+
+                // Check if summary changed
+                if let Some(new_summary) = self.fn_map.get(&def_id) {
+                    // Compare by checking if alias sets are equal
+                    let old_aliases: std::collections::HashSet<_> =
+                        old_summary.aliases().iter().cloned().collect();
+                    let new_aliases: std::collections::HashSet<_> =
+                        new_summary.aliases().iter().cloned().collect();
+
+                    if old_aliases != new_aliases {
+                        changed = true;
+                        rap_trace!(
+                            "Summary changed for {:?}: {} -> {}",
+                            self.tcx.def_path_str(def_id),
+                            old_summary.len(),
+                            new_summary.len()
+                        );
+                    }
+                }
+            }
+
+            // Check convergence
+            if !changed {
+                rap_debug!(
+                    "Interprocedural analysis converged after {} iterations",
+                    iteration
+                );
+                break;
+            }
+
+            if iteration >= MAX_ITERATIONS {
+                rap_warn!("Reached maximum iterations ({}), stopping", MAX_ITERATIONS);
+                break;
+            }
+        }
+
+        // Step 3: Sort and display results
         for (fn_id, fn_alias) in &mut self.fn_map {
             let fn_name = self.tcx.def_path_str(fn_id);
             fn_alias.sort_alias_index();
