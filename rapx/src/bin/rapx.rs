@@ -36,6 +36,7 @@ fn main() {
         }
         match arg.as_str() {
             "-alias" | "-alias0" | "-alias1" | "-alias2" => compiler.enable_alias(arg),
+            "-alias-mfp" => compiler.enable_alias_mfp(),
             "-adg" => compiler.enable_api_dependency(), // api dependency graph
             "-callgraph" => compiler.enable_callgraph(),
             "-dataflow" => compiler.enable_dataflow(1),
