@@ -150,11 +150,6 @@ pub fn transfer_aggregate<'tcx>(
 ) {
     let lv_id = mir_place_to_place_id(lv);
 
-    let lv_idx = match place_info.get_index(&lv_id) {
-        Some(idx) => idx,
-        None => return,
-    };
-
     // Kill: remove old aliases for lv and all its fields
     state.remove_aliases_with_prefix(&lv_id, place_info);
 
@@ -185,11 +180,6 @@ pub fn transfer_call<'tcx>(
     place_info: &PlaceInfo<'tcx>,
 ) {
     let ret_id = mir_place_to_place_id(ret);
-
-    let ret_idx = match place_info.get_index(&ret_id) {
-        Some(idx) => idx,
-        None => return,
-    };
 
     // Kill: remove old aliases for return value and all its fields
     state.remove_aliases_with_prefix(&ret_id, place_info);
