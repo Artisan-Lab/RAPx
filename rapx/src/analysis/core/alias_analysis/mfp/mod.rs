@@ -67,6 +67,12 @@ impl<'tcx> MfpAliasAnalyzer<'tcx> {
             return;
         }
 
+        // Skip dummy functions
+        if fn_name.contains("__raw_ptr_deref_dummy") {
+            rap_trace!("Skipping dummy function {:?}", fn_name);
+            return;
+        }
+
         rap_trace!("Analyzing function: {:?}", fn_name);
 
         // Get the optimized MIR
