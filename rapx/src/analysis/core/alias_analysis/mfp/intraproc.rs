@@ -49,6 +49,14 @@ fn apply_function_summary<'tcx>(
             continue;
         }
 
+        // Skip if either place is a dummy (constant argument)
+        // Dummy places use usize::MAX as a sentinel value
+        if actual_places[left_idx] == PlaceId::Local(usize::MAX)
+            || actual_places[right_idx] == PlaceId::Local(usize::MAX)
+        {
+            continue;
+        }
+
         // Get actual places with field projections
         let mut left_place = actual_places[left_idx].clone();
         for &field_idx in alias_pair.lhs_fields() {
@@ -399,6 +407,16 @@ impl AliasDomain {
 
 impl JoinSemiLattice for AliasDomain {
     fn join(&mut self, other: &Self) -> bool {
+        // Safety check: both domains must have the same size
+        // This ensures they represent the same place space
+        assert_eq!(
+            self.parent.len(),
+            other.parent.len(),
+            "AliasDomain::join: size mismatch (self: {}, other: {})",
+            self.parent.len(),
+            other.parent.len()
+        );
+
         let mut changed = false;
 
         // Get all alias pairs from other and union them in self

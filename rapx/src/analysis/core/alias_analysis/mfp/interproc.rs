@@ -7,6 +7,24 @@ use rustc_mir_dataflow::ResultsCursor;
 use super::super::{AliasPair, FnAliasPairs};
 use super::intraproc::{FnAliasAnalyzer, PlaceId};
 
+/// Extract root local and field path from a PlaceId
+/// Returns (root_local, field_path)
+fn extract_fields(place: &PlaceId) -> (usize, Vec<usize>) {
+    let mut fields = Vec::new();
+    let mut current = place;
+
+    // Traverse from leaf to root, collecting field indices
+    loop {
+        match current {
+            PlaceId::Local(idx) => return (*idx, fields),
+            PlaceId::Field { base, field_idx } => {
+                fields.push(*field_idx);
+                current = base;
+            }
+        }
+    }
+}
+
 /// Extract function summary from analysis results
 pub fn extract_summary<'tcx>(
     results: &mut ResultsCursor<'_, 'tcx, FnAliasAnalyzer<'tcx>>,
@@ -27,21 +45,33 @@ pub fn extract_summary<'tcx>(
                 let analyzer = results.analysis();
                 let place_info = analyzer.place_info();
 
-                // Extract aliases between arguments and return value
-                // Index 0 is return value, indices 1..=arg_count are arguments
-                for i in 0..=arg_count {
-                    for j in (i + 1)..=arg_count {
-                        let place_i = PlaceId::Local(i);
-                        let place_j = PlaceId::Local(j);
+                // Extract field-sensitive aliases between arguments and return value
+                // Iterate through all places and check if they are aliased
+                for idx_i in 0..place_info.num_places() {
+                    for idx_j in (idx_i + 1)..place_info.num_places() {
+                        // Check if these two places are aliased
+                        if state.clone().are_aliased(idx_i, idx_j) {
+                            // Get the PlaceId for each index
+                            if let (Some(place_i), Some(place_j)) =
+                                (place_info.get_place(idx_i), place_info.get_place(idx_j))
+                            {
+                                // Extract root local and field paths
+                                let (root_i, mut fields_i) = extract_fields(place_i);
+                                let (root_j, mut fields_j) = extract_fields(place_j);
 
-                        if let (Some(idx_i), Some(idx_j)) = (
-                            place_info.get_index(&place_i),
-                            place_info.get_index(&place_j),
-                        ) {
-                            // Check if they are aliased
-                            if state.clone().are_aliased(idx_i, idx_j) {
-                                let alias = AliasPair::new(i, j);
-                                summary.add_alias(alias);
+                                // Only include aliases involving arguments/return value
+                                // Index 0 is return value, indices 1..=arg_count are arguments
+                                if root_i <= arg_count && root_j <= arg_count {
+                                    // Fields were collected from leaf to root, reverse them
+                                    fields_i.reverse();
+                                    fields_j.reverse();
+
+                                    // Create field-sensitive AliasPair
+                                    let mut alias = AliasPair::new(root_i, root_j);
+                                    alias.lhs_fields = fields_i;
+                                    alias.rhs_fields = fields_j;
+                                    summary.add_alias(alias);
+                                }
                             }
                         }
                     }
