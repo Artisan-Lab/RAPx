@@ -2,15 +2,75 @@ extern crate rustc_mir_dataflow;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
 use rustc_middle::{
-    mir::{Body, CallReturnPlaces, Location, Place, Statement, Terminator, TerminatorEdges},
+    mir::{
+        Body, CallReturnPlaces, Location, Operand, Place, Rvalue, Statement, StatementKind,
+        Terminator, TerminatorEdges, TerminatorKind,
+    },
     ty::{self, Ty, TyCtxt, TypingEnv},
 };
 use rustc_mir_dataflow::{Analysis, JoinSemiLattice};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use super::super::FnAliasMap;
+use super::super::{FnAliasMap, FnAliasPairs};
+use super::transfer;
 use crate::analysis::core::alias_analysis::default::types::is_not_drop;
+
+/// Apply a function summary to the current state
+fn apply_function_summary<'tcx>(
+    state: &mut AliasDomain,
+    destination: Place<'tcx>,
+    args: &[Operand<'tcx>],
+    summary: &FnAliasPairs,
+    place_info: &PlaceInfo<'tcx>,
+) {
+    // Convert destination to PlaceId
+    let dest_id = transfer::mir_place_to_place_id(destination);
+
+    // Build a mapping from callee's argument indices to caller's PlaceIds
+    // Index 0 is return value, indices 1+ are arguments
+    let mut actual_places = vec![dest_id.clone()];
+    for arg in args {
+        if let Some(arg_id) = transfer::operand_to_place_id(arg) {
+            actual_places.push(arg_id);
+        } else {
+            // If argument is not a place (e.g., constant), use a dummy
+            actual_places.push(PlaceId::Local(usize::MAX));
+        }
+    }
+
+    // Apply each alias pair from the summary
+    for alias_pair in summary.aliases() {
+        let left_idx = alias_pair.left_local();
+        let right_idx = alias_pair.right_local();
+
+        // Check bounds
+        if left_idx >= actual_places.len() || right_idx >= actual_places.len() {
+            continue;
+        }
+
+        // Get actual places with field projections
+        let mut left_place = actual_places[left_idx].clone();
+        for &field_idx in alias_pair.lhs_fields() {
+            left_place = left_place.project_field(field_idx);
+        }
+
+        let mut right_place = actual_places[right_idx].clone();
+        for &field_idx in alias_pair.rhs_fields() {
+            right_place = right_place.project_field(field_idx);
+        }
+
+        // Get indices and union
+        if let (Some(left_place_idx), Some(right_place_idx)) = (
+            place_info.get_index(&left_place),
+            place_info.get_index(&right_place),
+        ) {
+            if place_info.may_drop(left_place_idx) && place_info.may_drop(right_place_idx) {
+                state.union(left_place_idx, right_place_idx);
+            }
+        }
+    }
+}
 
 /// Place identifier supporting field-sensitive analysis
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -342,29 +402,140 @@ impl<'tcx> Analysis<'tcx> for FnAliasAnalyzer<'tcx> {
 
     fn apply_primary_statement_effect(
         &self,
-        _state: &mut Self::Domain,
-        _statement: &Statement<'tcx>,
+        state: &mut Self::Domain,
+        statement: &Statement<'tcx>,
         _location: Location,
     ) {
-        // TODO: Apply transfer functions for statements
+        match &statement.kind {
+            StatementKind::Assign(box (lv, rvalue)) => {
+                match rvalue {
+                    // Use(operand): lv = operand
+                    Rvalue::Use(operand) => {
+                        transfer::transfer_assign(state, *lv, operand, &self.place_info);
+                    }
+                    // Ref: lv = &rv or lv = &raw rv
+                    Rvalue::Ref(_, _, rv) | Rvalue::RawPtr(_, rv) => {
+                        transfer::transfer_ref(state, *lv, *rv, &self.place_info);
+                    }
+                    // CopyForDeref: similar to ref
+                    Rvalue::CopyForDeref(rv) => {
+                        transfer::transfer_ref(state, *lv, *rv, &self.place_info);
+                    }
+                    // Cast: lv = operand as T
+                    Rvalue::Cast(_, operand, _) => {
+                        transfer::transfer_assign(state, *lv, operand, &self.place_info);
+                    }
+                    // Aggregate: lv = (operands...)
+                    Rvalue::Aggregate(_, operands) => {
+                        let operand_slice: Vec<_> = operands.iter().map(|op| op.clone()).collect();
+                        transfer::transfer_aggregate(state, *lv, &operand_slice, &self.place_info);
+                    }
+                    // ShallowInitBox: lv = ShallowInitBox(operand, T)
+                    Rvalue::ShallowInitBox(operand, _) => {
+                        transfer::transfer_assign(state, *lv, operand, &self.place_info);
+                    }
+                    // Other rvalues don't create aliases
+                    _ => {}
+                }
+            }
+            // Other statement kinds don't affect alias analysis
+            _ => {}
+        }
     }
 
     fn apply_primary_terminator_effect<'mir>(
         &self,
-        _state: &mut Self::Domain,
-        _terminator: &'mir Terminator<'tcx>,
+        state: &mut Self::Domain,
+        terminator: &'mir Terminator<'tcx>,
         _location: Location,
     ) -> TerminatorEdges<'mir, 'tcx> {
-        // TODO: Apply transfer functions for terminators
-        TerminatorEdges::None
+        match &terminator.kind {
+            // Call: the return effect is handled in apply_call_return_effect
+            // Here we just return the appropriate edges
+            TerminatorKind::Call {
+                target,
+                destination,
+                args,
+                ..
+            } => {
+                // Apply kill effect for the destination
+                // Note: args is a Box<[Spanned<Operand>]>, so we extract operands
+                let operand_slice: Vec<_> = args
+                    .iter()
+                    .map(|spanned_arg| spanned_arg.node.clone())
+                    .collect();
+                transfer::transfer_call(state, *destination, &operand_slice, &self.place_info);
+
+                // Return edges based on target
+                if let Some(target_bb) = target {
+                    TerminatorEdges::Single(*target_bb)
+                } else {
+                    TerminatorEdges::None
+                }
+            }
+
+            // Drop: doesn't affect alias relationships
+            TerminatorKind::Drop { target, .. } => TerminatorEdges::Single(*target),
+
+            // SwitchInt: return all possible edges
+            TerminatorKind::SwitchInt { discr, targets } => {
+                TerminatorEdges::SwitchInt { discr, targets }
+            }
+
+            // Assert: return normal edge
+            TerminatorKind::Assert { target, .. } => TerminatorEdges::Single(*target),
+
+            // Goto: return target
+            TerminatorKind::Goto { target } => TerminatorEdges::Single(*target),
+
+            // Return: no successors
+            TerminatorKind::Return => TerminatorEdges::None,
+
+            // All other terminators: assume no successors for safety
+            _ => TerminatorEdges::None,
+        }
     }
 
     fn apply_call_return_effect(
         &self,
-        _state: &mut Self::Domain,
-        _block: rustc_middle::mir::BasicBlock,
+        state: &mut Self::Domain,
+        block: rustc_middle::mir::BasicBlock,
         _return_places: CallReturnPlaces<'_, 'tcx>,
     ) {
-        // TODO: Handle call return effects
+        // Get the terminator for this block
+        let terminator = self.body.basic_blocks[block].terminator();
+
+        if let TerminatorKind::Call {
+            func,
+            args,
+            destination,
+            ..
+        } = &terminator.kind
+        {
+            // Check if this is a call to a known function
+            if let Operand::Constant(c) = func {
+                if let ty::FnDef(callee_def_id, _) = c.ty().kind() {
+                    // Try to get the function summary
+                    let fn_summaries = self.fn_summaries.borrow();
+                    if let Some(summary) = fn_summaries.get(callee_def_id) {
+                        // Extract operands from spanned args
+                        let operand_slice: Vec<_> = args
+                            .iter()
+                            .map(|spanned_arg| spanned_arg.node.clone())
+                            .collect();
+                        // Apply the function summary
+                        apply_function_summary(
+                            state,
+                            *destination,
+                            &operand_slice,
+                            summary,
+                            &self.place_info,
+                        );
+                    }
+                    // If no summary available, the conservative kill effect
+                    // has already been applied in apply_primary_terminator_effect
+                }
+            }
+        }
     }
 }

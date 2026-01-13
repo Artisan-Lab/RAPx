@@ -4,7 +4,7 @@ use rustc_middle::mir::{Operand, Place, ProjectionElem};
 use super::intraproc::{AliasDomain, PlaceId, PlaceInfo};
 
 /// Convert a MIR Place to a PlaceId
-fn mir_place_to_place_id<'tcx>(place: Place<'tcx>) -> PlaceId {
+pub fn mir_place_to_place_id<'tcx>(place: Place<'tcx>) -> PlaceId {
     let mut place_id = PlaceId::Local(place.local.as_usize());
 
     // Process projections
@@ -27,7 +27,7 @@ fn mir_place_to_place_id<'tcx>(place: Place<'tcx>) -> PlaceId {
 }
 
 /// Extract place from operand if it's Copy or Move
-fn operand_to_place_id<'tcx>(operand: &Operand<'tcx>) -> Option<PlaceId> {
+pub fn operand_to_place_id<'tcx>(operand: &Operand<'tcx>) -> Option<PlaceId> {
     match operand {
         Operand::Copy(place) | Operand::Move(place) => Some(mir_place_to_place_id(*place)),
         Operand::Constant(_) => None,
