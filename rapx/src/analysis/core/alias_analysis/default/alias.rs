@@ -93,7 +93,7 @@ impl<'tcx> MopGraph<'tcx> {
                         mop_graph.find_scc();
                         mop_graph.check(0, fn_map, recursion_set);
                         let ret_alias = mop_graph.ret_alias.clone();
-                        rap_info!("Find aliases of {:?}: {:?}", target_id, ret_alias);
+                        rap_debug!("Find aliases of {:?}: {:?}", target_id, ret_alias);
                         fn_map.insert(target_id, ret_alias);
                         recursion_set.remove(&target_id);
                         fn_map.get(&target_id).unwrap()
