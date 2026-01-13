@@ -34,7 +34,12 @@ pub fn kind(ty: Ty<'_>) -> ValueKind {
         ty::Adt(adt, _) => {
             // Use string matching to catch RefCell/RefMut/Rc for special handling.
             let s = format!("{:?}", adt);
-            if s.contains("cell::RefMut") || s.contains("cell::Ref") || s.contains("rc::Rc") || s.contains("sync::Arc") || s.contains("sync::Weak") {
+            if s.contains("cell::RefMut")
+                || s.contains("cell::Ref")
+                || s.contains("rc::Rc")
+                || s.contains("sync::Arc")
+                || s.contains("sync::Weak")
+            {
                 ValueKind::SpecialPtr
             } else {
                 ValueKind::Adt

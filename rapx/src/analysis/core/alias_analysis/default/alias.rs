@@ -1,15 +1,10 @@
-use super::{
-    MopAliasPair, MopFnAliasMap, block::Term, graph::*, types::*, value::*,
-};
-use crate::{
-    def_id::*,
-    analysis::graphs::scc::Scc,
-};
+use super::{MopAliasPair, MopFnAliasMap, block::Term, graph::*, types::*, value::*};
+use crate::{analysis::graphs::scc::Scc, def_id::*};
 use rustc_data_structures::fx::FxHashSet;
 use rustc_hir::def_id::DefId;
 use rustc_middle::{
     mir::{Local, Operand, Place, ProjectionElem, TerminatorKind},
-    ty::self,
+    ty,
 };
 use std::collections::HashSet;
 

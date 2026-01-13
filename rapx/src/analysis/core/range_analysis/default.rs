@@ -69,8 +69,7 @@ pub struct RangeAnalyzer<'tcx, T: IntervalArithmetic + ConstConvert + Debug> {
     pub path_constraints: PathConstraintMap<'tcx>, // Path-sensitive constraints
 }
 
-impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> Analysis
-    for RangeAnalyzer<'tcx, T>
+impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> Analysis for RangeAnalyzer<'tcx, T>
 where
     T: IntervalArithmetic + ConstConvert + Debug,
 {
