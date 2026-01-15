@@ -3,9 +3,10 @@ pub mod intraproc;
 pub mod transfer;
 
 extern crate rustc_mir_dataflow;
-use rustc_data_structures::fx::FxHashMap;
+use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_hir::def_id::DefId;
-use rustc_middle::ty::TyCtxt;
+use rustc_middle::mir::{Operand, TerminatorKind};
+use rustc_middle::ty::{self, TyCtxt};
 use rustc_mir_dataflow::Analysis;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -35,13 +36,11 @@ impl<'tcx> MfpAliasAnalyzer<'tcx> {
         if !self.tcx.is_mir_available(def_id) {
             return None;
         }
-        // Skip const contexts
-        if self
-            .tcx
-            .hir_body_const_context(def_id.expect_local())
-            .is_some()
-        {
-            return None;
+        // Skip const contexts (only applicable to local functions)
+        if let Some(local_def_id) = def_id.as_local() {
+            if self.tcx.hir_body_const_context(local_def_id).is_some() {
+                return None;
+            }
         }
         let body = self.tcx.optimized_mir(def_id);
         Some(body.arg_count)
@@ -57,23 +56,20 @@ impl<'tcx> MfpAliasAnalyzer<'tcx> {
 
         // Skip functions without MIR
         if !self.tcx.is_mir_available(def_id) {
-            rap_trace!("MIR not available for {:?}", fn_name);
             return;
         }
 
-        // Skip const contexts
-        if let Some(_) = self.tcx.hir_body_const_context(def_id.expect_local()) {
-            rap_trace!("Skipping const context {:?}", fn_name);
-            return;
+        // Skip const contexts (only applicable to local functions)
+        if let Some(local_def_id) = def_id.as_local() {
+            if self.tcx.hir_body_const_context(local_def_id).is_some() {
+                return;
+            }
         }
 
         // Skip dummy functions
         if fn_name.contains("__raw_ptr_deref_dummy") {
-            rap_trace!("Skipping dummy function {:?}", fn_name);
             return;
         }
-
-        rap_trace!("Analyzing function: {:?}", fn_name);
 
         // Get the optimized MIR
         let body = self.tcx.optimized_mir(def_id);
@@ -99,6 +95,37 @@ impl<'tcx> MfpAliasAnalyzer<'tcx> {
             self.fn_map.insert(def_id, new_summary);
         }
     }
+
+    /// Recursively collect all reachable functions with available MIR
+    fn collect_reachable_functions(&self, def_id: DefId, reachable: &mut FxHashSet<DefId>) {
+        // Prevent infinite recursion
+        if reachable.contains(&def_id) {
+            return;
+        }
+
+        // Check if MIR is available
+        if self.get_arg_count(def_id).is_none() {
+            return;
+        }
+
+        // Mark as visited
+        reachable.insert(def_id);
+
+        // Traverse all basic blocks in the MIR body
+        let body = self.tcx.optimized_mir(def_id);
+        for bb_data in body.basic_blocks.iter() {
+            if let Some(terminator) = &bb_data.terminator {
+                if let TerminatorKind::Call { func, .. } = &terminator.kind {
+                    if let Operand::Constant(c) = func {
+                        if let ty::FnDef(callee_def_id, _) = c.ty().kind() {
+                            // Recursively collect called functions
+                            self.collect_reachable_functions(*callee_def_id, reachable);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl<'tcx> RapxAnalysis for MfpAliasAnalyzer<'tcx> {
@@ -107,32 +134,37 @@ impl<'tcx> RapxAnalysis for MfpAliasAnalyzer<'tcx> {
     }
 
     fn run(&mut self) {
-        rap_debug!("Start alias analysis via MFP.");
-
         // Get all functions to analyze
         let mir_keys = self.tcx.mir_keys(());
 
         // Shared function summaries for interprocedural analysis
         let fn_summaries = Rc::new(RefCell::new(FxHashMap::default()));
 
-        // Step 1: Initialize all function summaries to ⊥ (empty)
-        rap_debug!("Initializing function summaries...");
+        // Step 1: Collect all reachable functions with available MIR
+        let mut reachable_functions = FxHashSet::default();
+
+        // Start from mir_keys and recursively collect
         for local_def_id in mir_keys.iter() {
-            let def_id = local_def_id.to_def_id();
-            if let Some(arg_count) = self.get_arg_count(def_id) {
-                self.fn_map.insert(def_id, FnAliasPairs::new(arg_count));
+            self.collect_reachable_functions(local_def_id.to_def_id(), &mut reachable_functions);
+        }
+
+        // Step 2: Initialize function summaries to ⊥ (empty) for all reachable functions
+        for def_id in reachable_functions.iter() {
+            if let Some(arg_count) = self.get_arg_count(*def_id) {
+                self.fn_map.insert(*def_id, FnAliasPairs::new(arg_count));
             }
         }
 
-        // Step 2: Fixpoint iteration
+        // Convert to Vec for iteration
+        let reachable_vec: Vec<DefId> = reachable_functions.iter().copied().collect();
+
+        // Step 3: Fixpoint iteration
         const MAX_ITERATIONS: usize = 10;
         let mut iteration = 0;
 
         loop {
             iteration += 1;
             let mut changed = false;
-
-            rap_debug!("Interprocedural iteration {}", iteration);
 
             // Sync current summaries to fn_summaries (critical for interprocedural analysis)
             {
@@ -144,22 +176,20 @@ impl<'tcx> RapxAnalysis for MfpAliasAnalyzer<'tcx> {
             }
 
             // Analyze each function with current summaries
-            for local_def_id in mir_keys.iter() {
-                let def_id = local_def_id.to_def_id();
-
+            for def_id in reachable_vec.iter() {
                 // Skip if not analyzable
-                if !self.fn_map.contains_key(&def_id) {
+                if !self.fn_map.contains_key(def_id) {
                     continue;
                 }
 
                 // Save old summary for comparison
-                let old_summary = self.fn_map.get(&def_id).cloned().unwrap();
+                let old_summary = self.fn_map.get(def_id).cloned().unwrap();
 
                 // Re-analyze the function
-                self.analyze_function(def_id, &fn_summaries);
+                self.analyze_function(*def_id, &fn_summaries);
 
                 // Check if summary changed
-                if let Some(new_summary) = self.fn_map.get(&def_id) {
+                if let Some(new_summary) = self.fn_map.get(def_id) {
                     // Compare by checking if alias sets are equal
                     let old_aliases: std::collections::HashSet<_> =
                         old_summary.aliases().iter().cloned().collect();
@@ -180,7 +210,7 @@ impl<'tcx> RapxAnalysis for MfpAliasAnalyzer<'tcx> {
 
             // Check convergence
             if !changed {
-                rap_debug!(
+                rap_trace!(
                     "Interprocedural analysis converged after {} iterations",
                     iteration
                 );
@@ -198,7 +228,7 @@ impl<'tcx> RapxAnalysis for MfpAliasAnalyzer<'tcx> {
             let fn_name = self.tcx.def_path_str(fn_id);
             fn_alias.sort_alias_index();
             if fn_alias.len() > 0 {
-                rap_debug!("Alias found in {:?}: {}", fn_name, fn_alias);
+                rap_trace!("Alias found in {:?}: {}", fn_name, fn_alias);
             }
         }
     }

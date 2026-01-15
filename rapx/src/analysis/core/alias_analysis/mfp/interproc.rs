@@ -81,7 +81,7 @@ pub fn extract_summary<'tcx>(
                 // This captures aliases that flow through temporary variables
                 // Example: _0 aliases _2, and _2 aliases _1.0, then _2 is relevant
                 const MAX_ITERATIONS: usize = 10;
-                for iteration in 0..MAX_ITERATIONS {
+                for _iteration in 0..MAX_ITERATIONS {
                     let mut changed = false;
                     for &(idx_i, idx_j, _, _) in &all_pairs {
                         // If one place is relevant and the other isn't, make the other relevant
@@ -96,10 +96,6 @@ pub fn extract_summary<'tcx>(
                     }
                     // Converged when no more places become relevant
                     if !changed {
-                        rap_trace!(
-                            "Transitive closure converged after {} iterations",
-                            iteration + 1
-                        );
                         break;
                     }
                 }

@@ -73,7 +73,9 @@ fn apply_function_summary<'tcx>(
             place_info.get_index(&left_place),
             place_info.get_index(&right_place),
         ) {
-            if place_info.may_drop(left_place_idx) && place_info.may_drop(right_place_idx) {
+            let left_may_drop = place_info.may_drop(left_place_idx);
+            let right_may_drop = place_info.may_drop(right_place_idx);
+            if left_may_drop && right_may_drop {
                 state.union(left_place_idx, right_place_idx);
             }
         }
@@ -92,7 +94,9 @@ fn apply_conservative_alias_for_call<'tcx>(
     let dest_id = transfer::mir_place_to_place_id(destination);
     let dest_idx = match place_info.get_index(&dest_id) {
         Some(idx) => idx,
-        None => return,
+        None => {
+            return;
+        }
     };
 
     // Only apply if destination may_drop
@@ -101,7 +105,7 @@ fn apply_conservative_alias_for_call<'tcx>(
     }
 
     // Union with all may_drop arguments
-    for arg in args {
+    for (_i, arg) in args.iter().enumerate() {
         if let Some(arg_id) = transfer::operand_to_place_id(&arg.node) {
             if let Some(arg_idx) = place_info.get_index(&arg_id) {
                 if place_info.may_drop(arg_idx) {
@@ -525,8 +529,8 @@ impl DebugWithContext<FnAliasAnalyzer<'_>> for AliasDomain {}
 
 /// Intraprocedural alias analyzer
 pub struct FnAliasAnalyzer<'tcx> {
-    _tcx: TyCtxt<'tcx>,
-    body: &'tcx Body<'tcx>,
+    pub tcx: TyCtxt<'tcx>,
+    _body: &'tcx Body<'tcx>,
     _def_id: DefId,
     place_info: PlaceInfo<'tcx>,
     /// Function summaries for interprocedural analysis
@@ -544,8 +548,8 @@ impl<'tcx> FnAliasAnalyzer<'tcx> {
         // Build place info by analyzing the body
         let place_info = PlaceInfo::build(tcx, def_id, body);
         FnAliasAnalyzer {
-            _tcx: tcx,
-            body,
+            tcx,
+            _body: body,
             _def_id: def_id,
             place_info,
             fn_summaries,
