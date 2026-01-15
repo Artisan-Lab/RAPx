@@ -168,7 +168,7 @@ impl<'tcx> PlaceInfo<'tcx> {
             info.register_place(place_id.clone(), may_drop, need_drop);
 
             // Create fields for this type recursively
-            info.create_fields_for_type(tcx, ty, place_id, 0);
+            info.create_fields_for_type(tcx, ty, place_id, 0, 0);
         }
 
         info
@@ -180,15 +180,38 @@ impl<'tcx> PlaceInfo<'tcx> {
         tcx: TyCtxt<'tcx>,
         ty: Ty<'tcx>,
         base_place: PlaceId,
-        depth: usize,
+        field_depth: usize,
+        deref_depth: usize,
     ) {
         // Limit recursion depth to avoid infinite loops
         const MAX_FIELD_DEPTH: usize = 5;
-        if depth >= MAX_FIELD_DEPTH {
+        const MAX_DEREF_DEPTH: usize = 3;
+        if field_depth >= MAX_FIELD_DEPTH || deref_depth >= MAX_DEREF_DEPTH {
             return;
         }
 
         match ty.kind() {
+            // For references, recursively create fields for the inner type
+            // This allows handling patterns like (*_1).0 where _1 is &T
+            ty::Ref(_, inner_ty, _) => {
+                self.create_fields_for_type(
+                    tcx,
+                    *inner_ty,
+                    base_place,
+                    field_depth,
+                    deref_depth + 1,
+                );
+            }
+            // For raw pointers, also create fields for the inner type
+            ty::RawPtr(inner_ty, _) => {
+                self.create_fields_for_type(
+                    tcx,
+                    *inner_ty,
+                    base_place,
+                    field_depth,
+                    deref_depth + 1,
+                );
+            }
             // For ADTs (structs/enums), create fields
             ty::Adt(adt_def, substs) => {
                 for (field_idx, field) in adt_def.all_fields().enumerate() {
@@ -200,12 +223,28 @@ impl<'tcx> PlaceInfo<'tcx> {
                     let owner = tcx.parent(field.did);
                     let ty_env = TypingEnv::post_analysis(tcx, owner);
                     let need_drop = field_ty.needs_drop(tcx, ty_env);
-                    let may_drop = !is_not_drop(tcx, field_ty);
+
+                    // Special handling: when deref_depth > 0, we are creating fields for
+                    // a type accessed through a reference/pointer (e.g., (*_1).0 where _1 is &T).
+                    // In this case, even if the field type itself doesn't need drop (e.g., i32),
+                    // we should still track it for alias analysis because it represents memory
+                    // accessed through a reference.
+                    let may_drop = if deref_depth > 0 {
+                        true
+                    } else {
+                        !is_not_drop(tcx, field_ty)
+                    };
 
                     self.register_place(field_place.clone(), may_drop, need_drop);
 
                     // Recursively create nested fields
-                    self.create_fields_for_type(tcx, field_ty, field_place, depth + 1);
+                    self.create_fields_for_type(
+                        tcx,
+                        field_ty,
+                        field_place,
+                        field_depth + 1,
+                        deref_depth,
+                    );
                 }
             }
             // For tuples, create fields
@@ -215,7 +254,16 @@ impl<'tcx> PlaceInfo<'tcx> {
 
                     // For tuples, we conservatively check drop requirements
                     // Note: Tuple fields don't have a specific DefId, so we use a simpler check
-                    let may_drop = !is_not_drop(tcx, field_ty);
+
+                    // Special handling: when deref_depth > 0, we are creating fields for
+                    // a type accessed through a reference/pointer. Even if the field type
+                    // doesn't need drop, we should track it for alias analysis.
+                    let may_drop = if deref_depth > 0 {
+                        true
+                    } else {
+                        !is_not_drop(tcx, field_ty)
+                    };
+
                     // For need_drop, we need a ty_env, but tuples don't have a DefId
                     // We'll conservatively assume need_drop = may_drop for simplicity
                     let need_drop = may_drop;
@@ -223,7 +271,13 @@ impl<'tcx> PlaceInfo<'tcx> {
                     self.register_place(field_place.clone(), may_drop, need_drop);
 
                     // Recursively create nested fields
-                    self.create_fields_for_type(tcx, field_ty, field_place, depth + 1);
+                    self.create_fields_for_type(
+                        tcx,
+                        field_ty,
+                        field_place,
+                        field_depth + 1,
+                        deref_depth,
+                    );
                 }
             }
             _ => {

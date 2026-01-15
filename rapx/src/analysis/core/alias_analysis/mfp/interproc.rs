@@ -3,6 +3,7 @@ extern crate rustc_mir_dataflow;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{Body, TerminatorKind};
 use rustc_mir_dataflow::ResultsCursor;
+use std::collections::HashSet;
 
 use super::super::{AliasPair, FnAliasPairs};
 use super::intraproc::{FnAliasAnalyzer, PlaceId};
@@ -26,6 +27,10 @@ fn extract_fields(place: &PlaceId) -> (usize, Vec<usize>) {
 }
 
 /// Extract function summary from analysis results
+///
+/// This function uses transitive closure to identify all aliases related to
+/// function parameters and return values, including those connected through
+/// temporary variables.
 pub fn extract_summary<'tcx>(
     results: &mut ResultsCursor<'_, 'tcx, FnAliasAnalyzer<'tcx>>,
     body: &Body<'tcx>,
@@ -45,34 +50,81 @@ pub fn extract_summary<'tcx>(
                 let analyzer = results.analysis();
                 let place_info = analyzer.place_info();
 
-                // Extract field-sensitive aliases between arguments and return value
-                // Iterate through all places and check if they are aliased
+                // Step 1: Collect all alias pairs at this return point
+                // We need to examine all aliases, not just those directly involving args/return
+                let mut all_pairs = Vec::new();
                 for idx_i in 0..place_info.num_places() {
                     for idx_j in (idx_i + 1)..place_info.num_places() {
-                        // Check if these two places are aliased
                         if state.clone().are_aliased(idx_i, idx_j) {
-                            // Get the PlaceId for each index
                             if let (Some(place_i), Some(place_j)) =
                                 (place_info.get_place(idx_i), place_info.get_place(idx_j))
                             {
-                                // Extract root local and field paths
-                                let (root_i, mut fields_i) = extract_fields(place_i);
-                                let (root_j, mut fields_j) = extract_fields(place_j);
-
-                                // Only include aliases involving arguments/return value
-                                // Index 0 is return value, indices 1..=arg_count are arguments
-                                if root_i <= arg_count && root_j <= arg_count {
-                                    // Fields were collected from leaf to root, reverse them
-                                    fields_i.reverse();
-                                    fields_j.reverse();
-
-                                    // Create field-sensitive AliasPair
-                                    let mut alias = AliasPair::new(root_i, root_j);
-                                    alias.lhs_fields = fields_i;
-                                    alias.rhs_fields = fields_j;
-                                    summary.add_alias(alias);
-                                }
+                                all_pairs.push((idx_i, idx_j, place_i, place_j));
                             }
+                        }
+                    }
+                }
+
+                // Step 2: Initialize relevant_places with all places whose root is a parameter or return value
+                // Index 0 is return value, indices 1..=arg_count are arguments
+                let mut relevant_places = HashSet::new();
+                for idx in 0..place_info.num_places() {
+                    if let Some(place) = place_info.get_place(idx) {
+                        if place.root_local() <= arg_count {
+                            relevant_places.insert(idx);
+                        }
+                    }
+                }
+
+                // Step 3: Expand relevant_places using transitive closure
+                // If a place aliases to a relevant place, it becomes relevant too
+                // This captures aliases that flow through temporary variables
+                // Example: _0 aliases _2, and _2 aliases _1.0, then _2 is relevant
+                const MAX_ITERATIONS: usize = 10;
+                for iteration in 0..MAX_ITERATIONS {
+                    let mut changed = false;
+                    for &(idx_i, idx_j, _, _) in &all_pairs {
+                        // If one place is relevant and the other isn't, make the other relevant
+                        if relevant_places.contains(&idx_i) && !relevant_places.contains(&idx_j) {
+                            relevant_places.insert(idx_j);
+                            changed = true;
+                        }
+                        if relevant_places.contains(&idx_j) && !relevant_places.contains(&idx_i) {
+                            relevant_places.insert(idx_i);
+                            changed = true;
+                        }
+                    }
+                    // Converged when no more places become relevant
+                    if !changed {
+                        rap_trace!(
+                            "Transitive closure converged after {} iterations",
+                            iteration + 1
+                        );
+                        break;
+                    }
+                }
+
+                // Step 4: Filter and add aliases to summary
+                // Only keep aliases where:
+                // (a) both places are in relevant_places (connected to args/return through aliases)
+                // (b) both roots are args/return (for compact summary representation)
+                for (idx_i, idx_j, place_i, place_j) in all_pairs {
+                    if relevant_places.contains(&idx_i) && relevant_places.contains(&idx_j) {
+                        let (root_i, mut fields_i) = extract_fields(place_i);
+                        let (root_j, mut fields_j) = extract_fields(place_j);
+
+                        // Final filter: only include if both roots are parameters or return value
+                        // This keeps the summary compact while benefiting from transitive closure
+                        if root_i <= arg_count && root_j <= arg_count {
+                            // Fields were collected from leaf to root, reverse them
+                            fields_i.reverse();
+                            fields_j.reverse();
+
+                            // Create field-sensitive AliasPair
+                            let mut alias = AliasPair::new(root_i, root_j);
+                            alias.lhs_fields = fields_i;
+                            alias.rhs_fields = fields_j;
+                            summary.add_alias(alias);
                         }
                     }
                 }
