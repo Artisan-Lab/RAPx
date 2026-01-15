@@ -80,6 +80,42 @@ fn apply_function_summary<'tcx>(
     }
 }
 
+/// Conservative fallback for library functions without MIR
+/// Assumes return value may alias with any may_drop argument
+fn apply_conservative_alias_for_call<'tcx>(
+    state: &mut AliasDomain,
+    destination: Place<'tcx>,
+    args: &[rustc_span::source_map::Spanned<rustc_middle::mir::Operand<'tcx>>],
+    place_info: &PlaceInfo<'tcx>,
+) {
+    // Get destination place
+    let dest_id = transfer::mir_place_to_place_id(destination);
+    let dest_idx = match place_info.get_index(&dest_id) {
+        Some(idx) => idx,
+        None => return,
+    };
+
+    // Only apply if destination may_drop
+    if !place_info.may_drop(dest_idx) {
+        return;
+    }
+
+    // Union with all may_drop arguments
+    for arg in args {
+        if let Some(arg_id) = transfer::operand_to_place_id(&arg.node) {
+            if let Some(arg_idx) = place_info.get_index(&arg_id) {
+                if place_info.may_drop(arg_idx) {
+                    // Create conservative alias
+                    state.union(dest_idx, arg_idx);
+
+                    // Sync fields for more precision
+                    transfer::sync_fields(state, &dest_id, &arg_id, place_info);
+                }
+            }
+        }
+    }
+}
+
 /// Place identifier supporting field-sensitive analysis
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PlaceId {
@@ -587,23 +623,55 @@ impl<'tcx> Analysis<'tcx> for FnAliasAnalyzer<'tcx> {
         _location: Location,
     ) -> TerminatorEdges<'mir, 'tcx> {
         match &terminator.kind {
-            // Call: the return effect is handled in apply_call_return_effect
-            // Here we just return the appropriate edges
+            // Call: apply both kill and gen effects
+            // Note: Ideally gen effect should be in apply_call_return_effect, but that method
+            // is not being called by rustc's dataflow framework in current version.
+            // Therefore, we handle both effects here, following MOP's approach.
             TerminatorKind::Call {
                 target,
                 destination,
                 args,
+                func,
                 ..
             } => {
-                // Apply kill effect for the destination
-                // Note: args is a Box<[Spanned<Operand>]>, so we extract operands
+                // Step 1: Apply kill effect for the destination
                 let operand_slice: Vec<_> = args
                     .iter()
                     .map(|spanned_arg| spanned_arg.node.clone())
                     .collect();
                 transfer::transfer_call(state, *destination, &operand_slice, &self.place_info);
 
-                // Return edges based on target
+                // Step 2: Apply gen effect - function summary or fallback
+                if let Operand::Constant(c) = func {
+                    if let ty::FnDef(callee_def_id, _) = c.ty().kind() {
+                        // Try to get the function summary
+                        let fn_summaries = self.fn_summaries.borrow();
+                        if let Some(summary) = fn_summaries.get(callee_def_id) {
+                            // Apply the function summary
+                            apply_function_summary(
+                                state,
+                                *destination,
+                                &operand_slice,
+                                summary,
+                                &self.place_info,
+                            );
+                        } else {
+                            // No summary available (e.g., library function without MIR)
+                            // Drop the borrow before calling the fallback function
+                            drop(fn_summaries);
+
+                            // Apply conservative fallback: assume return value may alias with any may_drop argument
+                            apply_conservative_alias_for_call(
+                                state,
+                                *destination,
+                                args,
+                                &self.place_info,
+                            );
+                        }
+                    }
+                }
+
+                // Step 3: Return control flow edges
                 if let Some(target_bb) = target {
                     TerminatorEdges::Single(*target_bb)
                 } else {
@@ -635,44 +703,14 @@ impl<'tcx> Analysis<'tcx> for FnAliasAnalyzer<'tcx> {
 
     fn apply_call_return_effect(
         &self,
-        state: &mut Self::Domain,
-        block: rustc_middle::mir::BasicBlock,
+        _state: &mut Self::Domain,
+        _block: rustc_middle::mir::BasicBlock,
         _return_places: CallReturnPlaces<'_, 'tcx>,
     ) {
-        // Get the terminator for this block
-        let terminator = self.body.basic_blocks[block].terminator();
-
-        if let TerminatorKind::Call {
-            func,
-            args,
-            destination,
-            ..
-        } = &terminator.kind
-        {
-            // Check if this is a call to a known function
-            if let Operand::Constant(c) = func {
-                if let ty::FnDef(callee_def_id, _) = c.ty().kind() {
-                    // Try to get the function summary
-                    let fn_summaries = self.fn_summaries.borrow();
-                    if let Some(summary) = fn_summaries.get(callee_def_id) {
-                        // Extract operands from spanned args
-                        let operand_slice: Vec<_> = args
-                            .iter()
-                            .map(|spanned_arg| spanned_arg.node.clone())
-                            .collect();
-                        // Apply the function summary
-                        apply_function_summary(
-                            state,
-                            *destination,
-                            &operand_slice,
-                            summary,
-                            &self.place_info,
-                        );
-                    }
-                    // If no summary available, the conservative kill effect
-                    // has already been applied in apply_primary_terminator_effect
-                }
-            }
-        }
+        // Note: This method is part of the rustc Analysis trait but is not being called
+        // by the dataflow framework in current rustc version when using iterate_to_fixpoint.
+        // The call return effect (gen effect) is instead handled directly in
+        // apply_primary_terminator_effect to ensure it is actually executed.
+        // This is consistent with how MOP analysis handles function calls.
     }
 }
