@@ -672,6 +672,12 @@ impl<'tcx> Analysis<'tcx> for FnAliasAnalyzer<'tcx> {
                                 &self.place_info,
                             );
                         }
+                    } else {
+                        // FnPtr? Closure?
+                        // rap_warn!(
+                        //     "[MFP-alias] Ignoring call to {:?} because it's not a FnDef",
+                        //     c
+                        // );
                     }
                 }
 
