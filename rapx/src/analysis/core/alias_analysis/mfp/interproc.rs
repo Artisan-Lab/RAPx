@@ -251,17 +251,42 @@ pub fn extract_summary<'tcx>(
                     }
                 }
 
-                // Step 5: Filter redundant aliases and add to summary
+                // Step 5: Normalize and filter redundant aliases
                 //
-                // The candidate set may contain redundant aliases such as:
-                //   - Self-aliases: (0.0, 0.0), (1, 1)
+                // Step 5.1: Normalize alias order for consistent comparison
+                //
+                // Alias relationships are symmetric: (A, B) ≡ (B, A)
+                // However, without normalization, (3, 0.0.0) and (0.0, 3) would be
+                // treated as having different local pairs and cannot be compared for
+                // subsumption relationships.
+                //
+                // We normalize by ensuring left_local <= right_local, which allows
+                // the filter to recognize that (0.0, 3) subsumes (0.0.0, 3) even if
+                // the latter was originally collected as (3, 0.0.0).
+                //
+                let normalized_aliases: std::collections::HashSet<_> = candidate_aliases
+                    .iter()
+                    .map(|alias| {
+                        let mut normalized = alias.clone();
+                        if normalized.left_local > normalized.right_local {
+                            normalized.swap(); // Swap both locals and fields
+                        }
+                        normalized
+                    })
+                    .collect();
+
+                // Step 5.2: Filter redundant aliases
+                //
+                // The normalized candidate set may contain redundant aliases such as:
+                //   - Self-aliases: (0, 0), (1, 1)
                 //   - Prefix-subsumed aliases: (0.0, 1) subsumes (0.0.0, 1), (0.0.0.0, 1)
+                //   - Reversed but equivalent: (3, 0.0.0) and (0.0, 3) after normalization
                 //
                 // We filter these to produce a minimal, canonical summary that retains
                 // precision while avoiding over-specification.
                 //
-                let filtered_aliases = filter_redundant_aliases(candidate_aliases);
-                for alias in filtered_aliases {
+                let filtered_aliases = filter_redundant_aliases(normalized_aliases);
+                for alias in filtered_aliases.clone() {
                     summary.add_alias(alias);
                 }
             }
@@ -294,31 +319,52 @@ pub fn join_fn_summaries(summary1: &FnAliasPairs, summary2: &FnAliasPairs) -> Fn
 /// canonical summary:
 ///
 /// 1. **Self-aliases**: Aliases where both sides refer to the same place
-///    Example: (0.0, 0.0), (1, 1)
+///    Example: (0, 0), (1, 1)
 ///
 /// 2. **Prefix-subsumed aliases**: When one alias is strictly more general than another
-///    Example: (0.0, 1) subsumes (0.0.0, 1), (0.0.0.0, 1), etc.
-///    We keep the more general (shorter field path) alias.
 ///
-/// The filtering process:
+///    Examples of redundancy patterns eliminated:
+///
+///    a) Single-side prefix (left more specific):
+///       - (1.0, 2) subsumes (1.0.0.0, 2) → keep (1.0, 2), remove (1.0.0.0, 2)
+///       - Rationale: If field 1.0 aliases with 2, then 1.0.0.0 (a sub-field) also aliases
+///
+///    b) Single-side prefix (right more specific):
+///       - (1.0, 2) subsumes (1.0, 2.0) → keep (1.0, 2), remove (1.0, 2.0)
+///       - Rationale: If 1.0 aliases with field 2, then 1.0 aliases with 2.0 (a sub-field)
+///
+///    c) Double-side prefix (synchronized fields):
+///       - (0, 1) subsumes (0.1, 1.1) → keep (0, 1), remove (0.1, 1.1)
+///       - Rationale: If 0 and 1 alias, their corresponding fields also alias
+///       - This handles cases like struct field synchronization
+///
+/// The filtering strategy:
 ///   - For each pair of aliases with the same (left_local, right_local):
-///     - Check if one's field paths are prefixes of the other's
-///     - Keep the one with shorter (more general) field paths
-///   - Remove all self-aliases
+///     - Check bidirectional subsumption (a subsumes b, or b subsumes a)
+///     - Keep the more general alias (shorter total field depth)
+///     - This ensures order-independence and catches all redundancy patterns
 ///
 /// Returns: A filtered HashSet containing only non-redundant aliases
 fn filter_redundant_aliases(
     aliases: std::collections::HashSet<AliasPair>,
 ) -> std::collections::HashSet<AliasPair> {
-    let mut result = aliases.clone();
+    use std::collections::HashSet;
+
     let aliases_vec: Vec<_> = aliases.iter().cloned().collect();
+    let mut to_remove = HashSet::new();
 
     for i in 0..aliases_vec.len() {
         let alias_a = &aliases_vec[i];
 
+        // Skip if already marked for removal
+        if to_remove.contains(alias_a) {
+            continue;
+        }
+
         // Rule 1: Remove self-aliases (same local)
+        // Example: (0, 0), (1, 1)
         if alias_a.left_local == alias_a.right_local {
-            result.remove(alias_a);
+            to_remove.insert(alias_a.clone());
             continue;
         }
 
@@ -329,34 +375,90 @@ fn filter_redundant_aliases(
             }
             let alias_b = &aliases_vec[j];
 
+            // Skip if already marked for removal
+            if to_remove.contains(alias_b) {
+                continue;
+            }
+
             // Only compare aliases with the same locals
+            // Note: After normalization, this ensures left_local <= right_local for both,
+            // so (3, 0.0.0) normalized to (0.0.0, 3) can be compared with (0.0, 3)
             if alias_a.left_local != alias_b.left_local
                 || alias_a.right_local != alias_b.right_local
             {
                 continue;
             }
 
-            // Check if alias_a's fields are (strict) prefixes of alias_b's fields
-            let lhs_subsumes = is_strict_prefix(&alias_a.lhs_fields, &alias_b.lhs_fields)
+            // Check bidirectional subsumption relationships
+            //
+            // Subsumption means one alias is more general (has shorter field paths)
+            // than another. We check both directions:
+            //   - Does a subsume b? (a is more general)
+            //   - Does b subsume a? (b is more general)
+
+            // Check if a's fields subsume b's fields
+            let lhs_a_subsumes_b = is_strict_prefix(&alias_a.lhs_fields, &alias_b.lhs_fields)
                 || alias_a.lhs_fields == alias_b.lhs_fields;
-            let rhs_subsumes = is_strict_prefix(&alias_a.rhs_fields, &alias_b.rhs_fields)
+            let rhs_a_subsumes_b = is_strict_prefix(&alias_a.rhs_fields, &alias_b.rhs_fields)
                 || alias_a.rhs_fields == alias_b.rhs_fields;
 
-            // If alias_a subsumes alias_b (at least one side is a strict prefix),
-            // remove the more specific alias_b
-            if lhs_subsumes && rhs_subsumes {
-                // At least one side must be a strict prefix (not both equal)
-                let lhs_is_strict = is_strict_prefix(&alias_a.lhs_fields, &alias_b.lhs_fields);
-                let rhs_is_strict = is_strict_prefix(&alias_a.rhs_fields, &alias_b.rhs_fields);
+            // Check if b's fields subsume a's fields
+            let lhs_b_subsumes_a = is_strict_prefix(&alias_b.lhs_fields, &alias_a.lhs_fields)
+                || alias_b.lhs_fields == alias_a.lhs_fields;
+            let rhs_b_subsumes_a = is_strict_prefix(&alias_b.rhs_fields, &alias_a.rhs_fields)
+                || alias_b.rhs_fields == alias_a.rhs_fields;
 
-                if lhs_is_strict || rhs_is_strict {
-                    result.remove(alias_b);
+            // Determine if there's a subsumption relationship
+            let lhs_a_strict = is_strict_prefix(&alias_a.lhs_fields, &alias_b.lhs_fields);
+            let rhs_a_strict = is_strict_prefix(&alias_a.rhs_fields, &alias_b.rhs_fields);
+            let lhs_b_strict = is_strict_prefix(&alias_b.lhs_fields, &alias_a.lhs_fields);
+            let rhs_b_strict = is_strict_prefix(&alias_b.rhs_fields, &alias_a.rhs_fields);
+
+            // a subsumes b if both sides subsume and at least one is strict
+            let a_subsumes_b =
+                lhs_a_subsumes_b && rhs_a_subsumes_b && (lhs_a_strict || rhs_a_strict);
+            // b subsumes a if both sides subsume and at least one is strict
+            let b_subsumes_a =
+                lhs_b_subsumes_a && rhs_b_subsumes_a && (lhs_b_strict || rhs_b_strict);
+
+            // If there's a subsumption relationship, mark the more specific one for removal
+            if a_subsumes_b || b_subsumes_a {
+                // Compare specificity: more general alias has lower total field depth
+                let spec_a = alias_specificity(alias_a);
+                let spec_b = alias_specificity(alias_b);
+
+                if spec_a < spec_b {
+                    // a is more general, mark b for removal
+                    to_remove.insert(alias_b.clone());
+                } else if spec_b < spec_a {
+                    // b is more general, mark a for removal
+                    to_remove.insert(alias_a.clone());
+                    break; // Stop comparing alias_a since it's marked for removal
                 }
+                // If equal specificity, keep both (shouldn't happen with strict prefix)
             }
         }
     }
 
-    result
+    // Return the result with marked aliases removed
+    aliases.difference(&to_remove).cloned().collect()
+}
+
+/// Calculate the specificity of an alias based on total field depth
+///
+/// Specificity is measured as the sum of field depths on both sides.
+/// Lower values indicate more general (less specific) aliases.
+///
+/// Examples:
+///   - (0, 1): specificity = 0 + 0 = 0 (most general)
+///   - (0.1, 1): specificity = 1 + 0 = 1
+///   - (0.1, 1.1): specificity = 1 + 1 = 2
+///   - (1.0.0.0, 2): specificity = 3 + 0 = 3
+///
+/// When two aliases have a subsumption relationship, we keep the one
+/// with lower specificity (more general).
+fn alias_specificity(alias: &AliasPair) -> usize {
+    alias.lhs_fields.len() + alias.rhs_fields.len()
 }
 
 /// Check if `prefix` is a strict prefix of `full`
