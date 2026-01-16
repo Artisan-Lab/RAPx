@@ -208,7 +208,7 @@ impl<'tcx> PlaceInfo<'tcx> {
             info.register_place(place_id.clone(), may_drop, need_drop);
 
             // Create fields for this type recursively
-            info.create_fields_for_type(tcx, ty, place_id, 0, 0);
+            info.create_fields_for_type(tcx, ty, place_id, 0, 0, ty_env);
         }
 
         info
@@ -222,6 +222,7 @@ impl<'tcx> PlaceInfo<'tcx> {
         base_place: PlaceId,
         field_depth: usize,
         deref_depth: usize,
+        ty_env: TypingEnv<'tcx>,
     ) {
         // Limit recursion depth to avoid infinite loops
         const MAX_FIELD_DEPTH: usize = 5;
@@ -240,6 +241,7 @@ impl<'tcx> PlaceInfo<'tcx> {
                     base_place,
                     field_depth,
                     deref_depth + 1,
+                    ty_env,
                 );
             }
             // For raw pointers, also create fields for the inner type
@@ -250,6 +252,7 @@ impl<'tcx> PlaceInfo<'tcx> {
                     base_place,
                     field_depth,
                     deref_depth + 1,
+                    ty_env,
                 );
             }
             // For ADTs (structs/enums), create fields
@@ -259,9 +262,7 @@ impl<'tcx> PlaceInfo<'tcx> {
                     let field_place = base_place.project_field(field_idx);
 
                     // Check if field may/need drop
-                    // Use the parent def_id for ty_env
-                    let owner = tcx.parent(field.did);
-                    let ty_env = TypingEnv::post_analysis(tcx, owner);
+                    // Use the ty_env from the function context to avoid param-env mismatch
                     let need_drop = field_ty.needs_drop(tcx, ty_env);
 
                     // Special handling: when deref_depth > 0, we are creating fields for
@@ -284,6 +285,7 @@ impl<'tcx> PlaceInfo<'tcx> {
                         field_place,
                         field_depth + 1,
                         deref_depth,
+                        ty_env,
                     );
                 }
             }
@@ -304,9 +306,8 @@ impl<'tcx> PlaceInfo<'tcx> {
                         !is_not_drop(tcx, field_ty)
                     };
 
-                    // For need_drop, we need a ty_env, but tuples don't have a DefId
-                    // We'll conservatively assume need_drop = may_drop for simplicity
-                    let need_drop = may_drop;
+                    // For need_drop, use the ty_env from the function context
+                    let need_drop = field_ty.needs_drop(tcx, ty_env);
 
                     self.register_place(field_place.clone(), may_drop, need_drop);
 
@@ -317,6 +318,7 @@ impl<'tcx> PlaceInfo<'tcx> {
                         field_place,
                         field_depth + 1,
                         deref_depth,
+                        ty_env,
                     );
                 }
             }
