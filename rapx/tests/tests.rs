@@ -187,7 +187,7 @@ fn test_reference() {
     assert_eq!(output.contains("detected"), false);
 }
 
-// ===============Alias Analysis Test==============
+// ===============Alias(MOP) Analysis Test==============
 #[test]
 fn test_alias_from_raw_parts_in() {
     let output = running_tests_with_arg("alias/alias_from_raw_parts_in", "-alias");
@@ -255,6 +255,78 @@ fn test_alias_copy_on_deref() {
 #[test]
 fn test_alias_indirect() {
     let output = running_tests_with_arg("alias/alias_indirect", "-alias");
+    assert_eq!(output.contains("iter_prop\": (0.0,1.0)"), true);
+}
+
+// ===============Alias(MFP) Analysis Test==============
+#[test]
+fn test_alias_mfp_from_raw_parts_in() {
+    let output = running_tests_with_arg("alias/alias_from_raw_parts_in", "-alias-mfp");
+    assert_eq!(output.contains("foo\": (0.0,1)"), true);
+}
+
+#[test]
+fn test_alias_mfp_from_raw_parts() {
+    let output = running_tests_with_arg("alias/alias_from_raw_parts", "-alias-mfp");
+    // assert_eq!(output.contains("foo\": (0,1)"), true);
+    assert_eq!(output.contains("foo\": (0.0,1)"), true); // This is slightly different from MOP
+}
+
+#[test]
+fn test_alias_mfp_not_alias_iter() {
+    let output = running_tests_with_arg("alias/not_alias_iter", "-alias-mfp");
+    assert_eq!(output.contains("foo\": null"), true);
+}
+
+#[test]
+fn test_alias_mfp_field() {
+    let output = running_tests_with_arg("alias/alias_field", "-alias-mfp");
+    assert_eq!(
+        output.contains("\"foo\": (0,1.1), (0,1.0)")
+            || output.contains("\"foo\": (0,1.0), (0,1.1)"),
+        true
+    );
+}
+
+#[test]
+fn test_alias_mfp_lib_no_caller() {
+    let output = running_tests_with_arg("alias/alias_lib_no_caller", "-alias-mfp");
+    assert_eq!(output.contains("new\": (0.0,1.0)"), true);
+}
+
+#[test]
+fn test_alias_mfp_scc() {
+    let output = running_tests_with_arg("alias/alias_scc", "-alias-mfp");
+    assert_eq!(output.contains("foo\": (0,1)"), true);
+}
+
+#[test]
+fn test_alias_mfp_sub_scc1() {
+    let output = running_tests_with_arg("alias/alias_sub_scc1", "-alias-mfp");
+    assert_eq!(output.contains("foo\": (0,1)"), true);
+}
+
+#[test]
+fn test_alias_mfp_sub_scc2() {
+    let output = running_tests_with_arg("alias/alias_sub_scc2", "-alias-mfp");
+    assert_eq!(output.contains("foo\": (0,1), (0,2)"), true);
+}
+
+#[test]
+fn test_alias_mfp_switch() {
+    let output = running_tests_with_arg("alias/alias_switch", "-alias-mfp");
+    assert_eq!(output.contains("foo\": (0,1)"), true);
+}
+
+#[test]
+fn test_alias_mfp_copy_on_deref() {
+    let output = running_tests_with_arg("alias/alias_copy_for_deref", "-alias-mfp");
+    assert_eq!(output.contains("new\": (0.0,1.0)"), true);
+}
+
+#[test]
+fn test_alias_mfp_indirect() {
+    let output = running_tests_with_arg("alias/alias_indirect", "-alias-mfp");
     assert_eq!(output.contains("iter_prop\": (0.0,1.0)"), true);
 }
 
