@@ -13,6 +13,7 @@ Application:
 
 Analysis:
     -alias          perform alias analysis (meet-over-paths by default)
+    -alias-mfp      perform alias analysis (maximum-fixed-point)
     -adg            generate API dependency graphs
     -upg            generate unsafety propagation graphs for each module.
     -upg-std        generate unsafety propagation graphs for each module of the Rust standard library
