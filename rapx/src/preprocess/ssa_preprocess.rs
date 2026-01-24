@@ -1,4 +1,4 @@
-use super::{doc_attr, stability_attr};
+use super::set_attrs;
 use rustc_ast::*;
 use rustc_span::{
     DUMMY_SP,
@@ -6,7 +6,7 @@ use rustc_span::{
 };
 use thin_vec::ThinVec;
 
-pub(crate) fn create_ssa_struct(_krate: &mut Crate) {
+pub(crate) fn create_ssa_struct(_krate: &mut Crate, build_std: bool) {
     rap_debug!("[CALLBACK] Injecting new structs into the AST...");
 
     let ssa_struct = create_struct(
@@ -23,6 +23,7 @@ pub(crate) fn create_ssa_struct(_krate: &mut Crate) {
             ("para9", Symbol::intern("i128")),
             ("para10", Symbol::intern("i128")),
         ],
+        build_std,
     );
 
     let essa_struct = create_struct(
@@ -32,6 +33,7 @@ pub(crate) fn create_ssa_struct(_krate: &mut Crate) {
             ("op2", Symbol::intern("i128")),
             ("cmp", Symbol::intern("i128")),
         ],
+        build_std,
     );
 
     _krate.items.push(ssa_struct);
@@ -39,11 +41,15 @@ pub(crate) fn create_ssa_struct(_krate: &mut Crate) {
 
     // println!("[CALLBACK] Injection complete. Continuing compilation...");
 }
-pub(crate) fn create_struct(name: &str, fields_def: Vec<(&str, Symbol)>) -> Box<Item> {
+pub(crate) fn create_struct(
+    name: &str,
+    fields_def: Vec<(&str, Symbol)>,
+    build_std: bool,
+) -> Box<Item> {
     let fields: ThinVec<FieldDef> = fields_def
         .into_iter()
         .map(|(fname, fty)| FieldDef {
-            attrs: ThinVec::from([doc_attr(), stability_attr()]),
+            attrs: set_attrs(build_std),
             vis: Visibility {
                 span: DUMMY_SP,
                 kind: VisibilityKind::Public,
@@ -76,7 +82,7 @@ pub(crate) fn create_struct(name: &str, fields_def: Vec<(&str, Symbol)>) -> Box<
     let item_kind = ItemKind::Struct(ident, Generics::default(), variant_data);
 
     Box::new(Item {
-        attrs: ThinVec::from([doc_attr(), stability_attr()]),
+        attrs: set_attrs(build_std),
         id: NodeId::from_u32(0),
         kind: item_kind,
         vis: Visibility {

@@ -1,4 +1,4 @@
-use super::{doc_attr, stability_attr};
+use super::set_attrs;
 use rustc_ast::*;
 use rustc_span::{DUMMY_SP, symbol::Ident};
 use thin_vec::ThinVec;
@@ -31,7 +31,7 @@ fn make_dummy_block() -> Block {
     }
 }
 
-fn make_dummy_fn(ident_name: &str) -> Box<Item> {
+fn make_dummy_fn(ident_name: &str, build_std: bool) -> Box<Item> {
     let ident = Ident::from_str(ident_name);
 
     let fn_ast = Fn {
@@ -45,7 +45,7 @@ fn make_dummy_fn(ident_name: &str) -> Box<Item> {
     };
 
     Box::new(Item {
-        attrs: ThinVec::from([doc_attr(), stability_attr()]),
+        attrs: set_attrs(build_std),
         id: DUMMY_NODE_ID,
         kind: ItemKind::Fn(Box::new(fn_ast)),
         vis: Visibility {
@@ -58,8 +58,8 @@ fn make_dummy_fn(ident_name: &str) -> Box<Item> {
     })
 }
 
-pub(crate) fn create_dummy_fns(krate: &mut Crate) {
-    let raw_ptr_fn = make_dummy_fn("__raw_ptr_deref_dummy");
+pub(crate) fn create_dummy_fns(krate: &mut Crate, build_std: bool) {
+    let raw_ptr_fn = make_dummy_fn("__raw_ptr_deref_dummy", build_std);
     //let static_mut_fn = make_dummy_fn("__static_mut_deref_dummy");
 
     krate.items.push(raw_ptr_fn);

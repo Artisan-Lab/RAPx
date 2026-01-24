@@ -7,10 +7,11 @@ use rustc_ast::{
     *,
 };
 use rustc_span::{DUMMY_SP, Ident, symbol::Symbol};
+use thin_vec::ThinVec;
 
 /// Empty `#[doc]` on the struct.
 /// cc https://github.com/Artisan-Lab/RAPx/issues/184
-pub fn doc_attr() -> Attribute {
+fn doc_attr() -> Attribute {
     Attribute {
         kind: AttrKind::DocComment(CommentKind::Line, Symbol::intern("doc")),
         id: AttrId::ZERO,
@@ -20,7 +21,7 @@ pub fn doc_attr() -> Attribute {
 }
 
 // #[stable(feature = "foo", since = "1.93")]
-pub fn stability_attr() -> Attribute {
+fn stability_attr() -> Attribute {
     let mut attr = NormalAttr::from_ident(Ident::from_str("stable"));
     let tokens: Vec<_> = {
         let feature = Token::from_ast_ident(Ident::from_str("feature"));
@@ -51,4 +52,13 @@ pub fn stability_attr() -> Attribute {
         style: AttrStyle::Outer,
         span: DUMMY_SP,
     }
+}
+
+fn set_attrs(build_std: bool) -> ThinVec<Attribute> {
+    let mut v = ThinVec::with_capacity(2);
+    v.push(doc_attr());
+    if build_std {
+        v.push(stability_attr());
+    }
+    v
 }
