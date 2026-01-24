@@ -584,8 +584,6 @@ impl<'tcx> MopGraph<'tcx> {
 }
 
 pub fn is_no_alias_intrinsic(def_id: DefId) -> bool {
-    if def_id == call_mut() || def_id == clone() || def_id == take() {
-        return true;
-    }
-    return false;
+    let v = [call_mut_opt(), clone_opt(), take_opt()];
+    contains(&v, def_id)
 }

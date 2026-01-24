@@ -233,14 +233,14 @@ impl<'tcx> AliasAnalyzer<'tcx> {
 
     fn handle_conor_cases(&mut self) {
         let cases = [
-            copy_from_nonoverlapping(),
-            copy_to_nonoverlapping(),
-            copy_to(),
-            copy_from(),
+            copy_from_nonoverlapping_opt(),
+            copy_to_nonoverlapping_opt(),
+            copy_to_opt(),
+            copy_from_opt(),
         ];
         let alias = MopAliasPair::new(1, true, true, 2, true, true);
         for (key, value) in self.fn_map.iter_mut() {
-            if cases.iter().any(|lock| lock == key) {
+            if contains(&cases, *key) {
                 value.alias_set.clear();
                 value.alias_set.insert(alias.clone());
             }

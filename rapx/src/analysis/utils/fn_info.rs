@@ -1418,16 +1418,11 @@ pub fn generate_mir_cfg_dot<'tcx>(
                     is_drop_related = true;
                 }
                 TerminatorKind::Call { func, .. } => {
-                    if let Operand::Constant(c) = func {
-                        if let ty::FnDef(def_id, _) = *c.ty().kind() {
-                            if def_id == drop()
-                                || def_id == drop_in_place()
-                                || def_id == manually_drop()
-                                || dealloc_opt().map(|f| f == def_id).unwrap_or(false)
-                            {
-                                is_drop_related = true;
-                            }
-                        }
+                    if let Operand::Constant(c) = func
+                        && let ty::FnDef(def_id, _) = *c.ty().kind()
+                        && is_drop_fn(def_id)
+                    {
+                        is_drop_related = true;
                     }
                 }
                 _ => {}

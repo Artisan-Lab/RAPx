@@ -79,12 +79,16 @@ macro_rules! intrinsics {
     ($( $id:ident : $paths:expr ,)+ ) => {
         const INTRINSICS: &[&[&str]] = &[$( $paths ,)+];
         $(
-            pub fn $id() -> DefId {
-                ${concat($id, _opt)} ().unwrap_or_else(||
-                    panic!("Failed to retrieve the DefId of {:#?}.", $paths)
-                )
-            }
+            // Retrieved the fn DefId. Panic if the fn doesn't exist.
+            // pub fn $id() -> DefId {
+            //     ${concat($id, _opt)} ().unwrap_or_else(||
+            //         panic!("Failed to retrieve the DefId of {:#?}.", $paths)
+            //     )
+            // }
 
+            // Retrieved the fn DefId. Returns None if the fn doesn't exist.
+            // This is preferred especially RAPx is used to compile nostd crates or build-std,
+            // where the fn is likely absent.
             pub fn ${concat($id, _opt)} () -> Option<DefId> {
                 let map = &INIT.get().expect("Intrinsics DefIds haven't been initialized.").map;
                 for path in $paths {
@@ -167,4 +171,21 @@ intrinsics! {
 /// rustc_public DefId to internal DefId
 pub fn to_internal<T: CrateDef>(val: &T, tcx: TyCtxt) -> DefId {
     rustc_internal::internal(tcx, val.def_id())
+}
+
+/// Find any drop fn. Any of these drop fns can be missing, e.g. for crates like no_std without
+/// using alloc, dealloc doesn't exist.
+pub fn is_drop_fn(target: DefId) -> bool {
+    let drop_fn = [
+        drop_opt(),
+        drop_in_place_opt(),
+        manually_drop_opt(),
+        dealloc_opt(),
+    ];
+    contains(&drop_fn, target)
+}
+
+/// Is the targe DefId in the given array.
+pub fn contains(v: &[Option<DefId>], target: DefId) -> bool {
+    v.contains(&Some(target))
 }
