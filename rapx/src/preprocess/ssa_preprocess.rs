@@ -1,4 +1,4 @@
-use super::doc_attr;
+use super::{doc_attr, stability_attr};
 use rustc_ast::*;
 use rustc_span::{
     DUMMY_SP,
@@ -43,7 +43,7 @@ pub(crate) fn create_struct(name: &str, fields_def: Vec<(&str, Symbol)>) -> Box<
     let fields: ThinVec<FieldDef> = fields_def
         .into_iter()
         .map(|(fname, fty)| FieldDef {
-            attrs: ThinVec::from([doc_attr()]),
+            attrs: ThinVec::from([doc_attr(), stability_attr()]),
             vis: Visibility {
                 span: DUMMY_SP,
                 kind: VisibilityKind::Public,
@@ -76,7 +76,7 @@ pub(crate) fn create_struct(name: &str, fields_def: Vec<(&str, Symbol)>) -> Box<
     let item_kind = ItemKind::Struct(ident, Generics::default(), variant_data);
 
     Box::new(Item {
-        attrs: ThinVec::from([doc_attr()]),
+        attrs: ThinVec::from([doc_attr(), stability_attr()]),
         id: NodeId::from_u32(0),
         kind: item_kind,
         vis: Visibility {

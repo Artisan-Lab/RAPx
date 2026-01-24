@@ -1,4 +1,4 @@
-use super::doc_attr;
+use super::{doc_attr, stability_attr};
 use rustc_ast::*;
 use rustc_span::{DUMMY_SP, symbol::Ident};
 use thin_vec::ThinVec;
@@ -45,7 +45,7 @@ fn make_dummy_fn(ident_name: &str) -> Box<Item> {
     };
 
     Box::new(Item {
-        attrs: ThinVec::from([doc_attr()]),
+        attrs: ThinVec::from([doc_attr(), stability_attr()]),
         id: DUMMY_NODE_ID,
         kind: ItemKind::Fn(Box::new(fn_ast)),
         vis: Visibility {
