@@ -86,9 +86,41 @@ pub fn rap_clean() -> bool {
 }
 
 fn split_args_by_double_dash(args: &[String]) -> [Vec<String>; 2] {
-    let mut args = args.iter().skip(2).map(|arg| arg.to_owned());
-    let rap_args = args.by_ref().take_while(|arg| *arg != "--").collect();
-    let cargo_args = args.collect();
+    let mut args_iter = args.iter().skip(2);
+    
+    let mut rap_args = Vec::new();
+    let mut cargo_args = Vec::new();
+    
+    // Process args before "--" separator (if it exists)
+    let mut found_separator = false;
+    while let Some(arg) = args_iter.next() {
+        if arg == "--" {
+            found_separator = true;
+            break;
+        }
+        
+        // Check if this is a cargo-specific flag that should be forwarded to cargo
+        // Cargo unstable flags start with -Z
+        if arg.starts_with("-Z") {
+            cargo_args.push(arg.to_owned());
+            // If -Z is followed by a separate value (not -Z<value>), also take the next arg
+            if arg == "-Z" {
+                if let Some(next_arg) = args_iter.next() {
+                    cargo_args.push(next_arg.to_owned());
+                }
+            }
+        } else {
+            rap_args.push(arg.to_owned());
+        }
+    }
+    
+    // If we found "--", everything after it goes to cargo_args
+    if found_separator {
+        cargo_args.extend(args_iter.map(|arg| arg.to_owned()));
+    }
+    
+    rap_trace!("split_args_by_double_dash: rap_args={rap_args:?}, cargo_args={cargo_args:?}");
+    
     [rap_args, cargo_args]
 }
 
@@ -142,4 +174,104 @@ pub fn current_exe_path() -> &'static Path {
 /// even though both flavors are accepted here.
 pub fn timeout() -> Option<u64> {
     ARGS.get_arg_flag_value("-timeout")?.parse().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_split_args_z_flag_alone() {
+        // Test: -Z flag with value attached (-Z<value>)
+        let args = vec![
+            "cargo".to_string(),
+            "rapx".to_string(),
+            "-F".to_string(),
+            "-Zbuild-std=panic_abort,core,std".to_string(),
+        ];
+        let [rap_args, cargo_args] = split_args_by_double_dash(&args);
+        assert_eq!(rap_args, vec!["-F"]);
+        assert_eq!(cargo_args, vec!["-Zbuild-std=panic_abort,core,std"]);
+    }
+
+    #[test]
+    fn test_split_args_z_flag_separate() {
+        // Test: -Z flag with separate value (-Z <value>)
+        let args = vec![
+            "cargo".to_string(),
+            "rapx".to_string(),
+            "-F".to_string(),
+            "-Z".to_string(),
+            "build-std=panic_abort,core,std".to_string(),
+        ];
+        let [rap_args, cargo_args] = split_args_by_double_dash(&args);
+        assert_eq!(rap_args, vec!["-F"]);
+        assert_eq!(cargo_args, vec!["-Z", "build-std=panic_abort,core,std"]);
+    }
+
+    #[test]
+    fn test_split_args_with_double_dash() {
+        // Test: Arguments with -- separator
+        let args = vec![
+            "cargo".to_string(),
+            "rapx".to_string(),
+            "-F".to_string(),
+            "--".to_string(),
+            "-Zbuild-std=core".to_string(),
+            "--release".to_string(),
+        ];
+        let [rap_args, cargo_args] = split_args_by_double_dash(&args);
+        assert_eq!(rap_args, vec!["-F"]);
+        assert_eq!(cargo_args, vec!["-Zbuild-std=core", "--release"]);
+    }
+
+    #[test]
+    fn test_split_args_z_before_and_after_dash() {
+        // Test: -Z flag before -- and other args after --
+        let args = vec![
+            "cargo".to_string(),
+            "rapx".to_string(),
+            "-F".to_string(),
+            "-Zbuild-std=core".to_string(),
+            "--".to_string(),
+            "--release".to_string(),
+        ];
+        let [rap_args, cargo_args] = split_args_by_double_dash(&args);
+        assert_eq!(rap_args, vec!["-F"]);
+        assert_eq!(cargo_args, vec!["-Zbuild-std=core", "--release"]);
+    }
+
+    #[test]
+    fn test_split_args_multiple_z_flags() {
+        // Test: Multiple -Z flags
+        let args = vec![
+            "cargo".to_string(),
+            "rapx".to_string(),
+            "-F".to_string(),
+            "-Zbuild-std=core".to_string(),
+            "-Zunstable-options".to_string(),
+            "-M".to_string(),
+        ];
+        let [rap_args, cargo_args] = split_args_by_double_dash(&args);
+        assert_eq!(rap_args, vec!["-F", "-M"]);
+        assert_eq!(
+            cargo_args,
+            vec!["-Zbuild-std=core", "-Zunstable-options"]
+        );
+    }
+
+    #[test]
+    fn test_split_args_no_z_flags() {
+        // Test: No -Z flags, only rapx args
+        let args = vec![
+            "cargo".to_string(),
+            "rapx".to_string(),
+            "-F".to_string(),
+            "-M".to_string(),
+            "-O".to_string(),
+        ];
+        let [rap_args, cargo_args] = split_args_by_double_dash(&args);
+        assert_eq!(rap_args, vec!["-F", "-M", "-O"]);
+        assert!(cargo_args.is_empty());
+    }
 }
