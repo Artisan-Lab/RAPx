@@ -537,6 +537,8 @@ pub struct FnAliasAnalyzer<'tcx> {
     place_info: PlaceInfo<'tcx>,
     /// Function summaries for interprocedural analysis
     fn_summaries: Rc<RefCell<FnAliasMap>>,
+    /// (Debug) Number of BBs we have iterated through
+    pub bb_iter_cnt: RefCell<usize>,
 }
 
 impl<'tcx> FnAliasAnalyzer<'tcx> {
@@ -555,6 +557,7 @@ impl<'tcx> FnAliasAnalyzer<'tcx> {
             _def_id: def_id,
             place_info,
             fn_summaries,
+            bb_iter_cnt: RefCell::new(0),
         }
     }
 
@@ -628,6 +631,10 @@ impl<'tcx> Analysis<'tcx> for FnAliasAnalyzer<'tcx> {
         terminator: &'mir Terminator<'tcx>,
         _location: Location,
     ) -> TerminatorEdges<'mir, 'tcx> {
+        // (Debug)
+        {
+            *self.bb_iter_cnt.borrow_mut() += 1;
+        }
         match &terminator.kind {
             // Call: apply both kill and gen effects
             // Note: Ideally gen effect should be in apply_call_return_effect, but that method

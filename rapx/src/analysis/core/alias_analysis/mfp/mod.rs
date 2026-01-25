@@ -82,6 +82,14 @@ impl<'tcx> MfpAliasAnalyzer<'tcx> {
             .iterate_to_fixpoint(self.tcx, body, None)
             .into_results_cursor(body);
 
+        // (Debug)
+        let iter_cnt = *results.analysis().bb_iter_cnt.borrow();
+        let bb_cnt = body.basic_blocks.iter().len();
+        rap_debug!(
+            "[Alias-mfp] {fn_name} {iter_cnt}/{bb_cnt}, analysis ratio: {:.2}",
+            (iter_cnt as f32) / (bb_cnt as f32)
+        );
+
         // Extract the function summary from this analysis
         let new_summary = interproc::extract_summary(&mut results, body, def_id);
 
