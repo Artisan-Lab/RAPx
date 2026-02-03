@@ -27,9 +27,7 @@ pub struct SSATransformer<'tcx> {
     pub local_index: usize,
     pub local_defination_block: HashMap<Local, BasicBlock>,
     pub skipped: HashSet<usize>,
-    pub phi_index: HashMap<*const Statement<'tcx>, usize>,
-    pub phi_statements: HashMap<*const Statement<'tcx>, bool>,
-    pub essa_statements: HashMap<*const Statement<'tcx>, bool>,
+    pub phi_index: HashMap<Location, usize>,
     pub phi_def_id: DefId,
     pub essa_def_id: DefId,
     pub ref_local_map: HashMap<Local, Local>,
@@ -102,8 +100,6 @@ impl<'tcx> SSATransformer<'tcx> {
             local_defination_block: local_defination_block,
             skipped: skipped,
             phi_index: HashMap::default(),
-            phi_statements: HashMap::default(),
-            essa_statements: HashMap::default(),
             phi_def_id: ssa_def_id,
             essa_def_id: essa_def_id,
             ref_local_map: HashMap::default(),
@@ -291,19 +287,50 @@ impl<'tcx> SSATransformer<'tcx> {
     }
 
     pub fn is_phi_statement(&self, statement: &Statement<'tcx>) -> bool {
-        let phi_stmt = statement as *const Statement<'tcx>;
-        if self.phi_statements.contains_key(&phi_stmt) {
-            return true;
-        } else {
-            return false;
+        if let StatementKind::Assign(box (_, rvalue)) = &statement.kind {
+            if let Rvalue::Aggregate(box aggregate_kind, _) = rvalue {
+                if let AggregateKind::Adt(def_id, ..) = aggregate_kind {
+                    return *def_id == self.phi_def_id;
+                }
+            }
         }
+        false
     }
+
     pub fn is_essa_statement(&self, statement: &Statement<'tcx>) -> bool {
-        let essa_stmt = statement as *const Statement<'tcx>;
-        if self.essa_statements.contains_key(&essa_stmt) {
-            return true;
-        } else {
-            return false;
+        if let StatementKind::Assign(box (_, rvalue)) = &statement.kind {
+            if let Rvalue::Aggregate(box aggregate_kind, _) = rvalue {
+                if let AggregateKind::Adt(def_id, ..) = aggregate_kind {
+                    return *def_id == self.essa_def_id;
+                }
+            }
         }
+        false
+    }
+    pub fn get_essa_source_block(&self, statement: &Statement<'tcx>) -> Option<BasicBlock> {
+        if !self.is_essa_statement(statement) {
+            return None;
+        }
+
+        if let StatementKind::Assign(box (_, Rvalue::Aggregate(_, operands))) = &statement.kind {
+            if let Some(last_op) = operands.into_iter().last() {
+                if let Operand::Constant(box ConstOperand { const_: c, .. }) = last_op {
+                    if let Some(val) = self.try_const_to_usize(c) {
+                        return Some(BasicBlock::from_usize(val as usize));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn try_const_to_usize(&self, c: &Const<'tcx>) -> Option<u64> {
+        if let Some(scalar_int) = c.try_to_scalar_int() {
+            let size = scalar_int.size();
+            if let Ok(bits) = scalar_int.try_to_bits(size) {
+                return Some(bits as u64);
+            }
+        }
+        None
     }
 }

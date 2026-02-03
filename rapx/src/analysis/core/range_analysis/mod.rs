@@ -86,7 +86,7 @@ where
     T: IntervalArithmetic + Clone + PartialOrd + Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "=== Print range analysis resuts ===")?;
+        writeln!(f, "=== Print range analysis results ===")?;
         for (def_id, ra_result) in &self.0 {
             let fn_name = get_fn_name_byid(def_id);
             writeln!(f, "Function: {:?} =>", fn_name)?;
@@ -181,6 +181,7 @@ impl fmt::Display for RangeType {
         write!(f, "{}", s)
     }
 }
+
 #[derive(Debug, Hash, Clone, PartialEq, Eq)]
 
 pub struct Range<T>

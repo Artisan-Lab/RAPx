@@ -304,17 +304,30 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> BasicOpKind<'tcx, T> {
         match self {
             BasicOpKind::Unary(op) => vec![op.source],
             BasicOpKind::Binary(op) => {
-                let mut sources = vec![];
-                sources.push(op.source1.unwrap());
-                if let Some(source2) = op.source2 {
-                    sources.push(source2);
+                let mut sources = Vec::new();
+
+                if let Some(src1) = op.source1 {
+                    sources.push(src1);
                 }
+
+                if let Some(src2) = op.source2 {
+                    sources.push(src2);
+                }
+
                 sources
             }
             BasicOpKind::Essa(op) => vec![op.source],
             BasicOpKind::ControlDep(op) => vec![op.source],
             BasicOpKind::Phi(op) => op.sources.clone(),
-            BasicOpKind::Use(op) => vec![op.source.unwrap()],
+            BasicOpKind::Use(op) => {
+                let mut sources = Vec::new();
+
+                if let Some(src1) = op.source {
+                    sources.push(src1);
+                }
+
+                sources
+            }
             BasicOpKind::Call(op) => op.sources.clone(),
             BasicOpKind::Ref(op) => vec![op.source],
             BasicOpKind::Aggregate(_) => vec![],
@@ -433,6 +446,24 @@ impl<'tcx, T: IntervalArithmetic + ConstConvert + Debug> CallOp<'tcx, T> {
 
                 rap_trace!(
                     "IndexMut detected on place {:?}, returning its range: {:?}",
+                    self.sink,
+                    result
+                );
+                return result;
+            }
+            "std::ops::Index::index" => {
+                let mut result = Range::default(T::min_value());
+
+                match self.args.last() {
+                    Some(Operand::Copy(place)) | Some(Operand::Move(place)) => {
+                        result = caller_vars[place].get_range().clone();
+                    }
+                    Some(Operand::Constant(c)) => {}
+                    None => {}
+                }
+
+                rap_trace!(
+                    "Index detected on place {:?}, returning its range: {:?}",
                     self.sink,
                     result
                 );

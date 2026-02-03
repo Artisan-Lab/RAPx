@@ -698,7 +698,9 @@ where
             if let Some(terminator) = &block_data.terminator {
                 match &terminator.kind {
                     TerminatorKind::SwitchInt { discr, targets } => {
-                        self.build_value_branch_map(body, discr, targets, bb, block_data);
+                        if targets.iter().count() == 1 {
+                            self.build_value_branch_map(body, discr, targets, bb, block_data);
+                        }
                     }
                     TerminatorKind::Goto { target } => {
                         // self.build_value_goto_map(block_index, *target);
@@ -715,18 +717,92 @@ where
         // rap_trace!("value_branchmap{:?}\n", self.values_branchmap);
         // rap_trace!("varnodes{:?}\n,", self.vars);
     }
+    fn trace_operand_source(
+        &self,
+        body: &'tcx Body<'tcx>,
+        mut current_block: BasicBlock,
+        target_place: Place<'tcx>,
+    ) -> Option<&'tcx Operand<'tcx>> {
+        let mut visited = HashSet::new();
+        let target_local = target_place.local;
 
+        while visited.insert(current_block) {
+            let data = &body.basic_blocks[current_block];
+
+            // 逆序扫描当前块
+            for stmt in data.statements.iter().rev() {
+                if let StatementKind::Assign(box (lhs, rvalue)) = &stmt.kind {
+                    // 只要找到了对目标变量的赋值语句
+                    if lhs.local == target_local {
+                        rap_debug!(
+                            "Tracing source for {:?} in block {:?} {:?}\n",
+                            target_place,
+                            current_block,
+                            rvalue
+                        );
+                        return match rvalue {
+                            // 如果右值是 Operand (例如 _2 = _1 或 _2 = const 5)
+                            // 直接返回这个 Operand 的引用，不再往上追 _1 的来源
+                            Rvalue::Use(op) => Some(op),
+
+                            // 如果右值是计算结果 (例如 _2 = Add(_3, _4))
+                            // 说明 _2 的来源就在这里，但它不是一个独立的 Operand 对象，返回 None
+                            _ => None,
+                        };
+                    }
+                }
+            }
+
+            // 当前块没找到，尝试回溯唯一的前驱块
+            let preds = &body.basic_blocks.predecessors()[current_block];
+            if preds.len() == 1 {
+                current_block = preds[0];
+            } else {
+                break;
+            }
+        }
+
+        None
+    }
     pub fn build_value_branch_map(
         &mut self,
-        body: &Body<'tcx>,
+        body: &'tcx Body<'tcx>,
         discr: &'tcx Operand<'tcx>,
         targets: &'tcx SwitchTargets,
-        block: BasicBlock,
+        switch_block: BasicBlock,
         block_data: &'tcx BasicBlockData<'tcx>,
     ) {
         // let place1: &Place<'tcx>;
+        let first_target = targets.all_targets()[0];
+        let target_data = &body.basic_blocks[first_target];
+
         if let Operand::Copy(place) | Operand::Move(place) = discr {
             if let Some((op1, op2, cmp_op)) = self.extract_condition(place, block_data) {
+                rap_debug!(
+                    "extract_condition op1:{:?} op2:{:?} cmp_op:{:?}\n",
+                    op1,
+                    op2,
+                    cmp_op
+                );
+                let op1 = if let Some(p1) = op1.place() {
+                    self.trace_operand_source(body, switch_block, p1)
+                        .unwrap_or(op1)
+                } else {
+                    op1
+                };
+
+                let op2 = if let Some(p2) = op2.place() {
+                    self.trace_operand_source(body, switch_block, p2)
+                        .unwrap_or(op2)
+                } else {
+                    op2
+                };
+                rap_debug!(
+                    "build_value_branch_map op1:{:?} op2:{:?} cmp_op:{:?}\n",
+                    op1,
+                    op2,
+                    cmp_op
+                );
                 let const_op1 = op1.constant();
                 let const_op2 = op2.constant();
                 match (const_op1, const_op2) {
@@ -754,8 +830,8 @@ where
                         let value = Self::convert_const(&c.const_).unwrap();
                         let const_range =
                             Range::new(value.clone(), value.clone(), RangeType::Unknown);
-                        rap_trace!("cmp_op{:?}\n", cmp_op);
-                        rap_trace!("const_in_left{:?}\n", const_in_left);
+                        rap_trace!("cmp_op {:?}\n", cmp_op);
+                        rap_trace!("const_in_left {:?}\n", const_in_left);
                         let mut true_range =
                             self.apply_comparison(value.clone(), cmp_op, true, const_in_left);
                         let mut false_range =
@@ -817,7 +893,7 @@ where
                             ValueBranchMap::new(p2, &target_vec[0], &target_vec[1], SFOp2, STOp2);
                         self.values_branchmap.insert(&p1, vbm_1);
                         self.values_branchmap.insert(&p2, vbm_2);
-                        self.switchbbs.insert(block, (*p1, *p2));
+                        self.switchbbs.insert(switch_block, (*p1, *p2));
                     }
                 }
             };
@@ -873,26 +949,28 @@ where
                 if lhs == place {
                     let mut return_op1: &Operand<'tcx> = &op1;
                     let mut return_op2: &Operand<'tcx> = &op2;
-                    for stmt_original in &switch_block.statements {
-                        if let StatementKind::Assign(box (lhs, Rvalue::Use(OP1))) =
-                            &stmt_original.kind
-                        {
-                            if lhs.clone() == op1.place().unwrap() {
-                                return_op1 = OP1;
-                            }
-                        }
-                    }
-                    if op2.constant().is_none() {
-                        for stmt_original in &switch_block.statements {
-                            if let StatementKind::Assign(box (lhs, Rvalue::Use(OP2))) =
-                                &stmt_original.kind
-                            {
-                                if lhs.clone() == op2.place().unwrap() {
-                                    return_op2 = OP2;
-                                }
-                            }
-                        }
-                    }
+                    // for stmt_original in &switch_block.statements {
+                    //     if op1.constant().is_none() {
+                    //         if let StatementKind::Assign(box (lhs, Rvalue::Use(OP1))) =
+                    //             &stmt_original.kind
+                    //         {
+                    //             if lhs.clone() == op1.place().unwrap() {
+                    //                 return_op1 = OP1;
+                    //             }
+                    //         }
+                    //     }
+                    // }
+                    // if op2.constant().is_none() {
+                    //     for stmt_original in &switch_block.statements {
+                    //         if let StatementKind::Assign(box (lhs, Rvalue::Use(OP2))) =
+                    //             &stmt_original.kind
+                    //         {
+                    //             if lhs.clone() == op2.place().unwrap() {
+                    //                 return_op2 = OP2;
+                    //             }
+                    //         }
+                    //     }
+                    // }
 
                     return Some((return_op1, return_op2, *bin_op));
                 }
@@ -1286,7 +1364,6 @@ where
 
         let BI: BasicInterval<T> = BasicInterval::new(Range::default(T::min_value()));
         let mut source: Option<&'tcx Place<'tcx>> = None;
-        rap_debug!("wtf {:?}\n", self.vars);
 
         match op {
             Operand::Copy(place) | Operand::Move(place) => {
@@ -1366,8 +1443,8 @@ where
         };
         let op = &operands[FieldIdx::from_usize(loc_2)];
         let bop_index = self.oprs.len();
-
         let BI: IntervalType<'_, T>;
+        rap_trace!("essa_op operand1 {:?}\n", source1.unwrap());
         if let Operand::Constant(c) = op {
             let vbm = self.values_branchmap.get(source1.unwrap()).unwrap();
             if block == *vbm.get_bb_true() {
@@ -1548,7 +1625,6 @@ where
 
         self.defmap.insert(sink, bop_index);
     }
-
     fn add_binary_op(
         &mut self,
         sink: &'tcx Place<'tcx>,
@@ -1559,72 +1635,78 @@ where
         bin_op: BinOp,
     ) {
         rap_trace!("binary_op{:?}\n", inst);
+
+        // Define the sink node (Def)
         let sink_node = self.def_add_varnode_sym(sink, rvalue);
         rap_trace!("addsink_in_binary_op{:?}\n", sink_node);
+
         let bop_index = self.oprs.len();
-        let BI: BasicInterval<T> = BasicInterval::new(Range::default(T::min_value()));
+        let bi: BasicInterval<T> = BasicInterval::new(Range::default(T::min_value()));
 
-        let source1_place = match op1 {
-            Operand::Copy(place) | Operand::Move(place) => {
-                self.use_add_varnode_sym(place, rvalue);
-                rap_trace!("addvar_in_binary_op{:?}\n", place);
+        // Match both operands simultaneously to handle all combinations.
+        // Goal: Ensure source1 is always a Place if at least one Place exists.
+        let (source1_place, source2_place, const_val) = match (op1, op2) {
+            // Case 1: Place + Place
+            (Operand::Copy(p1) | Operand::Move(p1), Operand::Copy(p2) | Operand::Move(p2)) => {
+                self.use_add_varnode_sym(p1, rvalue);
+                self.use_add_varnode_sym(p2, rvalue);
+                rap_trace!("addvar_in_binary_op p1:{:?}, p2:{:?}\n", p1, p2);
 
-                Some(place)
+                (Some(p1), Some(p2), None)
             }
-            Operand::Constant(_) => None,
-        };
 
-        match op2 {
-            Operand::Copy(place) | Operand::Move(place) => {
-                self.use_add_varnode_sym(place, rvalue);
-                rap_trace!("addvar_in_binary_op{:?}\n", place);
+            // Case 2: Place + Constant
+            (Operand::Copy(p1) | Operand::Move(p1), Operand::Constant(c2)) => {
+                self.use_add_varnode_sym(p1, rvalue);
+                rap_trace!("addvar_in_binary_op p1:{:?}\n", p1);
 
-                let source2_place = Some(place);
-                let BOP = BinaryOp::new(
-                    IntervalType::Basic(BI),
-                    sink,
-                    inst,
-                    source1_place,
-                    source2_place,
-                    None,
-                    bin_op.clone(),
-                );
-                self.oprs.push(BasicOpKind::Binary(BOP));
-                // let bop_ref = unsafe { &*(self.oprs.last().unwrap() as *const BasicOp<'tcx, T>) };
-                self.defmap.insert(sink, bop_index);
-                if let Some(place) = source1_place {
-                    self.usemap.entry(place).or_default().insert(bop_index);
-                }
-
-                if let Some(place) = source2_place {
-                    self.usemap.entry(place).or_default().insert(bop_index);
-                }
+                (Some(p1), None, Some(c2.const_))
             }
-            Operand::Constant(c) => {
-                // let const_value = Self::convert_const(&c.const_).unwrap();
-                let BOP = BinaryOp::new(
-                    IntervalType::Basic(BI),
-                    sink,
-                    inst,
-                    source1_place,
-                    None,
-                    Some(c.const_),
-                    bin_op.clone(),
-                );
-                self.oprs.push(BasicOpKind::Binary(BOP));
-                // let bop_ref = unsafe { &*(self.oprs.last().unwrap() as *const BasicOp<'tcx, T>) };
-                self.defmap.insert(sink, bop_index);
-                if let Some(place) = source1_place {
-                    self.usemap.entry(place).or_default().insert(bop_index);
-                }
+
+            // Case 3: Constant + Place
+            // Here we normalize: Treat the Place (op2) as source1, and the Constant (op1) as the const value.
+            // NOTE: Be careful with non-commutative operations (Sub, Div) in your interval logic later,
+            // as the physical order is swapped here.
+            (Operand::Constant(c1), Operand::Copy(p2) | Operand::Move(p2)) => {
+                self.use_add_varnode_sym(p2, rvalue);
+                rap_trace!("addvar_in_binary_op p2(as source1):{:?}\n", p2);
+
+                // Assign p2 to the first return position to make it source1
+                (Some(p2), None, Some(c1.const_))
+            }
+
+            // Case 4: Constant + Constant
+            (Operand::Constant(c1), Operand::Constant(_)) => {
+                // Logic depends on how you want to handle two constants.
+                // Usually keeping one is sufficient for the struct signature.
+                (None, None, Some(c1.const_))
             }
         };
 
-        // rap_trace!("varnodes{:?}\n", self.vars);
-        // rap_trace!("defmap{:?}\n", self.defmap);
-        // rap_trace!("usemap{:?}\n", self.usemap);
-        // rap_trace!("{:?}add_binary_op{:?}\n", inst,sink);
-        // ...
+        // Construct the BinaryOp
+        let bop = BinaryOp::new(
+            IntervalType::Basic(bi),
+            sink,
+            inst,
+            source1_place, // This is guaranteed to be the Place (if one exists)
+            source2_place,
+            const_val,
+            bin_op.clone(),
+        );
+
+        self.oprs.push(BasicOpKind::Binary(bop));
+
+        // Update DefMap
+        self.defmap.insert(sink, bop_index);
+
+        // Update UseMap
+        if let Some(place) = source1_place {
+            self.usemap.entry(place).or_default().insert(bop_index);
+        }
+
+        if let Some(place) = source2_place {
+            self.usemap.entry(place).or_default().insert(bop_index);
+        }
     }
     fn add_ref_op(
         &mut self,

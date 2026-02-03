@@ -32,6 +32,7 @@ pub(crate) fn create_ssa_struct(_krate: &mut Crate, build_std: bool) {
             ("op1", Symbol::intern("i128")),
             ("op2", Symbol::intern("i128")),
             ("cmp", Symbol::intern("i128")),
+            ("switch_bb", Symbol::intern("i128")),
         ],
         build_std,
     );
