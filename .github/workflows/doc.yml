@@ -47,7 +47,7 @@ jobs:
 
   # Deployment job
   deploy:
-    if: github.repository == 'Artisan-Lab/RAPx'
+    if: github.repository == 'safer-rust/RAPx'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
